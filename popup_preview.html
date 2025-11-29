@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* Original CSS from style.css */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            min-width: 400px;
+            max-width: 400px;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .popup-container {
+            padding: 0;
+            background: #ffffff;
+            min-height: auto;
+            border-radius: 20px;
+            overflow: hidden;
+            width: 400px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            padding: 20px;
+            color: #000000;
+            text-align: center;
+            background: #ffffff;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* --- MODIFICATIONS STEP 3: Stacked Header --- */
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .logo-container img {
+            width: 48px;
+            height: 48px;
+        }
+
+        /* --- MODIFICATIONS STEP 4: Larger Fonts --- */
+        .header h1 {
+            font-size: 24px;
+            /* Increased from 18 */
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            /* Increased from 12 */
+            opacity: 0.8;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
+        .content {
+            padding: 20px;
+            background: white;
+            min-height: auto;
+        }
+
+        .activation-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-top: 10px;
+        }
+
+        .activation-form input {
+            padding: 12px;
+            background: #ffffff;
+            border: 1px solid #000000;
+            border-radius: 12px;
+            font-size: 16px;
+            color: #333;
+            transition: all 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .activation-form input:focus {
+            outline: none;
+            background: #fff;
+            border-color: #000000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-primary {
+            padding: 12px;
+            width: 100%;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            letter-spacing: 0.5px;
+            background: #000000;
+            color: white;
+        }
+
+        .hint {
+            margin-top: 8px;
+            padding: 12px;
+            background: transparent;
+            border: none;
+            font-size: 12px;
+            color: #666666;
+            line-height: 1.6;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="popup-container">
+        <div class="header">
+            <div class="logo-container">
+                <img src="zhengcaiyun-ai-assistant/assets/logo.png" style="object-fit:contain;"
+                    onerror="this.style.display='none';this.parentNode.innerHTML='<div style=\'width:48px;height:48px;background:#333;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;margin-bottom:8px;\'>Logo</div>' + this.parentNode.innerHTML">
+                <h1>政采云智能助手</h1>
+                <p class="subtitle">AI-Powered Automation</p>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="activation-form">
+                <input type="text" placeholder="请输入授权码" value="">
+                <button class="btn-primary">激活</button>
+                <div class="hint">
+                    💡 提示：请先登录政采云网站，然后返回此处激活
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

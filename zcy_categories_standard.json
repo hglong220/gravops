@@ -1,0 +1,374 @@
+{
+    "meta": {
+        "source": "标准政府采购类目树 - 跨省份通用",
+        "version": "1.0",
+        "createdAt": "2025-11-29T00:00:00+08:00",
+        "description": "覆盖政府采购核心品类的标准类目树，适用于所有省份",
+        "totalCategories": 65
+    },
+    "categories": [
+        {
+            "id": 10001,
+            "name": "计算机设备",
+            "code": "computer_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10101,
+                    "name": "台式计算机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10102,
+                    "name": "便携式计算机",
+                    "level": 2,
+                    "hasChildren": false,
+                    "alias": [
+                        "笔记本电脑",
+                        "笔记本"
+                    ]
+                },
+                {
+                    "id": 10103,
+                    "name": "平板式微型计算机",
+                    "level": 2,
+                    "hasChildren": false,
+                    "alias": [
+                        "平板电脑"
+                    ]
+                },
+                {
+                    "id": 10104,
+                    "name": "液晶显示器",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10105,
+                    "name": "一体机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10106,
+                    "name": "服务器",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10107,
+                    "name": "计算机软件",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        },
+        {
+            "id": 10002,
+            "name": "办公设备",
+            "code": "office_equip_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10201,
+                    "name": "激光打印机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10202,
+                    "name": "喷墨打印机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10203,
+                    "name": "针式打印机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10204,
+                    "name": "复印机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10205,
+                    "name": "多功能一体机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10206,
+                    "name": "投影仪",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10207,
+                    "name": "碎纸机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10208,
+                    "name": "扫描仪",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10209,
+                    "name": "传真机",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        },
+        {
+            "id": 10003,
+            "name": "办公耗材",
+            "code": "consumables_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10301,
+                    "name": "复印纸",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10302,
+                    "name": "硒鼓/粉盒",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10303,
+                    "name": "墨盒",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10304,
+                    "name": "色带",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10305,
+                    "name": "纸质文具",
+                    "level": 2,
+                    "hasChildren": false,
+                    "alias": [
+                        "笔记本",
+                        "信纸"
+                    ]
+                },
+                {
+                    "id": 10306,
+                    "name": "书写工具",
+                    "level": 2,
+                    "hasChildren": false,
+                    "alias": [
+                        "中性笔",
+                        "钢笔"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": 10004,
+            "name": "数码设备",
+            "code": "digital_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10401,
+                    "name": "照相机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10402,
+                    "name": "摄像机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10403,
+                    "name": "镜头",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10404,
+                    "name": "移动硬盘",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10405,
+                    "name": "U盘",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10406,
+                    "name": "录音笔",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        },
+        {
+            "id": 10005,
+            "name": "生活电器",
+            "code": "appliance_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10501,
+                    "name": "空调机",
+                    "level": 2,
+                    "hasChildren": false,
+                    "alias": [
+                        "空调"
+                    ]
+                },
+                {
+                    "id": 10502,
+                    "name": "电视机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10503,
+                    "name": "电冰箱",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10504,
+                    "name": "洗衣机",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10505,
+                    "name": "吸尘器",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10506,
+                    "name": "空气净化器",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10507,
+                    "name": "微波炉",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10508,
+                    "name": "饮水机",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        },
+        {
+            "id": 10006,
+            "name": "办公家具",
+            "code": "furniture_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10601,
+                    "name": "木质桌",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10602,
+                    "name": "钢木台桌",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10603,
+                    "name": "办公椅",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10604,
+                    "name": "沙发",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10605,
+                    "name": "文件柜",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10606,
+                    "name": "保险柜",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10607,
+                    "name": "茶几",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        },
+        {
+            "id": 10007,
+            "name": "日用百货",
+            "code": "daily_core",
+            "level": 1,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": 10701,
+                    "name": "清洁用品",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10702,
+                    "name": "劳保用品",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10703,
+                    "name": "床上用品",
+                    "level": 2,
+                    "hasChildren": false
+                },
+                {
+                    "id": 10704,
+                    "name": "厨房用品",
+                    "level": 2,
+                    "hasChildren": false
+                }
+            ]
+        }
+    ]
+}

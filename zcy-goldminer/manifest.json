@@ -1,0 +1,24 @@
+{
+    "manifest_version": 3,
+    "name": "政采云核心类目挖掘机",
+    "version": "1.0",
+    "description": "主动挖掘政采云核心类目数据，导出为 JSON",
+    "permissions": [
+        "activeTab",
+        "scripting"
+    ],
+    "host_permissions": [
+        "*://*.zcygov.cn/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.zcygov.cn/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

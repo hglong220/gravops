@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>政采云26大类API提取器</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #0f0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        button {
+            background: #e11d48;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            background: #be123c;
+        }
+
+        #log {
+            height: 400px;
+            overflow-y: auto;
+            background: #111;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+
+        .success {
+            color: #0f0;
+        }
+
+        .error {
+            color: #f00;
+        }
+
+        .info {
+            color: #ff0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎯 政采云26大类API提取器</h1>
+        <p>请先打开政采云页面，然后在该页面的控制台粘贴并运行此脚本</p>
+
+        <h3>📋 使用方法：</h3>
+        <ol>
+            <li>登录政采云卖家后台</li>
+            <li>按 F12 打开开发者工具</li>
+            <li>切换到 Console（控制台）标签</li>
+            <li>复制下面的代码并粘贴到控制台</li>
+            <li>按 Enter 执行</li>
+        </ol>
+
+        <h3>📝 复制这段代码到政采云页面的控制台：</h3>
+        <textarea id="code" readonly
+            style="width: 100%; height: 600px; background: #111; color: #0f0; padding: 10px; font-family: monospace; border-radius: 5px;">
+(async function() {
+    console.log('🚀 开始提取政采云26大类目...');
+    
+    const targetCategories = [
+        "机电设备", "教学科研（含特许经营类目）", "安全防护", 
+        "橡胶及塑料制品", "图书档案设备", "图书和档案（含特许经营类目）",
+        "仪器仪表", "专用设备", "3C数码", "办公设备/耗材",
+        "文化用品", "家居建材", "家用电器", "日用百货",
+        "食品酒水（含特许经营类目）", "劳动保护用品", "运动户外",
+        "五金/工具", "文化玩乐", "教育装备", "鲜花绿植",
+        "信息技术", "体育用品及器材", "体育相关用品和设备",
+        "科研仪器", "防护用品"
+    ];
+
+    const allData = {};
+    let totalCount = 0;
+
+    // 方案A：尝试从页面中查找API接口
+    const findCategoryAPI = () => {
+        // 监听所有网络请求
+        const originalFetch = window.fetch;
+        const apis = [];
+        
+        window.fetch = async function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && (url.includes('category') || url.includes('cate'))) {
+                apis.push(url);
+                console.log('📡 发现类目API:', url);
+            }
+            return originalFetch.apply(this, args);
+        };
+        
+        setTimeout(() => {
+            window.fetch = originalFetch;
+            console.log('✅ 找到的API:', apis);
+        }, 5000);
+    };
+
+    // 方案B：通过点击触发加载
+    const clickAllCategories = async () => {
+        const items = document.querySelectorAll('.doraemon-list-item, [class*="category"], [class*="menu-item"]');
+        console.log(`🎯 找到 ${items.length} 个菜单项`);
+        
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const text = item.innerText?.split('\n')[0] || '';
+            
+            // 检查是否是26大类之一
+            if (targetCategories.some(cat => text.includes(cat) || cat.includes(text))) {
+                console.log(`👆 [${i+1}/${items.length}] 点击: ${text}`);
+                item.click();
+                item.scrollIntoView({block: "center"});
+                
+                // 等待数据加载
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+    };
+
+    // 方案C：直接从页面DOM提取
+    const extractFromDOM = () => {
+        // 尝试多种选择器
+        const selectors = [
+            '.category-item',
+            '.menu-item',
+            '[data-category]',
+            '.category-list li',
+            '.doraemon-list-item'
+        ];
+
+        for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length > 0) {
+                console.log(`✅ 使用选择器: ${selector}，找到 ${elements.length} 个元素`);
+                
+                elements.forEach(el => {
+                    const name = el.innerText?.trim();
+                    const id = el.getAttribute('data-id') || el.getAttribute('data-key');
+                    
+                    if (name && targetCategories.some(cat => name.includes(cat) || cat.includes(name))) {
+                        allData[name] = {
+                            name: name,
+                            id: id || 'unknown',
+                            source: 'DOM'
+                        };
+                        totalCount++;
+                        console.log(`📦 提取: ${name}`);
+                    }
+                });
+                
+                if (totalCount > 0) break;
+            }
+        }
+    };
+
+    // 方案D：拦截XHR请求
+    const interceptXHR = () => {
+        const XHR = XMLHttpRequest.prototype;
+        const originalSend = XHR.send;
+        
+        XHR.send = function() {
+            this.addEventListener('load', function() {
+                try {
+                    const data = JSON.parse(this.responseText);
+                    const list = data.result || data.data || data.list || [];
+                    
+                    if (Array.isArray(list)) {
+                        list.forEach(item => {
+                            if (item && item.name && targetCategories.some(cat => 
+                                item.name.includes(cat) || cat.includes(item.name))) {
+                                
+                                if (!allData[item.id]) {
+                                    allData[item.id] = {
+                                        id: item.id,
+                                        name: item.name,
+                                        pid: item.parentId || item.pid || 0,
+                                        code: item.code || item.categoryCode || ''
+                                    };
+                                    totalCount++;
+                                    console.log(`📡 拦截到: ${item.name} (ID:${item.id})`);
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {}
+            });
+            return originalSend.apply(this, arguments);
+        };
+    };
+
+    // 执行提取
+    console.log('🔍 启动拦截器...');
+    interceptXHR();
+    
+    console.log('📡 监听API...');
+    findCategoryAPI();
+    
+    console.log('🖱️ 开始点击...');
+    await clickAllCategories();
+    
+    console.log('📄 尝试DOM提取...');
+    extractFromDOM();
+    
+    // 等待数据收集
+    await new Promise(r => setTimeout(r, 3000));
+    
+    // 导出结果
+    console.log(`✅ 提取完成！共收集 ${totalCount} 条数据`);
+    console.log('📊 数据预览:', allData);
+    
+    // 生成TXT
+    let content = "ID\t类目名称\t父级ID\t类目编码\n";
+    content += "=".repeat(80) + "\n";
+    Object.values(allData).forEach(row => {
+        content += `${row.id}\t${row.name}\t${row.pid || 'N/A'}\t${row.code || 'N/A'}\n`;
+    });
+    
+    // 下载
+    const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `政采云26大类_${totalCount}条_${Date.now()}.txt`;
+    a.click();
+    
+    console.log('💾 已自动下载 TXT 文件！');
+    
+    // 同时输出JSON
+    console.log('📋 JSON格式数据：');
+    console.log(JSON.stringify(Object.values(allData), null, 2));
+    
+})();
+        </textarea>
+
+        <button onclick="copyCode()">📋 复制代码</button>
+    </div>
+
+    <script>
+        function copyCode() {
+            const code = document.getElementById('code');
+            code.select();
+            document.execCommand('copy');
+            alert('✅ 代码已复制到剪贴板！\n\n请到政采云页面的控制台粘贴并运行。');
+        }
+    </script>
+</body>
+
+</html>

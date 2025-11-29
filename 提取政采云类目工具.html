@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>政采云类目数据提取工具</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #1890ff;
+            margin-bottom: 10px;
+        }
+
+        .step {
+            background: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        button {
+            background: #52c41a;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            background: #389e0d;
+        }
+
+        #code {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 15px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .success {
+            color: #52c41a;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: #fa8c16;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>🔍 政采云类目数据提取工具</h1>
+        <p>这个工具可以帮您从政采云页面内存中提取完整的类目数据。</p>
+
+        <div class="step">
+            <strong>📌 使用步骤：</strong><br>
+            1. 确保您已经在浏览器中<span class="warning">打开了政采云的类目选择页面</span><br>
+            2. 点击下方的<span class="success">"生成提取代码"</span>按钮<br>
+            3. 复制生成的代码<br>
+            4. 切换到政采云页面，按 <kbd>F12</kbd> 打开开发者工具<br>
+            5. 在 Console（控制台）标签中，<span class="warning">直接按 Ctrl+V 粘贴</span>（跳过"允许粘贴"的提示）<br>
+            6. 按 <kbd>Enter</kbd> 执行<br>
+            7. 如果成功，浏览器会自动下载 JSON 文件
+        </div>
+
+        <button onclick="generateCode()">🚀 生成提取代码</button>
+        <button onclick="copyCode()" id="copyBtn" style="display:none; background:#1890ff;">📋 复制代码</button>
+
+        <div id="code" style="display:none;"></div>
+
+        <div id="result" style="margin-top:20px;"></div>
+    </div>
+
+    <script>
+        let generatedCode = '';
+
+        function generateCode() {
+            generatedCode = `
+(function() {
+    console.log('🔍 开始扫描内存...');
+    let found = null;
+    let source = '';
+
+    // 扫描 window
+    for (let key in window) {
+        try {
+            if (typeof window[key] === 'object' && window[key]) {
+                const str = JSON.stringify(window[key]);
+                if (str.includes('children') && str.includes('name') && str.includes('id') && str.length > 5000) {
+                    found = window[key];
+                    source = 'window.' + key;
+                    break;
+                }
+            }
+        } catch(e) {}
+    }
+
+    // 扫描 localStorage
+    if (!found) {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            const val = localStorage.getItem(key);
+            if (val && val.includes('children') && val.includes('name') && val.length > 5000) {
+                try {
+                    found = JSON.parse(val);
+                    source = 'localStorage.' + key;
+                    break;
+                } catch(e) {}
+            }
+        }
+    }
+
+    // 扫描 sessionStorage
+    if (!found) {
+        for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            const val = sessionStorage.getItem(key);
+            if (val && val.includes('children') && val.includes('name') && val.length > 5000) {
+                try {
+                    found = JSON.parse(val);
+                    source = 'sessionStorage.' + key;
+                    break;
+                } catch(e) {}
+            }
+        }
+    }
+
+    if (found) {
+        console.log('✅ 成功找到类目数据！来源：' + source);
+        console.log('数据预览：', found);
+        
+        // 下载文件
+        const blob = new Blob([JSON.stringify(found, null, 2)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'zcy_categories_' + new Date().getTime() + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('✅ 文件已开始下载！');
+        alert('✅ 成功提取类目数据！\\n来源：' + source + '\\n文件已开始下载。');
+    } else {
+        console.log('❌ 未找到类目数据');
+        alert('❌ 未在内存中找到类目数据。\\n\\n可能的原因：\\n1. 类目选择器未加载完成\\n2. 数据结构发生变化\\n\\n请确保页面已完全加载，然后重试。');
+    }
+})();
+            `.trim();
+
+            document.getElementById('code').style.display = 'block';
+            document.getElementById('code').textContent = generatedCode;
+            document.getElementById('copyBtn').style.display = 'inline-block';
+            document.getElementById('result').innerHTML = '<p class="success">✅ 代码已生成！请按照上方步骤操作。</p>';
+        }
+
+        function copyCode() {
+            navigator.clipboard.writeText(generatedCode).then(() => {
+                alert('✅ 代码已复制到剪贴板！\\n现在请切换到政采云页面，按 F12 打开控制台，粘贴并执行。');
+            }).catch(err => {
+                alert('复制失败，请手动选中代码复制：' + err);
+            });
+        }
+    </script>
+</body>
+
+</html>

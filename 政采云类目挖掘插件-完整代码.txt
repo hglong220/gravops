@@ -1,0 +1,415 @@
+=====================================================
+政采云全自动类目挖掘机 - Chrome扩展完整代码
+使用说明：复制下面3个文件的代码，分别保存为对应文件名
+=====================================================
+
+【安装步骤】
+1. 创建文件夹：zcy-miner
+2. 在文件夹中创建3个文件（复制下面对应的代码）：
+   - manifest.json
+   - inject.js
+   - content.js
+3. Chrome打开 chrome://extensions/
+4. 启用"开发者模式"
+5. 点击"加载已解压的扩展程序"，选择 zcy-miner 文件夹
+
+【使用方法】
+1. 登录政采云，进入"商品发布 > 类目选择"页面
+2. 右下角会出现绿色面板
+3. 点击"🚀 开始自动挖掘"
+4. 等待完成后点"💾 导出JSON"
+
+=====================================================
+文件1: manifest.json
+=====================================================
+
+{
+  "manifest_version": 3,
+  "name": "政采云全自动挖掘机 (120%覆盖版)",
+  "version": "2.0",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["*://*.zcygov.cn/*"],
+  "web_accessible_resources": [{
+    "resources": ["inject.js"],
+    "matches": ["*://*.zcygov.cn/*"]
+  }],
+  "content_scripts": [{
+    "matches": ["*://*.zcygov.cn/*"],
+    "js": ["content.js"],
+    "run_at": "document_end"
+  }]
+}
+
+=====================================================
+文件2: inject.js
+=====================================================
+
+// inject.js - 驻留在页面内部，负责拦截数据
+(function() {
+    console.log("🕵️‍♀️ 监听探针已就位...");
+    const XHR = XMLHttpRequest.prototype;
+    const open = XHR.open;
+    const send = XHR.send;
+
+    // 拦截 Fetch (新版接口)
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch(...args);
+        const clone = response.clone();
+        clone.json().then(data => broadcast(data)).catch(()=>{});
+        return response;
+    };
+
+    // 拦截 XHR (老版接口)
+    XHR.send = function(postData) {
+        this.addEventListener('load', function() {
+            try {
+                const data = JSON.parse(this.responseText);
+                broadcast(data);
+            } catch (e) {}
+        });
+        return send.apply(this, arguments);
+    };
+
+    // 广播数据给 Content Script
+    function broadcast(json) {
+        if (!json) return;
+        // 过滤：只保留类目相关的数据
+        const list = json.result || json.data || json.list || json;
+        if (Array.isArray(list) && list.length > 0 && list[0].id && list[0].name) {
+            window.postMessage({ type: 'ZCY_DATA_CAPTURED', payload: list }, '*');
+        }
+    }
+})();
+
+=====================================================
+文件3: content.js
+=====================================================
+
+// content.js - 负责自动点击和收集
+console.log("🤖 自动挖掘机已加载");
+
+// 1. 注入监听脚本
+const script = document.createElement('script');
+script.src = chrome.runtime.getURL('inject.js');
+(document.head || document.documentElement).appendChild(script);
+
+// 2. 定义我们要挖的 120% 目标关键词
+const TARGET_KEYWORDS = [
+    "计算机", "办公设备", "3C", "数码", "文化用品",  // 核心
+    "家具", "建材", "家居",                         // 装修
+    "电器", "空调", "冰箱",                         // 电器
+    "百货", "日用", "清洁",                         // 耗材
+    "劳动", "防护", "劳保",                         // 资质
+    "运动", "体育",                                 // 学校
+    "五金", "工具", "仪器"                          // 维修
+];
+
+// 存储战利品
+let collectedData = {};
+
+// 3. 监听数据回传
+window.addEventListener('message', (event) => {
+    if (event.data.type === 'ZCY_DATA_CAPTURED') {
+        const list = event.data.payload;
+        list.forEach(item => {
+            // 简单去重
+            if (!collectedData[item.id]) {
+                collectedData[item.id] = {
+                    id: item.id,
+                    name: item.name,
+                    code: item.code,
+                    pid: item.parentId || 0
+                };
+                updateUI(`✅ 捕获: ${item.name} (ID:${item.id})`);
+            }
+        });
+    }
+});
+
+// 4. 创建操作面板 UI
+function createUI() {
+    const div = document.createElement('div');
+    div.id = "zcy-panel";
+    div.style.cssText = "position:fixed; bottom:50px; right:20px; width:300px; background:white; border:2px solid #10b981; z-index:99999; padding:15px; border-radius:10px; box-shadow:0 10px 20px rgba(0,0,0,0.2); font-family:sans-serif;";
+    div.innerHTML = `
+        <h3 style="margin:0 0 10px 0; border-bottom:1px solid #eee; padding-bottom:5px;">🤖 全自动挖掘机</h3>
+        <div id="status-text" style="color:#666; font-size:13px; margin-bottom:10px;">等待指令...</div>
+        <button id="btn-run" style="width:100%; padding:10px; background:#10b981; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">🚀 开始自动挖掘</button>
+        <button id="btn-export" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:5px; display:none;">💾 导出 JSON</button>
+    `;
+    document.body.appendChild(div);
+
+    document.getElementById('btn-run').onclick = startAutoClick;
+    document.getElementById('btn-export').onclick = downloadData;
+}
+
+function updateUI(msg) {
+    const el = document.getElementById('status-text');
+    if (el) {
+        el.innerText = msg;
+    }
+}
+
+// 5. 核心逻辑：自动寻找并点击菜单
+async function startAutoClick() {
+    const btn = document.getElementById('btn-run');
+    btn.disabled = true;
+    btn.style.background = "#ccc";
+    btn.innerText = "正在挖掘中...";
+
+    // 获取左侧所有菜单项
+    const items = document.querySelectorAll('.doraemon-list-item'); // 基于你之前的截图类名
+    if(items.length === 0) {
+        alert("❌ 未找到左侧菜单！请确保你在【商品发布】页面！");
+        return;
+    }
+
+    let clickCount = 0;
+
+    for (let item of items) {
+        const text = item.innerText || "";
+        // 检查是否包含我们的关键词
+        if (TARGET_KEYWORDS.some(key => text.includes(key))) {
+            updateUI(`👆 正在点击: ${text.split('\n')[0]}...`);
+            
+            // 模拟点击
+            item.click();
+            clickCount++;
+
+            // 等待 1.5 秒让数据加载（不能太快，否则会被封或漏抓）
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+
+    updateUI(`🎉 完成！共点击 ${clickCount} 个大类。`);
+    document.getElementById('btn-export').style.display = 'block';
+    btn.innerText = "挖掘完成";
+}
+
+// 6. 导出文件
+function downloadData() {
+    const dataStr = JSON.stringify(Object.values(collectedData), null, 2);
+    const blob = new Blob([dataStr], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "zcy_full_categories.json";
+    a.click();
+}
+
+// 启动 UI
+setTimeout(createUI, 2000);
+
+=====================================================
+额外工具: 查漏补缺脚本（可选）
+=====================================================
+如果需要补充更多类目，在政采云页面按F12打开控制台，粘贴下面代码并回车：
+
+(function() {
+    console.clear();
+    console.log("🕵️‍♀️ 查漏补缺模式启动！目标：覆盖 26 大类...");
+
+    const MISSING_TARGETS = [
+        "机电", "教学", "科研", "安全", "橡胶", 
+        "图书", "档案", "仪器", "仪表", "专用设备", 
+        "建材", "食品", "酒水", "鲜花", "绿植", 
+        "教育", "体育", "防护"
+    ];
+
+    let newCollection = {};
+
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch(...args);
+        const clone = response.clone();
+        clone.json().then(data => {
+            const list = data.result || data.data || data.list || data;
+            if (Array.isArray(list)) {
+                list.forEach(item => {
+                    if (item.name && item.id) {
+                        if (!newCollection[item.id]) {
+                            newCollection[item.id] = { id: item.id, name: item.name, pid: item.parentId };
+                            if (MISSING_TARGETS.some(t => item.name.includes(t))) {
+                                console.log(`🔥 补全成功: [${item.name}] ID: ${item.id}`);
+                            }
+                        }
+                    }
+                });
+            }
+        }).catch(()=>{});
+        return response;
+    };
+
+    setTimeout(() => {
+        const items = document.querySelectorAll('.doraemon-list-item');
+        console.log(`📋 左侧菜单共找到 ${items.length} 项。正在寻找缺失类目...`);
+        
+        items.forEach(item => {
+            const text = item.innerText;
+            if (MISSING_TARGETS.some(t => text.includes(t))) {
+                console.log(`👇 请点击: ${text}`);
+                item.click(); 
+            }
+        });
+        
+        console.log("✅ 自动点击已触发，请留意控制台的【🔥 补全成功】日志！");
+        console.log("⏳ 等待 10 秒后，输入 exportMissing() 导出新数据。");
+    }, 2000);
+
+    window.exportMissing = function() {
+        console.log(JSON.stringify(Object.values(newCollection), null, 2));
+    };
+})();
+
+=====================================================
+☢️ 终极武器：全量地毯式挖掘机
+=====================================================
+这是最强大的版本！直接在F12控制台运行，会自动点击所有左侧菜单项。
+
+【使用方法】
+1. 刷新政采云页面
+2. 按 F12 打开控制台
+3. 复制下面整段代码
+4. 粘贴到Console并回车
+5. 把手离开鼠标，让脚本自己跑2-3分钟
+6. 看到"大功告成"弹窗，自动下载JSON文件
+
+【注意事项】
+- 运行期间界面会自动滚动，这是正常的
+- 不要点击网页其他地方，避免打断脚本
+- 如果卡住超过10秒，手动点一下下一个类目即可继续
+
+=====================================================
+复制下面这段代码到控制台运行：
+=====================================================
+
+// ☢️ 核武级脚本：全量地毯式挖掘机 (覆盖率 100%+)
+(async function() {
+    console.clear();
+    console.log("☢️ 核武级挖掘机已启动！准备进行全量扫描...");
+    
+    // 1. 建立巨大的仓库
+    window.MEGA_DATABASE = {}; 
+    let totalCaptured = 0;
+
+    // 2. 部署最高级拦截网 (同时拦截 Fetch 和 XHR)
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch(...args);
+        const clone = response.clone();
+        clone.json().then(data => process(data, args[0])).catch(()=>{});
+        return response;
+    };
+
+    const XHR = XMLHttpRequest.prototype;
+    const send = XHR.send;
+    const open = XHR.open;
+    XHR.open = function(method, url) { this._url = url; return open.apply(this, arguments); };
+    XHR.send = function() {
+        this.addEventListener('load', function() {
+            try { process(JSON.parse(this.responseText), this._url); } catch (e) {}
+        });
+        return send.apply(this, arguments);
+    };
+
+    // 3. 数据加工厂
+    function process(json, url) {
+        // 过滤掉监控数据和无关接口
+        if (!url || url.includes('batchPush') || url.includes('collect')) return;
+
+        const list = json.result || json.data || json.list || json;
+        if (Array.isArray(list)) {
+            list.forEach(item => {
+                // 只要是有 ID 和 Name 的，统统抓走
+                if (item && item.id && item.name) {
+                    if (!window.MEGA_DATABASE[item.id]) {
+                        window.MEGA_DATABASE[item.id] = {
+                            id: item.id,
+                            name: item.name,
+                            pid: item.parentId || 0,
+                            code: item.code,
+                            is_leaf: item.leafFlag
+                        };
+                        totalCaptured++;
+                        // 只在控制台每抓 10 个显示一次，防止卡死
+                        if (totalCaptured % 10 === 0) {
+                            console.log(`📦 已捕获类目数量: ${totalCaptured} ...`);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // 4. 暴力点击逻辑
+    const items = document.querySelectorAll('.doraemon-list-item'); // 锁定左侧菜单所有项
+    if (items.length === 0) {
+        alert("❌ 没找到左侧菜单！请确保你在【类目选择】页面！");
+        return;
+    }
+
+    console.log(`🎯 锁定目标：共发现 ${items.length} 个一级大类。准备逐个击破...`);
+    alert(`准备好了吗？\n\n我要开始自动点击这 ${items.length} 个菜单了。\n\n过程可能需要几分钟，请不要动鼠标！`);
+
+    // 遍历每一个菜单项
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const categoryName = item.innerText.split('\n')[0];
+        
+        console.log(`👆 [${i+1}/${items.length}] 正在点击: ${categoryName}`);
+        
+        // 模拟真实点击
+        item.click();
+        item.scrollIntoView({block: "center"}); // 自动滚动，假装是人在看
+
+        // ⏳ 动态等待 (重要！防止被封 IP)
+        // 随机等待 1.5 到 2.5 秒
+        const waitTime = 1500 + Math.random() * 1000;
+        await new Promise(r => setTimeout(r, waitTime));
+    }
+
+    // 5. 完工导出
+    console.clear();
+    console.log(`✅✅✅ 扫荡完成！共捕获 ${totalCaptured} 个类目！`);
+    
+    // 生成下载
+    const dataStr = JSON.stringify(Object.values(window.MEGA_DATABASE), null, 2);
+    const blob = new Blob([dataStr], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "ZCY_FULL_COVERAGE_DB.json";
+    a.click();
+    
+    console.log("💾 文件已自动下载：ZCY_FULL_COVERAGE_DB.json");
+    alert("大功告成！\n\n所有能点开的类目都已经抓下来了。\n文件已自动下载，请查收！");
+
+})();
+
+=====================================================
+🎯 三种方案选择指南
+=====================================================
+
+方案1: Chrome扩展（适合长期使用）
+- 安装一次，永久可用
+- 需要创建3个文件（manifest.json, inject.js, content.js）
+- 右下角显示绿色面板，操作直观
+- 推荐：经常需要更新类目数据的用户
+
+方案2: 查漏补缺脚本（适合补充特定类目）
+- 针对性获取缺失的类目（机电、图书等18个关键词）
+- 直接在控制台运行
+- 轻量快速
+- 推荐：已有大部分数据，只需补充的用户
+
+方案3: 终极地毯式挖掘机 ☢️（适合一次性全量获取）⭐ 最强
+- 自动点击所有左侧菜单
+- 100%覆盖所有可见类目
+- 一次运行即可获得完整数据
+- 推荐：第一次使用，想获取所有数据的用户
+
+=====================================================
+结束 - 所有代码已包含
+三种方案任选，终极版最省事！
+=====================================================

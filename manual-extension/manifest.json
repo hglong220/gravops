@@ -1,0 +1,45 @@
+{
+    "manifest_version": 3,
+    "name": "政采云智能助手 - 调试版",
+    "version": "1.1",
+    "description": "自动嗅探政采云类目数据",
+    "background": {
+        "service_worker": "background.js"
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "scripting",
+        "tabs",
+        "downloads"
+    ],
+    "host_permissions": [
+        "*://*.zcygov.cn/*",
+        "*://item.jd.com/*",
+        "*://detail.tmall.com/*",
+        "*://item.taobao.com/*",
+        "*://product.suning.com/*"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "sniffer.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.zcygov.cn/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_end",
+            "all_frames": true
+        }
+    ]
+}

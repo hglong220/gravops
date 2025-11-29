@@ -1,0 +1,1237 @@
+{
+  "meta": {
+    "source": "政采云官方真实数据",
+    "extractedFrom": "政采云官方API - 完整提取",
+    "totalCategories": 132,
+    "lastUpdated": "2025-11-28T20:36:32.892Z",
+    "note": "所有ID和名称都来自政采云官方，可直接用于商品发布"
+  },
+  "categories": [
+    {
+      "id": 2136,
+      "categoryCode": "2136",
+      "name": "橡胶及塑料制品",
+      "level": 1,
+      "parentId": null,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2137,
+      "categoryCode": "2137",
+      "name": "橡胶带",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2138,
+      "categoryCode": "2138",
+      "name": "橡胶止水带",
+      "level": 3,
+      "parentId": 2137,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2139,
+      "categoryCode": "2139",
+      "name": "橡胶传送带",
+      "level": 3,
+      "parentId": 2137,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2140,
+      "categoryCode": "2140",
+      "name": "橡胶捆绑带",
+      "level": 3,
+      "parentId": 2137,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2141,
+      "categoryCode": "2141",
+      "name": "橡胶履带",
+      "level": 3,
+      "parentId": 2137,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2143,
+      "categoryCode": "2143",
+      "name": "橡胶板",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2144,
+      "categoryCode": "2144",
+      "name": "夹布胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2145,
+      "categoryCode": "2145",
+      "name": "绝缘胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2146,
+      "categoryCode": "2146",
+      "name": "耐油胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2147,
+      "categoryCode": "2147",
+      "name": "耐酸碱胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2148,
+      "categoryCode": "2148",
+      "name": "防腐衬里",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2149,
+      "categoryCode": "2149",
+      "name": "阻尼胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2150,
+      "categoryCode": "2150",
+      "name": "防滑胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2151,
+      "categoryCode": "2151",
+      "name": "防腐胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2152,
+      "categoryCode": "2152",
+      "name": "耐磨胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2153,
+      "categoryCode": "2153",
+      "name": "防静电胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2154,
+      "categoryCode": "2154",
+      "name": "特种橡胶板",
+      "level": 3,
+      "parentId": 2143,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2156,
+      "categoryCode": "2156",
+      "name": "塑料片",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2157,
+      "categoryCode": "2157",
+      "name": "PP塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2158,
+      "categoryCode": "2158",
+      "name": "PE塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2159,
+      "categoryCode": "2159",
+      "name": "PET塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2160,
+      "categoryCode": "2160",
+      "name": "ABS塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2161,
+      "categoryCode": "2161",
+      "name": "PMMA塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2162,
+      "categoryCode": "2162",
+      "name": "PC塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2163,
+      "categoryCode": "2163",
+      "name": "PS塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2165,
+      "categoryCode": "2165",
+      "name": "PVC塑料片",
+      "level": 3,
+      "parentId": 2156,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2166,
+      "categoryCode": "2166",
+      "name": "塑料管",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2167,
+      "categoryCode": "2167",
+      "name": "PVC管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2168,
+      "categoryCode": "2168",
+      "name": "PPR管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2169,
+      "categoryCode": "2169",
+      "name": "PP管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2170,
+      "categoryCode": "2170",
+      "name": "PE管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2171,
+      "categoryCode": "2171",
+      "name": "PC管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2172,
+      "categoryCode": "2172",
+      "name": "ABS管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2173,
+      "categoryCode": "2173",
+      "name": "PMMA管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2174,
+      "categoryCode": "2174",
+      "name": "铝塑管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2175,
+      "categoryCode": "2175",
+      "name": "波纹管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2176,
+      "categoryCode": "2176",
+      "name": "PA管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2177,
+      "categoryCode": "2177",
+      "name": "PU管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2179,
+      "categoryCode": "2179",
+      "name": "钢塑管",
+      "level": 3,
+      "parentId": 2166,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2180,
+      "categoryCode": "2180",
+      "name": "橡胶管",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2181,
+      "categoryCode": "2181",
+      "name": "低压橡胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2182,
+      "categoryCode": "2182",
+      "name": "高压橡胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2183,
+      "categoryCode": "2183",
+      "name": "硅胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2184,
+      "categoryCode": "2184",
+      "name": "伸缩胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2185,
+      "categoryCode": "2185",
+      "name": "编织胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2186,
+      "categoryCode": "2186",
+      "name": "缠绕胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2187,
+      "categoryCode": "2187",
+      "name": "夹布胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2188,
+      "categoryCode": "2188",
+      "name": "增强软管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2189,
+      "categoryCode": "2189",
+      "name": "复合胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2190,
+      "categoryCode": "2190",
+      "name": "液压胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2191,
+      "categoryCode": "2191",
+      "name": "喷砂胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2192,
+      "categoryCode": "2192",
+      "name": "耐油胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2193,
+      "categoryCode": "2193",
+      "name": "纤维胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2194,
+      "categoryCode": "2194",
+      "name": "特种胶管",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2195,
+      "categoryCode": "2195",
+      "name": "胶管接头",
+      "level": 3,
+      "parentId": 2180,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2197,
+      "categoryCode": "2197",
+      "name": "其他橡胶塑料制品",
+      "level": 2,
+      "parentId": 2136,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2198,
+      "categoryCode": "2198",
+      "name": "涂胶纺织物",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2199,
+      "categoryCode": "2199",
+      "name": "日用及医疗橡胶制品",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2200,
+      "categoryCode": "2200",
+      "name": "泡沫塑料",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2201,
+      "categoryCode": "2201",
+      "name": "塑料网",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2202,
+      "categoryCode": "2202",
+      "name": "塑料绳",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2203,
+      "categoryCode": "2203",
+      "name": "塑料建材",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2204,
+      "categoryCode": "2204",
+      "name": "橡胶棒",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 2205,
+      "categoryCode": "2205",
+      "name": "橡胶片",
+      "level": 3,
+      "parentId": 2197,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4402,
+      "categoryCode": "4402",
+      "name": "文化用品",
+      "level": 1,
+      "parentId": null,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4440,
+      "categoryCode": "4440",
+      "name": "笔类/书写工具",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5225,
+      "categoryCode": "5225",
+      "name": "中性笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5226,
+      "categoryCode": "5226",
+      "name": "替芯/铅芯",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5227,
+      "categoryCode": "5227",
+      "name": "铅笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5228,
+      "categoryCode": "5228",
+      "name": "钢笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5229,
+      "categoryCode": "5229",
+      "name": "笔用墨水/补充液/墨囊",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5230,
+      "categoryCode": "5230",
+      "name": "圆珠笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5231,
+      "categoryCode": "5231",
+      "name": "宝珠/走珠/签字笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5232,
+      "categoryCode": "5232",
+      "name": "荧光笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5233,
+      "categoryCode": "5233",
+      "name": "油漆笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5235,
+      "categoryCode": "5235",
+      "name": "马克笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5236,
+      "categoryCode": "5236",
+      "name": "针管笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5237,
+      "categoryCode": "5237",
+      "name": "泡泡笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5238,
+      "categoryCode": "5238",
+      "name": "正姿笔",
+      "level": 3,
+      "parentId": 4440,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4441,
+      "categoryCode": "4441",
+      "name": "纸张本册",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5239,
+      "categoryCode": "5239",
+      "name": "PU/PVC笔记本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5240,
+      "categoryCode": "5240",
+      "name": "学生用笔记本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5241,
+      "categoryCode": "5241",
+      "name": "记事本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5242,
+      "categoryCode": "5242",
+      "name": "便签本/便条纸/N次贴",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5243,
+      "categoryCode": "5243",
+      "name": "胶装本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5244,
+      "categoryCode": "5244",
+      "name": "分页纸/索引纸",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5245,
+      "categoryCode": "5245",
+      "name": "螺旋本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5246,
+      "categoryCode": "5246",
+      "name": "不干胶标签",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5247,
+      "categoryCode": "5247",
+      "name": "硬面抄",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5248,
+      "categoryCode": "5248",
+      "name": "奖状/证书",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5249,
+      "categoryCode": "5249",
+      "name": "同学录/纪念册",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5250,
+      "categoryCode": "5250",
+      "name": "拍纸本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5251,
+      "categoryCode": "5251",
+      "name": "信纸",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5252,
+      "categoryCode": "5252",
+      "name": "万用手册",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5253,
+      "categoryCode": "5253",
+      "name": "课业本/教学用本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5254,
+      "categoryCode": "5254",
+      "name": "日记本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": true
+    },
+    {
+      "id": 5255,
+      "categoryCode": "5255",
+      "name": "活页替芯",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5256,
+      "categoryCode": "5256",
+      "name": "磁性贴",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5257,
+      "categoryCode": "5257",
+      "name": "贴纸",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5258,
+      "categoryCode": "5258",
+      "name": "折纸/手工纸",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5259,
+      "categoryCode": "5259",
+      "name": "通讯录/电话本",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5260,
+      "categoryCode": "5260",
+      "name": "书签",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 5261,
+      "categoryCode": "5261",
+      "name": "POP广告纸/爆炸贴",
+      "level": 3,
+      "parentId": 4441,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4442,
+      "categoryCode": "4442",
+      "name": "财会用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4443,
+      "categoryCode": "4443",
+      "name": "收纳/陈列用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4444,
+      "categoryCode": "4444",
+      "name": "装订用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4445,
+      "categoryCode": "4445",
+      "name": "刀剪/粘胶/测绘",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4446,
+      "categoryCode": "4446",
+      "name": "日常学习用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4447,
+      "categoryCode": "4447",
+      "name": "画具/画材/书法用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4448,
+      "categoryCode": "4448",
+      "name": "其它办公用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4449,
+      "categoryCode": "4449",
+      "name": "印刷制品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4450,
+      "categoryCode": "4450",
+      "name": "教学用具",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4451,
+      "categoryCode": "4451",
+      "name": "实验室用品",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4452,
+      "categoryCode": "4452",
+      "name": "电子产品及配件",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4453,
+      "categoryCode": "4453",
+      "name": "期刊/资料/档案",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4454,
+      "categoryCode": "4454",
+      "name": "图书/档案设备",
+      "level": 2,
+      "parentId": 4402,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4410,
+      "categoryCode": "4410",
+      "name": "文化玩乐",
+      "level": 1,
+      "parentId": null,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4604,
+      "categoryCode": "4604",
+      "name": "书籍/杂志/报纸",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4605,
+      "categoryCode": "4605",
+      "name": "钢琴及配件",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4607,
+      "categoryCode": "4607",
+      "name": "吉他及配件",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4608,
+      "categoryCode": "4608",
+      "name": "提琴及配件",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4609,
+      "categoryCode": "4609",
+      "name": "西洋乐器",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4610,
+      "categoryCode": "4610",
+      "name": "民族乐器",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4611,
+      "categoryCode": "4611",
+      "name": "乐器配件",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4612,
+      "categoryCode": "4612",
+      "name": "锣",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4613,
+      "categoryCode": "4613",
+      "name": "鼓",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4614,
+      "categoryCode": "4614",
+      "name": "儿童玩具乐器",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4615,
+      "categoryCode": "4615",
+      "name": "乐器音箱",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4616,
+      "categoryCode": "4616",
+      "name": "模玩/动漫/周边/cos/桌游",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4617,
+      "categoryCode": "4617",
+      "name": "MIDI乐器/电脑音乐",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    },
+    {
+      "id": 4618,
+      "categoryCode": "4618",
+      "name": "古董/邮币/字画/收藏",
+      "level": 2,
+      "parentId": 4410,
+      "hasChildren": true,
+      "authed": true,
+      "hasSpu": false
+    }
+  ]
+}

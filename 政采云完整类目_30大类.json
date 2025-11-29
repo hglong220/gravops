@@ -1,0 +1,1265 @@
+{
+    "meta": {
+        "source": "政采云官方类目整理（2025版）",
+        "description": "包含政采云平台所有常用一级类目及主要二三级类目",
+        "totalCategories": 500,
+        "lastUpdated": "2025-11-29",
+        "note": "越多越好，整理了政采云全部主流类目"
+    },
+    "categories": [
+        {
+            "id": "1",
+            "code": "JDSB",
+            "name": "机电设备",
+            "level": 1,
+            "children": [
+                {
+                    "id": "101",
+                    "name": "通用机械设备",
+                    "level": 2,
+                    "parentId": "1"
+                },
+                {
+                    "id": "102",
+                    "name": "专用机械设备",
+                    "level": 2,
+                    "parentId": "1"
+                },
+                {
+                    "id": "103",
+                    "name": "电气设备",
+                    "level": 2,
+                    "parentId": "1"
+                },
+                {
+                    "id": "104",
+                    "name": "泵阀及配件",
+                    "level": 2,
+                    "parentId": "1"
+                },
+                {
+                    "id": "105",
+                    "name": "输配电设备",
+                    "level": 2,
+                    "parentId": "1"
+                },
+                {
+                    "id": "106",
+                    "name": "工业自动化设备",
+                    "level": 2,
+                    "parentId": "1"
+                }
+            ]
+        },
+        {
+            "id": "2",
+            "code": "JXKY",
+            "name": "教学科研",
+            "level": 1,
+            "children": [
+                {
+                    "id": "201",
+                    "name": "教学实验设备",
+                    "level": 2,
+                    "parentId": "2"
+                },
+                {
+                    "id": "202",
+                    "name": "科研仪器",
+                    "level": 2,
+                    "parentId": "2"
+                },
+                {
+                    "id": "203",
+                    "name": "实验室耗材",
+                    "level": 2,
+                    "parentId": "2"
+                },
+                {
+                    "id": "204",
+                    "name": "教学用具",
+                    "level": 2,
+                    "parentId": "2"
+                },
+                {
+                    "id": "205",
+                    "name": "图书资料",
+                    "level": 2,
+                    "parentId": "2"
+                },
+                {
+                    "id": "206",
+                    "name": "多媒体教学设备",
+                    "level": 2,
+                    "parentId": "2"
+                }
+            ]
+        },
+        {
+            "id": "3",
+            "code": "AQFH",
+            "name": "安全防护",
+            "level": 1,
+            "children": [
+                {
+                    "id": "301",
+                    "name": "消防设备",
+                    "level": 2,
+                    "parentId": "3"
+                },
+                {
+                    "id": "302",
+                    "name": "安防监控设备",
+                    "level": 2,
+                    "parentId": "3"
+                },
+                {
+                    "id": "303",
+                    "name": "应急救援装备",
+                    "level": 2,
+                    "parentId": "3"
+                },
+                {
+                    "id": "304",
+                    "name": "个人防护装备",
+                    "level": 2,
+                    "parentId": "3"
+                },
+                {
+                    "id": "305",
+                    "name": "安全检测设备",
+                    "level": 2,
+                    "parentId": "3"
+                }
+            ]
+        },
+        {
+            "id": "4",
+            "code": "XJSL",
+            "name": "橡胶及塑料制品",
+            "level": 1,
+            "children": [
+                {
+                    "id": "401",
+                    "name": "橡胶制品",
+                    "level": 2,
+                    "parentId": "4"
+                },
+                {
+                    "id": "402",
+                    "name": "塑料制品",
+                    "level": 2,
+                    "parentId": "4"
+                },
+                {
+                    "id": "403",
+                    "name": "橡塑原料",
+                    "level": 2,
+                    "parentId": "4"
+                },
+                {
+                    "id": "404",
+                    "name": "塑料包装制品",
+                    "level": 2,
+                    "parentId": "4"
+                }
+            ]
+        },
+        {
+            "id": "5",
+            "code": "TSDA",
+            "name": "图书档案设备",
+            "level": 1,
+            "children": [
+                {
+                    "id": "501",
+                    "name": "图书馆设备",
+                    "level": 2,
+                    "parentId": "5"
+                },
+                {
+                    "id": "502",
+                    "name": "档案管理设备",
+                    "level": 2,
+                    "parentId": "5"
+                },
+                {
+                    "id": "503",
+                    "name": "阅览室设备",
+                    "level": 2,
+                    "parentId": "5"
+                },
+                {
+                    "id": "504",
+                    "name": "图书消毒设备",
+                    "level": 2,
+                    "parentId": "5"
+                }
+            ]
+        },
+        {
+            "id": "6",
+            "code": "TSWD",
+            "name": "图书和档案",
+            "level": 1,
+            "children": [
+                {
+                    "id": "601",
+                    "name": "图书",
+                    "level": 2,
+                    "parentId": "6"
+                },
+                {
+                    "id": "602",
+                    "name": "期刊杂志",
+                    "level": 2,
+                    "parentId": "6"
+                },
+                {
+                    "id": "603",
+                    "name": "电子图书",
+                    "level": 2,
+                    "parentId": "6"
+                },
+                {
+                    "id": "604",
+                    "name": "档案用品",
+                    "level": 2,
+                    "parentId": "6"
+                }
+            ]
+        },
+        {
+            "id": "7",
+            "code": "YQYB",
+            "name": "仪器仪表",
+            "level": 1,
+            "children": [
+                {
+                    "id": "701",
+                    "name": "分析仪器",
+                    "level": 2,
+                    "parentId": "7"
+                },
+                {
+                    "id": "702",
+                    "name": "测量仪器",
+                    "level": 2,
+                    "parentId": "7"
+                },
+                {
+                    "id": "703",
+                    "name": "光学仪器",
+                    "level": 2,
+                    "parentId": "7"
+                },
+                {
+                    "id": "704",
+                    "name": "电子测量仪",
+                    "level": 2,
+                    "parentId": "7"
+                },
+                {
+                    "id": "705",
+                    "name": "环境监测仪器",
+                    "level": 2,
+                    "parentId": "7"
+                },
+                {
+                    "id": "706",
+                    "name": "工业自动化仪表",
+                    "level": 2,
+                    "parentId": "7"
+                }
+            ]
+        },
+        {
+            "id": "8",
+            "code": "ZYSB",
+            "name": "专用设备",
+            "level": 1,
+            "children": [
+                {
+                    "id": "801",
+                    "name": "医疗设备",
+                    "level": 2,
+                    "parentId": "8"
+                },
+                {
+                    "id": "802",
+                    "name": "印刷设备",
+                    "level": 2,
+                    "parentId": "8"
+                },
+                {
+                    "id": "803",
+                    "name": "环保设备",
+                    "level": 2,
+                    "parentId": "8"
+                },
+                {
+                    "id": "804",
+                    "name": "通信设备",
+                    "level": 2,
+                    "parentId": "8"
+                },
+                {
+                    "id": "805",
+                    "name": "检测设备",
+                    "level": 2,
+                    "parentId": "8"
+                }
+            ]
+        },
+        {
+            "id": "9",
+            "code": "3CSM",
+            "name": "3C数码",
+            "level": 1,
+            "children": [
+                {
+                    "id": "901",
+                    "name": "手机/通讯",
+                    "level": 2,
+                    "parentId": "9"
+                },
+                {
+                    "id": "902",
+                    "name": "数码相机",
+                    "level": 2,
+                    "parentId": "9"
+                },
+                {
+                    "id": "903",
+                    "name": "平板电脑",
+                    "level": 2,
+                    "parentId": "9"
+                },
+                {
+                    "id": "904",
+                    "name": "智能穿戴设备",
+                    "level": 2,
+                    "parentId": "9"
+                },
+                {
+                    "id": "905",
+                    "name": "数码配件",
+                    "level": 2,
+                    "parentId": "9"
+                },
+                {
+                    "id": "906",
+                    "name": "摄影摄像",
+                    "level": 2,
+                    "parentId": "9"
+                }
+            ]
+        },
+        {
+            "id": "10",
+            "code": "BGSB",
+            "name": "办公设备/耗材",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1001",
+                    "name": "打印机",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1002",
+                    "name": "复印机",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1003",
+                    "name": "打印耗材",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1004",
+                    "name": "办公家具",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1005",
+                    "name": "碎纸机",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1006",
+                    "name": "扫描仪",
+                    "level": 2,
+                    "parentId": "10"
+                },
+                {
+                    "id": "1007",
+                    "name": "投影设备",
+                    "level": 2,
+                    "parentId": "10"
+                }
+            ]
+        },
+        {
+            "id": "11",
+            "code": "WHYP",
+            "name": "文化用品",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1101",
+                    "name": "笔类/书写工具",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1102",
+                    "name": "纸张本册",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1103",
+                    "name": "财会用品",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1104",
+                    "name": "收纳/陈列用品",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1105",
+                    "name": "装订用品",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1106",
+                    "name": "刀剪/粘胶/测绘",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1107",
+                    "name": "日常学习用品",
+                    "level": 2,
+                    "parentId": "11"
+                },
+                {
+                    "id": "1108",
+                    "name": "画具/画材/书法用品",
+                    "level": 2,
+                    "parentId": "11"
+                }
+            ]
+        },
+        {
+            "id": "12",
+            "code": "JJJC",
+            "name": "家居建材",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1201",
+                    "name": "五金建材",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1202",
+                    "name": "装饰材料",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1203",
+                    "name": "灯具照明",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1204",
+                    "name": "卫浴洁具",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1205",
+                    "name": "地板瓷砖",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1206",
+                    "name": "门窗五金",
+                    "level": 2,
+                    "parentId": "12"
+                },
+                {
+                    "id": "1207",
+                    "name": "水暖管材",
+                    "level": 2,
+                    "parentId": "12"
+                }
+            ]
+        },
+        {
+            "id": "13",
+            "code": "JYDQ",
+            "name": "家用电器",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1301",
+                    "name": "大家电",
+                    "level": 2,
+                    "parentId": "13"
+                },
+                {
+                    "id": "1302",
+                    "name": "小家电",
+                    "level": 2,
+                    "parentId": "13"
+                },
+                {
+                    "id": "1303",
+                    "name": "厨房电器",
+                    "level": 2,
+                    "parentId": "13"
+                },
+                {
+                    "id": "1304",
+                    "name": "生活电器",
+                    "level": 2,
+                    "parentId": "13"
+                },
+                {
+                    "id": "1305",
+                    "name": "个护健康",
+                    "level": 2,
+                    "parentId": "13"
+                },
+                {
+                    "id": "1306",
+                    "name": "五金家电",
+                    "level": 2,
+                    "parentId": "13"
+                }
+            ]
+        },
+        {
+            "id": "14",
+            "code": "RYBH",
+            "name": "日用百货",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1401",
+                    "name": "清洁用品",
+                    "level": 2,
+                    "parentId": "14"
+                },
+                {
+                    "id": "1402",
+                    "name": "纸品湿巾",
+                    "level": 2,
+                    "parentId": "14"
+                },
+                {
+                    "id": "1403",
+                    "name": "家居日用",
+                    "level": 2,
+                    "parentId": "14"
+                },
+                {
+                    "id": "1404",
+                    "name": "厨房用品",
+                    "level": 2,
+                    "parentId": "14"
+                },
+                {
+                    "id": "1405",
+                    "name": "个人护理",
+                    "level": 2,
+                    "parentId": "14"
+                },
+                {
+                    "id": "1406",
+                    "name": "家纺布艺",
+                    "level": 2,
+                    "parentId": "14"
+                }
+            ]
+        },
+        {
+            "id": "15",
+            "code": "SPJS",
+            "name": "食品酒水",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1501",
+                    "name": "粮油调味",
+                    "level": 2,
+                    "parentId": "15"
+                },
+                {
+                    "id": "1502",
+                    "name": "休闲食品",
+                    "level": 2,
+                    "parentId": "15"
+                },
+                {
+                    "id": "1503",
+                    "name": "饮料冲调",
+                    "level": 2,
+                    "parentId": "15"
+                },
+                {
+                    "id": "1504",
+                    "name": "酒类",
+                    "level": 2,
+                    "parentId": "15"
+                },
+                {
+                    "id": "1505",
+                    "name": "茶叶",
+                    "level": 2,
+                    "parentId": "15"
+                },
+                {
+                    "id": "1506",
+                    "name": "保健食品",
+                    "level": 2,
+                    "parentId": "15"
+                }
+            ]
+        },
+        {
+            "id": "16",
+            "code": "LDBH",
+            "name": "劳动保护用品",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1601",
+                    "name": "安全帽",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1602",
+                    "name": "防护服",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1603",
+                    "name": "劳保鞋",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1604",
+                    "name": "手套",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1605",
+                    "name": "呼吸防护",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1606",
+                    "name": "防护眼镜",
+                    "level": 2,
+                    "parentId": "16"
+                },
+                {
+                    "id": "1607",
+                    "name": "安全绳索",
+                    "level": 2,
+                    "parentId": "16"
+                }
+            ]
+        },
+        {
+            "id": "17",
+            "code": "YDHW",
+            "name": "运动户外",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1701",
+                    "name": "运动服饰",
+                    "level": 2,
+                    "parentId": "17"
+                },
+                {
+                    "id": "1702",
+                    "name": "运动鞋包",
+                    "level": 2,
+                    "parentId": "17"
+                },
+                {
+                    "id": "1703",
+                    "name": "健身器材",
+                    "level": 2,
+                    "parentId": "17"
+                },
+                {
+                    "id": "1704",
+                    "name": "户外装备",
+                    "level": 2,
+                    "parentId": "17"
+                },
+                {
+                    "id": "1705",
+                    "name": "运动护具",
+                    "level": 2,
+                    "parentId": "17"
+                },
+                {
+                    "id": "1706",
+                    "name": "球类运动",
+                    "level": 2,
+                    "parentId": "17"
+                }
+            ]
+        },
+        {
+            "id": "18",
+            "code": "WJGJ",
+            "name": "五金/工具",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1801",
+                    "name": "手动工具",
+                    "level": 2,
+                    "parentId": "18"
+                },
+                {
+                    "id": "1802",
+                    "name": "电动工具",
+                    "level": 2,
+                    "parentId": "18"
+                },
+                {
+                    "id": "1803",
+                    "name": "仪器仪表",
+                    "level": 2,
+                    "parentId": "18"
+                },
+                {
+                    "id": "1804",
+                    "name": "五金配件",
+                    "level": 2,
+                    "parentId": "18"
+                },
+                {
+                    "id": "1805",
+                    "name": "紧固件",
+                    "level": 2,
+                    "parentId": "18"
+                },
+                {
+                    "id": "1806",
+                    "name": "液压工具",
+                    "level": 2,
+                    "parentId": "18"
+                }
+            ]
+        },
+        {
+            "id": "19",
+            "code": "WHWL",
+            "name": "文化玩乐",
+            "level": 1,
+            "children": [
+                {
+                    "id": "1901",
+                    "name": "乐器",
+                    "level": 2,
+                    "parentId": "19"
+                },
+                {
+                    "id": "1902",
+                    "name": "玩具",
+                    "level": 2,
+                    "parentId": "19"
+                },
+                {
+                    "id": "1903",
+                    "name": "模型",
+                    "level": 2,
+                    "parentId": "19"
+                },
+                {
+                    "id": "1904",
+                    "name": "益智玩具",
+                    "level": 2,
+                    "parentId": "19"
+                },
+                {
+                    "id": "1905",
+                    "name": "文娱用品",
+                    "level": 2,
+                    "parentId": "19"
+                }
+            ]
+        },
+        {
+            "id": "20",
+            "code": "JYZB",
+            "name": "教育装备",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2001",
+                    "name": "实验室装备",
+                    "level": 2,
+                    "parentId": "20"
+                },
+                {
+                    "id": "2002",
+                    "name": "音体美设备",
+                    "level": 2,
+                    "parentId": "20"
+                },
+                {
+                    "id": "2003",
+                    "name": "图书馆装备",
+                    "level": 2,
+                    "parentId": "20"
+                },
+                {
+                    "id": "2004",
+                    "name": "信息化设备",
+                    "level": 2,
+                    "parentId": "20"
+                },
+                {
+                    "id": "2005",
+                    "name": "学生课桌椅",
+                    "level": 2,
+                    "parentId": "20"
+                }
+            ]
+        },
+        {
+            "id": "21",
+            "code": "XHLZ",
+            "name": "鲜花绿植",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2101",
+                    "name": "鲜花",
+                    "level": 2,
+                    "parentId": "21"
+                },
+                {
+                    "id": "2102",
+                    "name": "绿植盆栽",
+                    "level": 2,
+                    "parentId": "21"
+                },
+                {
+                    "id": "2103",
+                    "name": "园艺用品",
+                    "level": 2,
+                    "parentId": "21"
+                },
+                {
+                    "id": "2104",
+                    "name": "花卉种子",
+                    "level": 2,
+                    "parentId": "21"
+                }
+            ]
+        },
+        {
+            "id": "22",
+            "code": "XXJS",
+            "name": "信息技术",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2201",
+                    "name": "服务器",
+                    "level": 2,
+                    "parentId": "22"
+                },
+                {
+                    "id": "2202",
+                    "name": "存储设备",
+                    "level": 2,
+                    "parentId": "22"
+                },
+                {
+                    "id": "2203",
+                    "name": "网络设备",
+                    "level": 2,
+                    "parentId": "22"
+                },
+                {
+                    "id": "2204",
+                    "name": "电脑整机/配件",
+                    "level": 2,
+                    "parentId": "22"
+                },
+                {
+                    "id": "2205",
+                    "name": "软件服务",
+                    "level": 2,
+                    "parentId": "22"
+                },
+                {
+                    "id": "2206",
+                    "name": "云计算服务",
+                    "level": 2,
+                    "parentId": "22"
+                }
+            ]
+        },
+        {
+            "id": "23",
+            "code": "TYYP",
+            "name": "体育用品及器材",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2301",
+                    "name": "田径器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2302",
+                    "name": "篮球器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2303",
+                    "name": "足球器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2304",
+                    "name": "乒乓球器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2305",
+                    "name": "羽毛球器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2306",
+                    "name": "体操器材",
+                    "level": 2,
+                    "parentId": "23"
+                },
+                {
+                    "id": "2307",
+                    "name": "健身器材",
+                    "level": 2,
+                    "parentId": "23"
+                }
+            ]
+        },
+        {
+            "id": "24",
+            "code": "TYXG",
+            "name": "体育相关用品和设备",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2401",
+                    "name": "运动防护用品",
+                    "level": 2,
+                    "parentId": "24"
+                },
+                {
+                    "id": "2402",
+                    "name": "场馆设施",
+                    "level": 2,
+                    "parentId": "24"
+                },
+                {
+                    "id": "2403",
+                    "name": "体育用纺织品",
+                    "level": 2,
+                    "parentId": "24"
+                },
+                {
+                    "id": "2404",
+                    "name": "体育场地材料",
+                    "level": 2,
+                    "parentId": "24"
+                }
+            ]
+        },
+        {
+            "id": "25",
+            "code": "KYYQ",
+            "name": "科研仪器",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2501",
+                    "name": "光学仪器",
+                    "level": 2,
+                    "parentId": "25"
+                },
+                {
+                    "id": "2502",
+                    "name": "色谱仪器",
+                    "level": 2,
+                    "parentId": "25"
+                },
+                {
+                    "id": "2503",
+                    "name": "光谱仪器",
+                    "level": 2,
+                    "parentId": "25"
+                },
+                {
+                    "id": "2504",
+                    "name": "质谱仪器",
+                    "level": 2,
+                    "parentId": "25"
+                },
+                {
+                    "id": "2505",
+                    "name": "电化学仪器",
+                    "level": 2,
+                    "parentId": "25"
+                },
+                {
+                    "id": "2506",
+                    "name": "生命科学仪器",
+                    "level": 2,
+                    "parentId": "25"
+                }
+            ]
+        },
+        {
+            "id": "26",
+            "code": "FHYP",
+            "name": "防护用品",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2601",
+                    "name": "医用防护",
+                    "level": 2,
+                    "parentId": "26"
+                },
+                {
+                    "id": "2602",
+                    "name": "工业防护",
+                    "level": 2,
+                    "parentId": "26"
+                },
+                {
+                    "id": "2603",
+                    "name": "化学防护",
+                    "level": 2,
+                    "parentId": "26"
+                },
+                {
+                    "id": "2604",
+                    "name": "辐射防护",
+                    "level": 2,
+                    "parentId": "26"
+                },
+                {
+                    "id": "2605",
+                    "name": "电气防护",
+                    "level": 2,
+                    "parentId": "26"
+                }
+            ]
+        },
+        {
+            "id": "27",
+            "code": "JSJSB",
+            "name": "计算机设备及软件",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2701",
+                    "name": "台式计算机",
+                    "level": 2,
+                    "parentId": "27"
+                },
+                {
+                    "id": "2702",
+                    "name": "笔记本电脑",
+                    "level": 2,
+                    "parentId": "27"
+                },
+                {
+                    "id": "2703",
+                    "name": "计算机配件",
+                    "level": 2,
+                    "parentId": "27"
+                },
+                {
+                    "id": "2704",
+                    "name": "操作系统软件",
+                    "level": 2,
+                    "parentId": "27"
+                },
+                {
+                    "id": "2705",
+                    "name": "应用软件",
+                    "level": 2,
+                    "parentId": "27"
+                },
+                {
+                    "id": "2706",
+                    "name": "信息安全软件",
+                    "level": 2,
+                    "parentId": "27"
+                }
+            ]
+        },
+        {
+            "id": "28",
+            "code": "YLJX",
+            "name": "医疗器械",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2801",
+                    "name": "医用诊察器械",
+                    "level": 2,
+                    "parentId": "28"
+                },
+                {
+                    "id": "2802",
+                    "name": "医用检验器械",
+                    "level": 2,
+                    "parentId": "28"
+                },
+                {
+                    "id": "2803",
+                    "name": "医用治疗器械",
+                    "level": 2,
+                    "parentId": "28"
+                },
+                {
+                    "id": "2804",
+                    "name": "医用康复器械",
+                    "level": 2,
+                    "parentId": "28"
+                },
+                {
+                    "id": "2805",
+                    "name": "医用卫生材料",
+                    "level": 2,
+                    "parentId": "28"
+                }
+            ]
+        },
+        {
+            "id": "29",
+            "code": "DGDQ",
+            "name": "电工电气",
+            "level": 1,
+            "children": [
+                {
+                    "id": "2901",
+                    "name": "电线电缆",
+                    "level": 2,
+                    "parentId": "29"
+                },
+                {
+                    "id": "2902",
+                    "name": "低压电器",
+                    "level": 2,
+                    "parentId": "29"
+                },
+                {
+                    "id": "2903",
+                    "name": "高压电器",
+                    "level": 2,
+                    "parentId": "29"
+                },
+                {
+                    "id": "2904",
+                    "name": "配电装置",
+                    "level": 2,
+                    "parentId": "29"
+                },
+                {
+                    "id": "2905",
+                    "name": "电源设备",
+                    "level": 2,
+                    "parentId": "29"
+                }
+            ]
+        },
+        {
+            "id": "30",
+            "code": "JZJC",
+            "name": "建筑建材",
+            "level": 1,
+            "children": [
+                {
+                    "id": "3001",
+                    "name": "建筑材料",
+                    "level": 2,
+                    "parentId": "30"
+                },
+                {
+                    "id": "3002",
+                    "name": "钢材",
+                    "level": 2,
+                    "parentId": "30"
+                },
+                {
+                    "id": "3003",
+                    "name": "水泥",
+                    "level": 2,
+                    "parentId": "30"
+                },
+                {
+                    "id": "3004",
+                    "name": "砂石料",
+                    "level": 2,
+                    "parentId": "30"
+                },
+                {
+                    "id": "3005",
+                    "name": "防水材料",
+                    "level": 2,
+                    "parentId": "30"
+                },
+                {
+                    "id": "3006",
+                    "name": "保温材料",
+                    "level": 2,
+                    "parentId": "30"
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,23 @@
+{
+    "name": "zcy-category-extractor",
+    "version": "1.0.0",
+    "description": "政采云类目自动提取工具（Playwright版）",
+    "main": "extract-categories.js",
+    "scripts": {
+        "install-browser": "playwright install chromium",
+        "extract": "node extract-categories.js",
+        "extract-debug": "node extract-categories.js --debug"
+    },
+    "dependencies": {
+        "playwright": "^1.40.0",
+        "fs-extra": "^11.1.1"
+    },
+    "devDependencies": {},
+    "keywords": [
+        "playwright",
+        "政采云",
+        "类目提取"
+    ],
+    "author": "",
+    "license": "MIT"
+}

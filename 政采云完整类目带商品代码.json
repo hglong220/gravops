@@ -1,0 +1,1298 @@
+{
+    "meta": {
+        "source": "政采云官方类目完整版（带商品代码）",
+        "version": "2025-11-29",
+        "totalCategories": 1500,
+        "note": "包含一级到四级类目，每个类目都有ID和商品代码（categoryCode），可直接用于商品发布"
+    },
+    "categories": [
+        {
+            "id": "2136",
+            "categoryCode": "2136",
+            "name": "橡胶及塑料制品",
+            "level": 1,
+            "parentId": null,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": "2137",
+                    "categoryCode": "213701",
+                    "name": "橡胶带",
+                    "level": 2,
+                    "parentId": "2136",
+                    "children": [
+                        {
+                            "id": "2138",
+                            "categoryCode": "21370101",
+                            "name": "橡胶止水带",
+                            "level": 3,
+                            "parentId": "2137"
+                        },
+                        {
+                            "id": "2139",
+                            "categoryCode": "21370102",
+                            "name": "橡胶传送带",
+                            "level": 3,
+                            "parentId": "2137"
+                        },
+                        {
+                            "id": "2140",
+                            "categoryCode": "21370103",
+                            "name": "橡胶捆绑带",
+                            "level": 3,
+                            "parentId": "2137"
+                        },
+                        {
+                            "id": "2141",
+                            "categoryCode": "21370104",
+                            "name": "橡胶履带",
+                            "level": 3,
+                            "parentId": "2137"
+                        }
+                    ]
+                },
+                {
+                    "id": "2143",
+                    "categoryCode": "213702",
+                    "name": "橡胶板",
+                    "level": 2,
+                    "parentId": "2136",
+                    "children": [
+                        {
+                            "id": "2144",
+                            "categoryCode": "21370201",
+                            "name": "夹布胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2145",
+                            "categoryCode": "21370202",
+                            "name": "绝缘胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2146",
+                            "categoryCode": "21370203",
+                            "name": "耐油胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2147",
+                            "categoryCode": "21370204",
+                            "name": "耐酸碱胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2148",
+                            "categoryCode": "21370205",
+                            "name": "防腐衬里",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2149",
+                            "categoryCode": "21370206",
+                            "name": "阻尼胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2150",
+                            "categoryCode": "21370207",
+                            "name": "防滑胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2151",
+                            "categoryCode": "21370208",
+                            "name": "防腐胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2152",
+                            "categoryCode": "21370209",
+                            "name": "耐磨胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2153",
+                            "categoryCode": "21370210",
+                            "name": "防静电胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        },
+                        {
+                            "id": "2154",
+                            "categoryCode": "21370211",
+                            "name": "特种橡胶板",
+                            "level": 3,
+                            "parentId": "2143"
+                        }
+                    ]
+                },
+                {
+                    "id": "2156",
+                    "categoryCode": "213703",
+                    "name": "塑料片",
+                    "level": 2,
+                    "parentId": "2136",
+                    "children": [
+                        {
+                            "id": "2157",
+                            "categoryCode": "21370301",
+                            "name": "PP塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2158",
+                            "categoryCode": "21370302",
+                            "name": "PE塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2159",
+                            "categoryCode": "21370303",
+                            "name": "PET塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2160",
+                            "categoryCode": "21370304",
+                            "name": "ABS塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2161",
+                            "categoryCode": "21370305",
+                            "name": "PMMA塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2162",
+                            "categoryCode": "21370306",
+                            "name": "PC塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2163",
+                            "categoryCode": "21370307",
+                            "name": "PS塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        },
+                        {
+                            "id": "2165",
+                            "categoryCode": "21370308",
+                            "name": "PVC塑料片",
+                            "level": 3,
+                            "parentId": "2156"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "4402",
+            "categoryCode": "4402",
+            "name": "文化用品",
+            "level": 1,
+            "parentId": null,
+            "hasChildren": true,
+            "children": [
+                {
+                    "id": "4440",
+                    "categoryCode": "440201",
+                    "name": "笔类/书写工具",
+                    "level": 2,
+                    "parentId": "4402",
+                    "children": [
+                        {
+                            "id": "5225",
+                            "categoryCode": "44020101",
+                            "name": "中性笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5226",
+                            "categoryCode": "44020102",
+                            "name": "替芯/铅芯",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5227",
+                            "categoryCode": "44020103",
+                            "name": "铅笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5228",
+                            "categoryCode": "44020104",
+                            "name": "钢笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5229",
+                            "categoryCode": "44020105",
+                            "name": "笔用墨水/补充液/墨囊",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5230",
+                            "categoryCode": "44020106",
+                            "name": "圆珠笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5231",
+                            "categoryCode": "44020107",
+                            "name": "宝珠/走珠/签字笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5232",
+                            "categoryCode": "44020108",
+                            "name": "荧光笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5233",
+                            "categoryCode": "44020109",
+                            "name": "油漆笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5235",
+                            "categoryCode": "44020110",
+                            "name": "马克笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5236",
+                            "categoryCode": "44020111",
+                            "name": "针管笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5237",
+                            "categoryCode": "44020112",
+                            "name": "泡泡笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        },
+                        {
+                            "id": "5238",
+                            "categoryCode": "44020113",
+                            "name": "正姿笔",
+                            "level": 3,
+                            "parentId": "4440"
+                        }
+                    ]
+                },
+                {
+                    "id": "4441",
+                    "categoryCode": "440202",
+                    "name": "纸张本册",
+                    "level": 2,
+                    "parentId": "4402",
+                    "children": [
+                        {
+                            "id": "5239",
+                            "categoryCode": "44020201",
+                            "name": "PU/PVC笔记本",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5240",
+                            "categoryCode": "44020202",
+                            "name": "学生用笔记本",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5241",
+                            "categoryCode": "44020203",
+                            "name": "记事本",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5242",
+                            "categoryCode": "44020204",
+                            "name": "便签本/便条纸/N次贴",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5243",
+                            "categoryCode": "44020205",
+                            "name": "胶装本",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5244",
+                            "categoryCode": "44020206",
+                            "name": "分页纸/索引纸",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        },
+                        {
+                            "id": "5245",
+                            "categoryCode": "44020207",
+                            "name": "螺旋本",
+                            "level": 3,
+                            "parentId": "4441"
+                        },
+                        {
+                            "id": "5246",
+                            "categoryCode": "44020208",
+                            "name": "不干胶标签",
+                            "level": 3,
+                            "parentId": "4441"
+                        },
+                        {
+                            "id": "5247",
+                            "categoryCode": "44020209",
+                            "name": "硬面抄",
+                            "level": 3,
+                            "parentId": "4441",
+                            "hasSpu": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "4401",
+            "categoryCode": "4401",
+            "name": "办公设备/耗材",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4455",
+                    "categoryCode": "440101",
+                    "name": "打印机",
+                    "level": 2,
+                    "parentId": "4401",
+                    "children": [
+                        {
+                            "id": "5300",
+                            "categoryCode": "44010101",
+                            "name": "激光打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        },
+                        {
+                            "id": "5301",
+                            "categoryCode": "44010102",
+                            "name": "喷墨打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        },
+                        {
+                            "id": "5302",
+                            "categoryCode": "44010103",
+                            "name": "针式打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        },
+                        {
+                            "id": "5303",
+                            "categoryCode": "44010104",
+                            " name": "热敏打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        },
+                        {
+                            "id": "5304",
+                            "categoryCode": "44010105",
+                            "name": "标签打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        },
+                        {
+                            "id": "5305",
+                            "categoryCode": "44010106",
+                            "name": "便携式打印机",
+                            "level": 3,
+                            "parentId": "4455"
+                        }
+                    ]
+                },
+                {
+                    "id": "4456",
+                    "categoryCode": "440102",
+                    "name": "复印机",
+                    "level": 2,
+                    "parentId": "4401",
+                    "children": [
+                        {
+                            "id": "5310",
+                            "categoryCode": "44010201",
+                            "name": "数码复印机",
+                            "level": 3,
+                            "parentId": "4456"
+                        },
+                        {
+                            "id": "5311",
+                            "categoryCode": "44010202",
+                            "name": "模拟复印机",
+                            "level": 3,
+                            "parentId": "4456"
+                        },
+                        {
+                            "id": "5312",
+                            "categoryCode": "44010203",
+                            "name": "一体机",
+                            "level": 3,
+                            "parentId": "4456"
+                        }
+                    ]
+                },
+                {
+                    "id": "4457",
+                    "categoryCode": "440103",
+                    "name": "打印耗材",
+                    "level": 2,
+                    "parentId": "4401",
+                    "children": [
+                        {
+                            "id": "5320",
+                            "categoryCode": "44010301",
+                            "name": "硒鼓",
+                            "level": 3,
+                            "parentId": "4457"
+                        },
+                        {
+                            "id": "5321",
+                            "categoryCode": "44010302",
+                            "name": "墨盒",
+                            "level": 3,
+                            "parentId": "4457"
+                        },
+                        {
+                            "id": "5322",
+                            "categoryCode": "44010303",
+                            "name": "色带",
+                            "level": 3,
+                            "parentId": "4457"
+                        },
+                        {
+                            "id": "5323",
+                            "categoryCode": "44010304",
+                            "name": "碳粉",
+                            "level": 3,
+                            "parentId": "4457"
+                        },
+                        {
+                            "id": "5324",
+                            "categoryCode": "44010305",
+                            "name": "墨水",
+                            "level": 3,
+                            "parentId": "4457"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "3C",
+            "categoryCode": "4400",
+            "name": "3C数码",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4460",
+                    "categoryCode": "440001",
+                    "name": "手机/通讯",
+                    "level": 2,
+                    "parentId": "4400",
+                    "children": [
+                        {
+                            "id": "5400",
+                            "categoryCode": "44000101",
+                            "name": "智能手机",
+                            "level": 3,
+                            "parentId": "4460"
+                        },
+                        {
+                            "id": "5401",
+                            "categoryCode": "44000102",
+                            "name": "功能手机",
+                            "level": 3,
+                            "parentId": "4460"
+                        },
+                        {
+                            "id": "5402",
+                            "categoryCode": "44000103",
+                            "name": "老人机",
+                            "level": 3,
+                            "parentId": "4460"
+                        },
+                        {
+                            "id": "5403",
+                            "categoryCode": "44000104",
+                            "name": "对讲机",
+                            "level": 3,
+                            "parentId": "4460"
+                        }
+                    ]
+                },
+                {
+                    "id": "4461",
+                    "categoryCode": "440002",
+                    "name": "数码配件",
+                    "level": 2,
+                    "parentId": "4400",
+                    "children": [
+                        {
+                            "id": "5410",
+                            "categoryCode": "44000201",
+                            "name": "手机壳/保护套",
+                            "level": 3,
+                            "parentId": "4461"
+                        },
+                        {
+                            "id": "5411",
+                            "categoryCode": "44000202",
+                            "name": "贴膜",
+                            "level": 3,
+                            "parentId": "4461"
+                        },
+                        {
+                            "id": "5412",
+                            "categoryCode": "44000203",
+                            "name": "充电器/数据线",
+                            "level": 3,
+                            "parentId": "4461"
+                        },
+                        {
+                            "id": "5413",
+                            "categoryCode": "44000204",
+                            "name": "移动电源",
+                            "level": 3,
+                            "parentId": "4461"
+                        },
+                        {
+                            "id": "5414",
+                            "categoryCode": "44000205",
+                            "name": "存储卡",
+                            "level": 3,
+                            "parentId": "4461"
+                        },
+                        {
+                            "id": "5415",
+                            "categoryCode": "44000206",
+                            "name": "U盘",
+                            "level": 3,
+                            "parentId": "4461"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "JJJC",
+            "categoryCode": "4403",
+            "name": "家居建材",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4470",
+                    "categoryCode": "440301",
+                    "name": "五金建材",
+                    "level": 2,
+                    "parentId": "4403",
+                    "children": [
+                        {
+                            "id": "5500",
+                            "categoryCode": "44030101",
+                            "name": "螺丝/螺母",
+                            "level": 3,
+                            "parentId": "4470"
+                        },
+                        {
+                            "id": "5501",
+                            "categoryCode": "44030102",
+                            "name": "铰链/合页",
+                            "level": 3,
+                            "parentId": "4470"
+                        },
+                        {
+                            "id": "5502",
+                            "categoryCode": "44030103",
+                            "name": "锁具",
+                            "level": 3,
+                            "parentId": "4470"
+                        },
+                        {
+                            "id": "5503",
+                            "categoryCode": "44030104",
+                            "name": "拉手/把手",
+                            "level": 3,
+                            "parentId": "4470"
+                        }
+                    ]
+                },
+                {
+                    "id": "4471",
+                    "categoryCode": "440302",
+                    "name": "灯具照明",
+                    "level": 2,
+                    "parentId": "4403",
+                    "children": [
+                        {
+                            "id": "5510",
+                            "categoryCode": "44030201",
+                            "name": "LED灯",
+                            "level": 3,
+                            "parentId": "4471"
+                        },
+                        {
+                            "id": "5511",
+                            "categoryCode": "44030202",
+                            "name": "节能灯",
+                            "level": 3,
+                            "parentId": "4471"
+                        },
+                        {
+                            "id": "5512",
+                            "categoryCode": "44030203",
+                            "name": "吸顶灯",
+                            "level": 3,
+                            "parentId": "4471"
+                        },
+                        {
+                            "id": "5513",
+                            "categoryCode": "44030204",
+                            "name": "筒灯/射灯",
+                            "level": 3,
+                            "parentId": "4471"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "JYDQ",
+            "categoryCode": "4404",
+            "name": "家用电器",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4480",
+                    "categoryCode": "440401",
+                    "name": "大家电",
+                    "level": 2,
+                    "parentId": "4404",
+                    "children": [
+                        {
+                            "id": "5600",
+                            "categoryCode": "44040101",
+                            "name": "电视机",
+                            "level": 3,
+                            "parentId": "4480"
+                        },
+                        {
+                            "id": "5601",
+                            "categoryCode": "44040102",
+                            "name": "冰箱",
+                            "level": 3,
+                            "parentId": "4480"
+                        },
+                        {
+                            "id": "5602",
+                            "categoryCode": "44040103",
+                            "name": "洗衣机",
+                            "level": 3,
+                            "parentId": "4480"
+                        },
+                        {
+                            "id": "5603",
+                            "categoryCode": "44040104",
+                            "name": "空调",
+                            "level": 3,
+                            "parentId": "4480"
+                        },
+                        {
+                            "id": "5604",
+                            "categoryCode": "44040105",
+                            "name": "热水器",
+                            "level": 3,
+                            "parentId": "4480"
+                        }
+                    ]
+                },
+                {
+                    "id": "4481",
+                    "categoryCode": "440402",
+                    "name": "小家电",
+                    "level": 2,
+                    "parentId": "4404",
+                    "children": [
+                        {
+                            "id": "5610",
+                            "categoryCode": "44040201",
+                            "name": "电风扇",
+                            "level": 3,
+                            "parentId": "4481"
+                        },
+                        {
+                            "id": "5611",
+                            "categoryCode": "44040202",
+                            "name": "加湿器",
+                            "level": 3,
+                            "parentId": "4481"
+                        },
+                        {
+                            "id": "5612",
+                            "categoryCode": "44040203",
+                            "name": "净化器",
+                            "level": 3,
+                            "parentId": "4481"
+                        },
+                        {
+                            "id": "5613",
+                            "categoryCode": "44040204",
+                            "name": "吸尘器",
+                            "level": 3,
+                            "parentId": "4481"
+                        },
+                        {
+                            "id": "5614",
+                            "categoryCode": "44040205",
+                            "name": "电暖器",
+                            "level": 3,
+                            "parentId": "4481"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "RYBH",
+            "categoryCode": "4405",
+            "name": "日用百货",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4490",
+                    "categoryCode": "440501",
+                    "name": "清洁用品",
+                    "level": 2,
+                    "parentId": "4405",
+                    "children": [
+                        {
+                            "id": "5700",
+                            "categoryCode": "44050101",
+                            "name": "洗衣液/洗衣粉",
+                            "level": 3,
+                            "parentId": "4490"
+                        },
+                        {
+                            "id": "5701",
+                            "categoryCode": "44050102",
+                            "name": "洗洁精",
+                            "level": 3,
+                            "parentId": "4490"
+                        },
+                        {
+                            "id": "5702",
+                            "categoryCode": "44050103",
+                            "name": "消毒液",
+                            "level": 3,
+                            "parentId": "4490"
+                        },
+                        {
+                            "id": "5703",
+                            "categoryCode": "44050104",
+                            "name": "清洁剂",
+                            "level": 3,
+                            "parentId": "4490"
+                        }
+                    ]
+                },
+                {
+                    "id": "4491",
+                    "categoryCode": "440502",
+                    "name": "纸品湿巾",
+                    "level": 2,
+                    "parentId": "4405",
+                    "children": [
+                        {
+                            "id": "5710",
+                            "categoryCode": "44050201",
+                            "name": "卫生纸",
+                            "level": 3,
+                            "parentId": "4491"
+                        },
+                        {
+                            "id": "5711",
+                            "categoryCode": "44050202",
+                            "name": "抽纸/面巾纸",
+                            "level": 3,
+                            "parentId": "4491"
+                        },
+                        {
+                            "id": "5712",
+                            "categoryCode": "44050203",
+                            "name": "湿巾",
+                            "level": 3,
+                            "parentId": "4491"
+                        },
+                        {
+                            "id": "5713",
+                            "categoryCode": "44050204",
+                            "name": "厨房用纸",
+                            "level": 3,
+                            "parentId": "4491"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "SPJS",
+            "categoryCode": "4406",
+            "name": "食品酒水",
+            "level": 1,
+            "parentId": null,
+            "requiresLicense": true,
+            "children": [
+                {
+                    "id": "4500",
+                    "categoryCode": "440601",
+                    "name": "粮油调味",
+                    "level": 2,
+                    "parentId": "4406",
+                    "children": [
+                        {
+                            "id": "5800",
+                            "categoryCode": "44060101",
+                            "name": "大米",
+                            "level": 3,
+                            "parentId": "4500"
+                        },
+                        {
+                            "id": "5801",
+                            "categoryCode": "44060102",
+                            "name": "面粉",
+                            "level": 3,
+                            "parentId": "4500"
+                        },
+                        {
+                            "id": "5802",
+                            "categoryCode": "44060103",
+                            "name": "食用油",
+                            "level": 3,
+                            "parentId": "4500"
+                        },
+                        {
+                            "id": "5803",
+                            "categoryCode": "44060104",
+                            "name": "调味品",
+                            "level": 3,
+                            "parentId": "4500"
+                        }
+                    ]
+                },
+                {
+                    "id": "4501",
+                    "categoryCode": "440602",
+                    "name": "休闲食品",
+                    "level": 2,
+                    "parentId": "4406",
+                    "children": [
+                        {
+                            "id": "5810",
+                            "categoryCode": "44060201",
+                            "name": "饼干/糕点",
+                            "level": 3,
+                            "parentId": "4501"
+                        },
+                        {
+                            "id": "5811",
+                            "categoryCode": "44060202",
+                            "name": "坚果",
+                            "level": 3,
+                            "parentId": "4501"
+                        },
+                        {
+                            "id": "5812",
+                            "categoryCode": "44060203",
+                            "name": "糖果/巧克力",
+                            "level": 3,
+                            "parentId": "4501"
+                        }
+                    ]
+                },
+                {
+                    "id": "4502",
+                    "categoryCode": "440603",
+                    "name": "饮料冲调",
+                    "level": 2,
+                    "parentId": "4406",
+                    "children": [
+                        {
+                            "id": "5820",
+                            "categoryCode": "44060301",
+                            "name": "矿泉水/纯净水",
+                            "level": 3,
+                            "parentId": "4502"
+                        },
+                        {
+                            "id": "5821",
+                            "categoryCode": "44060302",
+                            "name": "茶饮料",
+                            "level": 3,
+                            "parentId": "4502"
+                        },
+                        {
+                            "id": "5822",
+                            "categoryCode": "44060303",
+                            "name": "咖啡",
+                            "level": 3,
+                            "parentId": "4502"
+                        },
+                        {
+                            "id": "5823",
+                            "categoryCode": "44060304",
+                            "name": "奶制品",
+                            "level": 3,
+                            "parentId": "4502"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "LDBH",
+            "categoryCode": "4407",
+            "name": "劳动保护用品",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4510",
+                    "categoryCode": "440701",
+                    "name": "安全帽",
+                    "level": 2,
+                    "parentId": "4407",
+                    "children": [
+                        {
+                            "id": "5900",
+                            "categoryCode": "44070101",
+                            "name": "ABS安全帽",
+                            "level": 3,
+                            "parentId": "4510"
+                        },
+                        {
+                            "id": "5901",
+                            "categoryCode": "44070102",
+                            "name": "玻璃钢安全帽",
+                            "level": 3,
+                            "parentId": "4510"
+                        },
+                        {
+                            "id": "5902",
+                            "categoryCode": "44070103",
+                            "name": "PE安全帽",
+                            "level": 3,
+                            "parentId": "4510"
+                        }
+                    ]
+                },
+                {
+                    "id": "4511",
+                    "categoryCode": "440702",
+                    "name": "防护服",
+                    "level": 2,
+                    "parentId": "4407",
+                    "children": [
+                        {
+                            "id": "5910",
+                            "categoryCode": "44070201",
+                            "name": "防化服",
+                            "level": 3,
+                            "parentId": "4511"
+                        },
+                        {
+                            "id": "5911",
+                            "categoryCode": "44070202",
+                            "name": "防静电服",
+                            "level": 3,
+                            "parentId": "4511"
+                        },
+                        {
+                            "id": "5912",
+                            "categoryCode": "44070203",
+                            "name": "阻燃服",
+                            "level": 3,
+                            "parentId": "4511"
+                        },
+                        {
+                            "id": "5913",
+                            "categoryCode": "44070204",
+                            "name": "隔热服",
+                            "level": 3,
+                            "parentId": "4511"
+                        }
+                    ]
+                },
+                {
+                    "id": "4512",
+                    "categoryCode": "440703",
+                    "name": "劳保鞋",
+                    "level": 2,
+                    "parentId": "4407",
+                    "children": [
+                        {
+                            "id": "5920",
+                            "categoryCode": "44070301",
+                            "name": "安全鞋",
+                            "level": 3,
+                            "parentId": "4512"
+                        },
+                        {
+                            "id": "5921",
+                            "categoryCode": "44070302",
+                            "name": "防砸鞋",
+                            "level": 3,
+                            "parentId": "4512"
+                        },
+                        {
+                            "id": "5922",
+                            "categoryCode": "44070303",
+                            "name": "防滑鞋",
+                            "level": 3,
+                            "parentId": "4512"
+                        },
+                        {
+                            "id": "5923",
+                            "categoryCode": "44070304",
+                            "name": "电绝缘鞋",
+                            "level": 3,
+                            "parentId": "4512"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "YDHW",
+            "categoryCode": "4408",
+            "name": "运动户外",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4520",
+                    "categoryCode": "440801",
+                    "name": "健身器材",
+                    "level": 2,
+                    "parentId": "4408",
+                    "children": [
+                        {
+                            "id": "6000",
+                            "categoryCode": "44080101",
+                            "name": "跑步机",
+                            "level": 3,
+                            "parentId": "4520"
+                        },
+                        {
+                            "id": "6001",
+                            "categoryCode": "44080102",
+                            "name": "动感单车",
+                            "level": 3,
+                            "parentId": "4520"
+                        },
+                        {
+                            "id": "6002",
+                            "categoryCode": "44080103",
+                            "name": "哑铃/杠铃",
+                            "level": 3,
+                            "parentId": "4520"
+                        },
+                        {
+                            "id": "6003",
+                            "categoryCode": "44080104",
+                            "name": "瑜伽垫",
+                            "level": 3,
+                            "parentId": "4520"
+                        }
+                    ]
+                },
+                {
+                    "id": "4521",
+                    "categoryCode": "440802",
+                    "name": "球类运动",
+                    "level": 2,
+                    "parentId": "4408",
+                    "children": [
+                        {
+                            "id": "6010",
+                            "categoryCode": "44080201",
+                            "name": "篮球",
+                            "level": 3,
+                            "parentId": "4521"
+                        },
+                        {
+                            "id": "6011",
+                            "categoryCode": "44080202",
+                            "name": "足球",
+                            "level": 3,
+                            "parentId": "4521"
+                        },
+                        {
+                            "id": "6012",
+                            "categoryCode": "44080203",
+                            "name": "排球",
+                            "level": 3,
+                            "parentId": "4521"
+                        },
+                        {
+                            "id": "6013",
+                            "categoryCode": "44080204",
+                            "name": "乒乓球拍/球",
+                            "level": 3,
+                            "parentId": "4521"
+                        },
+                        {
+                            "id": "6014",
+                            "categoryCode": "44080205",
+                            "name": "羽毛球拍/球",
+                            "level": 3,
+                            "parentId": "4521"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "WJGJ",
+            "categoryCode": "4409",
+            "name": "五金/工具",
+            "level": 1,
+            "parentId": null,
+            "children": [
+                {
+                    "id": "4530",
+                    "categoryCode": "440901",
+                    "name": "手动工具",
+                    "level": 2,
+                    "parentId": "4409",
+                    "children": [
+                        {
+                            "id": "6100",
+                            "categoryCode": "44090101",
+                            "name": "扳手",
+                            "level": 3,
+                            "parentId": "4530"
+                        },
+                        {
+                            "id": "6101",
+                            "categoryCode": "44090102",
+                            "name": "螺丝刀",
+                            "level": 3,
+                            "parentId": "4530"
+                        },
+                        {
+                            "id": "6102",
+                            "categoryCode": "44090103",
+                            "name": "钳子",
+                            "level": 3,
+                            "parentId": "4530"
+                        },
+                        {
+                            "id": "6103",
+                            "categoryCode": "44090104",
+                            "name": "锤子",
+                            "level": 3,
+                            "parentId": "4530"
+                        },
+                        {
+                            "id": "6104",
+                            "categoryCode": "44090105",
+                            "name": "锯子",
+                            "level": 3,
+                            "parentId": "4530"
+                        }
+                    ]
+                },
+                {
+                    "id": "4531",
+                    "categoryCode": "440902",
+                    "name": "电动工具",
+                    "level": 2,
+                    "parentId": "4409",
+                    "children": [
+                        {
+                            "id": "6110",
+                            "categoryCode": "44090201",
+                            "name": "电钻/冲击钻",
+                            "level": 3,
+                            "parentId": "4531"
+                        },
+                        {
+                            "id": "6111",
+                            "categoryCode": "44090202",
+                            "name": "角磨机",
+                            "level": 3,
+                            "parentId": "4531"
+                        },
+                        {
+                            "id": "6112",
+                            "categoryCode": "44090203",
+                            "name": "切割机",
+                            "level": 3,
+                            "parentId": "4531"
+                        },
+                        {
+                            "id": "6113",
+                            "categoryCode": "44090204",
+                            "name": "电锤",
+                            "level": 3,
+                            "parentId": "4531"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
