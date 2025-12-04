@@ -60,12 +60,49 @@ export async function PUT(
     }
 }
 
+/**
+ * DELETE /api/copy/drafts/[id]
+ * 删除商品草稿
+ */
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: { id: string } }
+) {
+    try {
+        const { id } = params;
+
+        await prisma.productDraft.delete({
+            where: { id }
+        });
+
+        return NextResponse.json({ success: true }, {
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+            }
+        });
+
+    } catch (error) {
+        console.error('删除草稿失败:', error);
+        return NextResponse.json({
+            success: false,
+            error: '删除失败: ' + (error as Error).message
+        }, {
+            status: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*'
+            }
+        });
+    }
+}
+
 export async function OPTIONS(request: NextRequest) {
     return new NextResponse(null, {
         status: 200,
         headers: {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'PUT, OPTIONS',
+            'Access-Control-Allow-Methods': 'PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
         },
     });

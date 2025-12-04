@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'No product URLs provided' }, { status: 400 });
         }
 
-        // 验证和规范化URLs
+        // 验证并规范化URLs
         const validUrls = productUrls
             .map((url: string) => normalizeUrl(url.trim()))
             .filter((url: string) => isValidProductUrl(url));
@@ -56,6 +56,9 @@ export async function POST(request: NextRequest) {
         for (const url of validUrls) {
             const platform = detectPlatform(url);
             const platformShopName = shopName || `${platform.toUpperCase()} 批量复制`;
+            const initialStatus = platform === 'zcy' ? 'scraped' : (body.rapidMode ? 'pending_publish' : 'pending');
+            const initialTitle = platform === 'zcy' ? '政采云商品链接' : `待采集商品 (${platform})`;
+            const initialShopName = platform === 'zcy' ? '政采云' : platformShopName;
 
             const existing = await prisma.productDraft.findFirst({
                 where: {
@@ -69,10 +72,10 @@ export async function POST(request: NextRequest) {
                     data: {
                         userId: user.userId,
                         originalUrl: url,
-                        title: `待采集商品 (${platform})`,
-                        status: body.rapidMode ? 'pending_publish' : 'pending',
+                        title: initialTitle,
+                        status: initialStatus,
                         copyTaskId: task.id,
-                        shopName: platformShopName
+                        shopName: initialShopName
                     }
                 });
                 createdCount++;
@@ -82,8 +85,9 @@ export async function POST(request: NextRequest) {
                     where: { id: existing.id },
                     data: {
                         copyTaskId: task.id,
-                        status: body.rapidMode ? 'pending_publish' : 'pending', // Reset to pending or pending_publish
-                        shopName: shopName || existing.shopName
+                        status: initialStatus, // Reset to pending/pending_publish or mark scraped for ZCY
+                        shopName: shopName || initialShopName || existing.shopName,
+                        title: existing.title || initialTitle
                     }
                 });
             }

@@ -61,8 +61,31 @@ export async function processSingleDraft(draftId: string, url: string): Promise<
 
     const platform = detectPlatform(url);
 
-    if (platform === 'unknown' || platform === 'zcy') {
-        console.warn(`[Batch Processor] Unsupported platform or ZCY internal copy: ${platform}`);
+    if (platform === 'zcy') {
+        // 政采云商品不用外部爬取，直接标记为已采集，避免一直停留在待采集
+        await prisma.productDraft.update({
+            where: { id: draftId },
+            data: {
+                status: 'scraped',
+                shopName: '政采云'
+            }
+        });
+
+        const draft = await prisma.productDraft.findUnique({ where: { id: draftId } });
+        if (draft?.copyTaskId) {
+            await updateTaskProgress(draft.copyTaskId);
+        }
+
+        console.log(`[Batch Processor] Marked ZCY draft ${draftId} as scraped`);
+        return;
+    }
+
+    if (platform === 'unknown') {
+        console.warn(`[Batch Processor] Unsupported platform: ${platform}, mark as failed to avoid retry loop`);
+        await prisma.productDraft.update({
+            where: { id: draftId },
+            data: { status: 'failed' }
+        });
         return;
     }
 

@@ -3,131 +3,258 @@ import "./style.css"
 
 export default function Options() {
     const [apiUrl, setApiUrl] = useState("http://localhost:3000")
-    const [email, setEmail] = useState("")
-    const [password, setPassword] = useState("")
-    const [token, setToken] = useState("")
+    const [licenseKey, setLicenseKey] = useState("")
+    const [companyName, setCompanyName] = useState("")
+    const [isActivated, setIsActivated] = useState(false)
+    const [licenseInfo, setLicenseInfo] = useState<any>(null)
     const [status, setStatus] = useState("")
 
     useEffect(() => {
-        chrome.storage.local.get(["apiUrl", "token", "email"], (result) => {
+        // 加载已保存的配置
+        chrome.storage.local.get(["apiUrl", "licenseKey", "licenseInfo"], (result) => {
             if (result.apiUrl) setApiUrl(result.apiUrl)
-            if (result.token) setToken(result.token)
-            if (result.email) setEmail(result.email)
+            if (result.licenseKey) {
+                setLicenseKey(result.licenseKey)
+                setIsActivated(true)
+            }
+            if (result.licenseInfo) {
+                setLicenseInfo(result.licenseInfo)
+                setCompanyName(result.licenseInfo.companyName)
+            }
         })
     }, [])
 
-    const handleSave = () => {
+    const handleSaveApiUrl = () => {
         chrome.storage.local.set({ apiUrl }, () => {
-            setStatus("设置已保存")
+            setStatus("API地址已保存")
             setTimeout(() => setStatus(""), 2000)
         })
     }
 
-    const handleLogin = async () => {
+    const handleActivate = async () => {
+        if (!licenseKey || !companyName) {
+            setStatus("请输入授权码和公司名称")
+            return
+        }
+
         try {
-            const res = await fetch(`${apiUrl}/api/auth/login`, {
+            setStatus("正在验证授权码...")
+
+            // 生成设备ID（唯一标识这个浏览器）
+            const deviceId = await getDeviceId()
+
+            const res = await fetch(`${apiUrl}/api/verify-license`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password })
+                body: JSON.stringify({
+                    licenseKey,
+                    companyName,
+                    deviceId
+                })
             })
+
             const data = await res.json()
 
-            if (res.ok) {
-                chrome.storage.local.set({ token: data.token, email: data.user.email }, () => {
-                    setToken(data.token)
-                    setStatus("登录成功")
-                    setTimeout(() => setStatus(""), 2000)
+            if (res.ok && data.valid) {
+                // 保存授权信息
+                const licenseData = {
+                    licenseKey,
+                    companyName: data.companyName,
+                    plan: data.plan,
+                    expiresAt: data.expiresAt,
+                    user: data.user,
+                    activatedAt: Date.now()
+                }
+
+                chrome.storage.local.set({
+                    licenseKey,
+                    licenseInfo: licenseData,
+                    deviceId
+                }, () => {
+                    setIsActivated(true)
+                    setLicenseInfo(licenseData)
+                    setCompanyName(data.companyName)
+                    setStatus("✅ 授权激活成功！")
+                    setTimeout(() => setStatus(""), 3000)
                 })
             } else {
-                setStatus(`登录失败: ${data.error}`)
+                setStatus(`❌ 激活失败: ${data.error || '未知错误'}`)
+                setTimeout(() => setStatus(""), 5000)
             }
         } catch (error) {
-            setStatus(`登录出错: ${(error as Error).message}`)
+            setStatus(`❌ 连接失败: ${(error as Error).message}`)
+            setTimeout(() => setStatus(""), 5000)
         }
     }
 
-    const handleLogout = () => {
-        chrome.storage.local.remove(["token", "email"], () => {
-            setToken("")
-            setEmail("")
-            setPassword("")
-            setStatus("已退出登录")
+    const handleDeactivate = () => {
+        chrome.storage.local.remove(["licenseKey", "licenseInfo", "deviceId"], () => {
+            setIsActivated(false)
+            setLicenseInfo(null)
+            setLicenseKey("")
+            setCompanyName("")
+            setStatus("已取消授权")
             setTimeout(() => setStatus(""), 2000)
         })
     }
 
-    return (
-        <div className="p-8 max-w-md mx-auto">
-            <h1 className="text-2xl font-bold mb-6">政采云助手设置</h1>
+    // 生成唯一设备ID
+    const getDeviceId = async (): Promise<string> => {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(["deviceId"], (result) => {
+                if (result.deviceId) {
+                    resolve(result.deviceId)
+                } else {
+                    // 生成新的设备ID
+                    const newDeviceId = `device-${Date.now()}-${Math.random().toString(36).substring(7)}`
+                    chrome.storage.local.set({ deviceId: newDeviceId })
+                    resolve(newDeviceId)
+                }
+            })
+        })
+    }
 
-            <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                    后端 API 地址
-                </label>
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        value={apiUrl}
-                        onChange={(e) => setApiUrl(e.target.value)}
-                        className="flex-1 border border-gray-300 rounded px-3 py-2"
-                        placeholder="http://localhost:3000"
-                    />
-                    <button
-                        onClick={handleSave}
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                    >
-                        保存
-                    </button>
+    // 格式化日期
+    const formatDate = (timestamp: number) => {
+        return new Date(timestamp).toLocaleDateString('zh-CN')
+    }
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+            <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+                    <div className="flex items-center gap-4">
+                        <img src="/logo.png" alt="Logo" className="w-16 h-16 rounded-lg bg-white p-2" />
+                        <div>
+                            <h1 className="text-2xl font-bold">政采云智能助手</h1>
+                            <p className="text-blue-100 text-sm mt-1">AI驱动的自动化工具</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-8">
+                    {/* API设置 */}
+                    <div className="mb-8">
+                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                            🌐 后端服务地址
+                        </label>
+                        <div className="flex gap-3">
+                            <input
+                                type="text"
+                                value={apiUrl}
+                                onChange={(e) => setApiUrl(e.target.value)}
+                                className="flex-1 border-2 border-gray-200 rounded-lg px-4 py-3 focus:border-blue-500 focus:outline-none transition"
+                                placeholder="http://localhost:3000"
+                            />
+                            <button
+                                onClick={handleSaveApiUrl}
+                                className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition font-medium"
+                            >
+                                保存
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 my-8"></div>
+
+                    {/* 授权激活 */}
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                            <span className="text-2xl">🔑</span>
+                            授权管理
+                        </h2>
+
+                        {isActivated && licenseInfo ? (
+                            // 已激活状态
+                            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6">
+                                <div className="flex items-start justify-between mb-4">
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-2xl">✅</span>
+                                            <h3 className="text-lg font-bold text-green-800">授权已激活</h3>
+                                        </div>
+                                        <p className="text-green-700 text-sm">您的授权码已成功验证</p>
+                                    </div>
+                                    <button
+                                        onClick={handleDeactivate}
+                                        className="text-sm text-red-600 hover:text-red-800 underline font-medium"
+                                    >
+                                        取消授权
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3 mt-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600 font-medium">公司名称</span>
+                                        <span className="text-gray-900 font-semibold">{licenseInfo.companyName}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600 font-medium">套餐类型</span>
+                                        <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-bold">
+                                            {licenseInfo.plan === 'enterprise' ? '企业版' :
+                                                licenseInfo.plan === 'professional' ? '专业版' :
+                                                    licenseInfo.plan === 'standard' ? '标准版' : '基础版'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600 font-medium">到期时间</span>
+                                        <span className="text-gray-900 font-semibold">{formatDate(licenseInfo.expiresAt)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-600 font-medium">授权码</span>
+                                        <span className="font-mono text-sm text-gray-700">{licenseKey}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            // 未激活状态
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        📧 公司名称 *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={companyName}
+                                        onChange={(e) => setCompanyName(e.target.value)}
+                                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-3 focus:border-blue-500 focus:outline-none transition"
+                                        placeholder="请输入您的公司名称"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        🔐 授权码 *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={licenseKey}
+                                        onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                                        className="w-full border-2 border-gray-200 rounded-lg px-4 py-3 font-mono focus:border-blue-500 focus:outline-none transition"
+                                        placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        💡 在网站购买后获得授权码
+                                    </p>
+                                </div>
+
+                                <button
+                                    onClick={handleActivate}
+                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition font-bold text-lg shadow-lg"
+                                >
+                                    🚀 激活授权
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <hr className="my-6 border-gray-200" />
-
-            <div className="mb-6">
-                <h2 className="text-lg font-semibold mb-4">账号登录</h2>
-                {token ? (
-                    <div className="bg-green-50 border border-green-200 rounded p-4">
-                        <p className="text-green-800 mb-2">已登录: {email}</p>
-                        <button
-                            onClick={handleLogout}
-                            className="text-sm text-red-600 hover:text-red-800 underline"
-                        >
-                            退出登录
-                        </button>
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full border border-gray-300 rounded px-3 py-2"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full border border-gray-300 rounded px-3 py-2"
-                            />
-                        </div>
-                        <button
-                            onClick={handleLogin}
-                            className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                        >
-                            登录
-                        </button>
-                    </div>
-                )}
-            </div>
-
+            {/* 状态提示 */}
             {status && (
-                <div className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded shadow-lg">
-                    {status}
+                <div className="fixed bottom-6 right-6 bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl animate-slide-up max-w-md">
+                    <p className="font-medium">{status}</p>
                 </div>
             )}
         </div>

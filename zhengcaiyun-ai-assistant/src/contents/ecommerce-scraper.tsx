@@ -1,198 +1,187 @@
-import type { PlasmoCSConfig } from "plasmo"
+import type { PlasmoCSConfig, PlasmoGetStyle, PlasmoMountShadowHost } from "plasmo"
+import { useEffect, useState } from "react"
 
+// 配置 Plasmo Content Script - 支持京东、天猫、淘宝
 export const config: PlasmoCSConfig = {
     matches: [
         "https://*.jd.com/*",
         "https://*.jd.hk/*",
         "https://*.tmall.com/*",
         "https://*.tmall.hk/*",
-        "https://*.taobao.com/*",
-        "https://*.suning.com/*",
-        "https://product.suning.com/*"
+        "https://*.taobao.com/*"
     ],
-    run_at: "document_end",
-    all_frames: false
+    run_at: "document_idle"
 }
 
-console.log('[E-Commerce Scraper] Content script loaded');
-
-// 检测当前页面是否是商品详情页
-function isProductDetailPage(): boolean {
-    const url = window.location.href;
-    const hostname = window.location.hostname;
-
-    // 京东商品页
-    if (hostname.includes('jd.com') && /\/\d+\.html/.test(url)) {
-        console.log('[E-Commerce] Detected JD product page');
-        return true;
-    }
-
-    // 天猫商品页 (支持各种子域名)
-    if (hostname.includes('tmall.com') && url.includes('item.htm')) {
-        console.log('[E-Commerce] Detected Tmall product page');
-        return true;
-    }
-
-    // 淘宝商品页
-    if (hostname.includes('taobao.com') && url.includes('item.htm')) {
-        console.log('[E-Commerce] Detected Taobao product page');
-        return true;
-    }
-
-    // 苏宁商品页
-    if (hostname.includes('suning.com') && url.includes('/product/')) {
-        console.log('[E-Commerce] Detected Suning product page');
-        return true;
-    }
-
-    console.log('[E-Commerce] Not a product detail page:', url);
-    return false;
+// Shadow Host 挂载到 body
+export const mountShadowHost: PlasmoMountShadowHost = ({ shadowHost }) => {
+    document.body.appendChild(shadowHost)
 }
 
-// 注入浮动复制按钮
-function injectCopyButton() {
-    if (document.getElementById('zcy-ecom-copy-btn')) {
-        return; // 已存在
-    }
-
-    if (!isProductDetailPage()) {
-        console.log('[E-Commerce Scraper] Not a product detail page, skipping button injection');
-        return;
-    }
-
-    const btn = document.createElement('button');
-    btn.id = 'zcy-ecom-copy-btn';
-    btn.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 4px;">
-            <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6z"/>
-            <path d="M2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
-        </svg>
-        复制到政采云
-    `;
-
-    btn.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 999999;
-        padding: 12px 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        transition: all 0.3s;
-        display: flex;
-        align-items: center;
-        user-select: none;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    `;
-
-    btn.onmouseover = () => {
-        btn.style.transform = 'translateY(-2px)';
-        btn.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.5)';
-    };
-
-    btn.onmouseout = () => {
-        btn.style.transform = 'translateY(0)';
-        btn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
-    };
-
-    btn.onclick = handleCopyClick;
-
-    document.body.appendChild(btn);
-    console.log('[E-Commerce Scraper] Copy button injected');
+// 注入样式
+export const getStyle: PlasmoGetStyle = () => {
+    const style = document.createElement("style")
+    style.textContent = `
+        .zcy-fab-container {
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            z-index: 2147483647;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .zcy-fab-btn {
+            width: 60px;
+            height: 60px;
+            padding: 0;
+            background-color: var(--zcy-fab-bg, #0085D0);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(0, 133, 208, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+        }
+        .zcy-fab-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 24px rgba(0, 133, 208, 0.6);
+        }
+        .zcy-fab-btn:active {
+            transform: scale(0.95);
+        }
+        .zcy-fab-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: block;
+            background: transparent;
+        }
+    `
+    return style
 }
 
-// 处理复制点击
-async function handleCopyClick(): Promise<void> {
-    const btn = document.getElementById('zcy-ecom-copy-btn') as HTMLButtonElement;
-    if (!btn) return;
+// 图标资源
+import pngIcon from "data-base64:~assets/icon.png"
+const ICON_SVG_BASE64 = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAyMDAgMjAwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xMDAgMzAgQzExMCAzMCwgMTE1IDQwLCAxMjAgNTUgTDEzNSA5NSBDMTQwIDEwNSwgMTU1IDEwNSwgMTYwIDk1IEwxNzUgNTUgQzE4MCA0MCwgMTk1IDQwLCAxOTUgNTUgQzE5MCA3NSwgMTc1IDkwLCAxNjAgMTAwIEwxMzAgMTIwIEMxMjAgMTI1LCAxMjAgMTQwLCAxMzAgMTQ1IEwxNjAgMTY1IEMxNzUgMTc1LCAxNzAgMTk1LCAxNTAgMTkwIEwxMTAgMTgwIEMxMDAgMTc1LCA5MCAxODUsIDk1IDE5NSBDMTAwIDIxNSwgNzUgMjE1LCA3MCAxOTUgQzc1IDE4NSwgNjUgMTc1LCA1NSAxODAgTDE1IDE5MCBDLTUgMTk1LCAtMTAgMTc1LCA1IDE2NSBMMzUgMTQ1IEM0NSAxNDAsIDQ1IDEyNSwgMzUgMTIwIEw1IDEwMCBDLTEwIDkwLCA1IDc1LCAyNSA3NSBMNDAgNzUgQzU1IDc1LCA2MCA2MCwgNjUgNDUgTDgwIDUgQzg1IC0xMCwgMTE1IC0xMCwgMTIwIDUgWiIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+`
 
-    const originalHTML = btn.innerHTML;
-    btn.innerHTML = '⏳ 抓取中...';
-    btn.disabled = true;
-    btn.style.background = '#999';
+// React 组件
+const EcommerceScraperWidget = () => {
+    const [showCopyBtn, setShowCopyBtn] = useState(false)
+    const [loading, setLoading] = useState(false)
+    const [fabColor, setFabColor] = useState("#0085D0")
+    const [pushSuccess, setPushSuccess] = useState(false)
+    const [successMsg, setSuccessMsg] = useState("")
 
-    try {
-        // 1. Client-side scraping
-        const productData = scrapePageData();
-        console.log('[E-Commerce Scraper] Scraped data:', productData);
+    useEffect(() => {
+        // 页面类型判断
+        const checkPage = () => {
+            const url = window.location.href
+            const hostname = window.location.hostname
+            let isProduct = false
 
-        if (!productData.title) {
-            throw new Error('无法获取商品标题，请刷新页面重试');
+            // 京东商品详情页
+            if (hostname.includes('jd.com') && /\/\d+\.html/.test(url)) isProduct = true
+            // 天猫商品详情页
+            if (hostname.includes('tmall.com') && url.includes('item.htm')) isProduct = true
+            // 淘宝商品详情页
+            if (hostname.includes('taobao.com') && url.includes('item.htm')) isProduct = true
+
+            setShowCopyBtn(isProduct)
         }
 
-        btn.innerHTML = '💾 保存中...';
+        // SPA监听
+        const observer = new MutationObserver(() => { checkPage() })
+        observer.observe(document.body, { subtree: true, childList: true })
+        checkPage()
+        return () => observer.disconnect()
+    }, [])
 
-        // 1.5 Get Region
-        const storage = await chrome.storage.local.get('zcy_region');
-        const region = storage.zcy_region || 'Global';
+    const handleCopy = async () => {
+        setLoading(true)
+        try {
+            const productData = scrapePageData()
+            if (!productData.title) throw new Error('无法获取商品标题，请刷新页面重试')
 
-        // 2. Send to background to save
-        const response = await chrome.runtime.sendMessage({
-            action: 'saveProduct',
-            data: { ...productData, region }
-        });
+            // 推送到本地 dashboard/tasks
+            await fetch("http://localhost:3000/api/push-tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "single",
+                    link: window.location.href,
+                    data: productData
+                })
+            })
 
-        if (response.success) {
-            // Check for Warnings
-            if (response.warning) {
-                const w = response.warning;
-                const color = w.level === 'red' ? '#ff4d4f' : '#faad14';
-                btn.innerHTML = w.level === 'red' ? '❌ 风险警示' : '⚠️ 风险提示';
-                btn.style.background = color;
-
-                alert(`${w.title}\n\n${w.message}\n\n建议：${w.level === 'red' ? '请勿上传或修改后上传' : '请仔细检查商品信息'}`);
-
-                // Allow publishing even if warned (as per user request: "Just warn, don't block")
-            } else {
-                btn.innerHTML = '✅ 复制成功！';
-                btn.style.background = '#52c41a';
-            }
-
-            // Ask user to publish immediately
-            if (response.draft?.id) {
-                // Use a slight delay to show success/warning message
-                setTimeout(() => {
-                    const msg = response.warning ? '商品存在风险，是否仍要前往政采云发布？' : '商品复制成功！是否立即前往政采云发布？';
-                    if (confirm(msg)) {
-                        window.open(`https://www.zcygov.cn/publish?draft_id=${response.draft.id}`, '_blank');
-                    }
-                }, 1000); // Longer delay to read alert
-            }
-
+            setPushSuccess(true)
+            setFabColor("#4CAF50")
+            setSuccessMsg("推送成功")
+        } catch (error) {
+            setPushSuccess(false)
+            setSuccessMsg("推送失败: " + (error as Error).message)
+        } finally {
+            setLoading(false)
             setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                btn.disabled = false;
-            }, 3000);
-        } else {
-            throw new Error(response.error || '保存失败');
+                setPushSuccess(false)
+                setFabColor("#0085D0")
+                setSuccessMsg("")
+            }, 2000)
         }
-    } catch (error) {
-        console.error('[E-Commerce Scraper] Copy error:', error);
-        btn.innerHTML = '❌ 失败';
-        btn.style.background = '#ff4d4f';
-
-        alert(`复制失败: ${(error as Error).message}`);
-
-        setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-            btn.disabled = false;
-        }, 3000);
     }
+
+    if (!showCopyBtn) return null
+
+    return (
+        <div className="zcy-fab-container">
+            <button
+                className="zcy-fab-btn"
+                onClick={handleCopy}
+                disabled={loading}
+                style={{
+                    backgroundColor: fabColor,
+                    boxShadow: `0 4px 16px ${fabColor === "#4CAF50" ? "rgba(76,175,80,0.4)" : "rgba(0,133,208,0.4)"}`
+                }}
+            >
+                {loading ? (
+                    <span style={{ color: 'white', fontWeight: 'bold' }}>...</span>
+                ) : (
+                    <img
+                        className="zcy-fab-img"
+                        src={pngIcon}
+                        alt="政采云助手"
+                        onError={e => {
+                            (e.target as HTMLImageElement).src = ICON_SVG_BASE64
+                        }}
+                    />
+                )}
+            </button>
+            {pushSuccess && (
+                <div style={{
+                    marginTop: 8,
+                    background: "#4CAF50",
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "6px 16px",
+                    fontSize: 14,
+                    boxShadow: "0 2px 8px rgba(76,175,80,0.15)"
+                }}>
+                    {successMsg}
+                </div>
+            )}
+        </div>
+    )
 }
 
-// Client-side Scraper Logic
+// 采集数据逻辑
 function scrapePageData() {
-    const url = window.location.href;
-    const hostname = window.location.hostname;
-
+    const url = window.location.href
+    const hostname = window.location.hostname
     let data = {
         originalUrl: url,
         title: '',
@@ -200,147 +189,89 @@ function scrapePageData() {
         images: [] as string[],
         attributes: {} as Record<string, string>,
         detailHtml: '',
-        shopName: ''
-    };
+        shopName: '',
+        category: ''
+    }
 
-    // Common: Try Meta Tags First
-    const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content');
-    const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content');
-    if (ogTitle) data.title = ogTitle;
-    if (ogImage) data.images.push(ogImage);
-
-    // Platform Specific Logic
+    // 京东
     if (hostname.includes('jd.com')) {
-        scrapeJD(data);
+        const titleEl = document.querySelector('.sku-name') || document.querySelector('h1')
+        if (titleEl) data.title = titleEl.textContent?.trim() || ''
+        const priceEl = document.querySelector('.price') || document.querySelector('.p-price .price')
+        if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '') || ''
+        const imgs = document.querySelectorAll('#spec-list img, .lh img')
+        imgs.forEach((img: HTMLImageElement) => {
+            let src = img.src || img.getAttribute('data-url')
+            if (src) {
+                src = src.replace('/n5/', '/n1/').replace('/n7/', '/n1/')
+                data.images.push(src)
+            }
+        })
+        data.shopName = '京东'
+    }
+    // 天猫/淘宝
+    else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
+        const titleEl = document.querySelector('.tb-main-title') || document.querySelector('h1')
+        if (titleEl) data.title = titleEl.getAttribute('data-title') || titleEl.textContent?.trim() || ''
+        const priceEl = document.querySelector('.tm-price') || document.querySelector('.tb-rmb-num')
+        if (priceEl) data.price = priceEl.textContent?.trim() || ''
+        const imgs = document.querySelectorAll('#J_UlThumb img')
+        imgs.forEach((img: HTMLImageElement) => {
+            let src = img.src
+            if (src) {
+                src = src.replace(/_\d+x\d+\.jpg.*/, '')
+                data.images.push(src)
+            }
+        })
+        data.shopName = '淘宝/天猫'
+    }
+
+    if (!data.title) data.title = document.title
+    data.title = data.title.trim()
+    data.images = [...new Set(data.images)].slice(0, 10)
+
+    // Category Extraction
+    let categoryParts: string[] = []
+
+    // 1. Try Breadcrumbs (DOM)
+    if (hostname.includes('jd.com')) {
+        const crumbs = document.querySelectorAll('#crumb-wrap .crumb a, .breadcrumb a, .w .breadcrumb a, .mbreadcrumb a, #ur-here a')
+        crumbs.forEach(el => categoryParts.push(el.textContent?.trim() || ''))
     } else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
-        scrapeTaobaoTmall(data);
-    } else if (hostname.includes('suning.com')) {
-        scrapeSuning(data);
-    } else {
-        // Generic Fallback
-        if (!data.title) data.title = document.title;
+        const crumbs = document.querySelectorAll('.tm-breadcrumbs a, #J_Crumb a, .tb-breadcrumb a, .ui-breadcrumb a')
+        crumbs.forEach(el => categoryParts.push(el.textContent?.trim() || ''))
     }
 
-    // Final cleanup
-    data.title = data.title.trim();
-    data.images = [...new Set(data.images)].slice(0, 10); // Unique & limit 10
-
-    return data;
-}
-
-function scrapeJD(data: any) {
-    // Title
-    const titleEl = document.querySelector('.sku-name') || document.querySelector('h1');
-    if (titleEl) data.title = titleEl.textContent?.trim();
-
-    // Price
-    const priceEl = document.querySelector('.price') || document.querySelector('.p-price .price');
-    if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '');
-
-    // Images
-    const imgs = document.querySelectorAll('#spec-list img, .lh img');
-    imgs.forEach((img: HTMLImageElement) => {
-        let src = img.src || img.getAttribute('data-url');
-        if (src) {
-            // Get high res
-            src = src.replace('/n5/', '/n1/').replace('/n7/', '/n1/');
-            data.images.push(src);
+    // 2. Fallback: Meta Tags (Keywords often contain category structure)
+    if (categoryParts.length === 0) {
+        const keywords = document.querySelector('meta[name="keywords"]')?.getAttribute('content');
+        if (keywords) {
+            // JD/Tmall keywords often look like "Brand, Model, Category, Subcategory"
+            // We can try to use it as a rough category path
+            categoryParts.push(keywords.split(',')[0]);
         }
-    });
-
-    // Specs
-    const items = document.querySelectorAll('.p-parameter li');
-    items.forEach(item => {
-        const text = item.textContent || '';
-        const [key, val] = text.split(/[:：]/);
-        if (key && val) data.attributes[key.trim()] = val.trim();
-    });
-
-    // Selected SKU Attributes (Color, Size)
-    const selectedSkus = document.querySelectorAll('#choose-attrs .item.selected');
-    selectedSkus.forEach(item => {
-        const type = item.parentElement?.parentElement?.querySelector('.dt')?.textContent?.trim();
-        const value = item.getAttribute('data-value') || item.textContent?.trim();
-        if (type && value) {
-            data.attributes[type.replace(/[:：]/g, '').trim()] = value;
-        }
-    });
-
-    data.shopName = '京东';
-}
-
-function scrapeTaobaoTmall(data: any) {
-    // Title
-    const titleEl = document.querySelector('.tb-main-title') || document.querySelector('h1');
-    if (titleEl) data.title = titleEl.getAttribute('data-title') || titleEl.textContent?.trim();
-
-    // Price (Tricky on Taobao, dynamic loading)
-    const priceEl = document.querySelector('.tm-price') || document.querySelector('.tb-rmb-num');
-    if (priceEl) data.price = priceEl.textContent?.trim();
-
-    // Images
-    const imgs = document.querySelectorAll('#J_UlThumb img');
-    imgs.forEach((img: HTMLImageElement) => {
-        let src = img.src;
-        if (src) {
-            // Get high res (usually replace _60x60.jpg with nothing or _800x800)
-            src = src.replace(/_\d+x\d+\.jpg.*/, '');
-            data.images.push(src);
-        }
-    });
-
-    // Selected SKU Attributes
-    const selectedSkus = document.querySelectorAll('.J_TSaleProp .tb-selected');
-    selectedSkus.forEach(item => {
-        const type = item.closest('.J_Prop')?.querySelector('.tb-metatit')?.textContent?.trim();
-        const value = item.textContent?.trim();
-        if (type && value) {
-            data.attributes[type.replace(/[:：]/g, '').trim()] = value;
-        }
-    });
-
-    data.shopName = '淘宝/天猫';
-}
-
-function scrapeSuning(data: any) {
-    const titleEl = document.querySelector('#itemDisplayName');
-    if (titleEl) data.title = titleEl.textContent?.trim();
-
-    const priceEl = document.querySelector('.mainprice');
-    if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '');
-
-    const imgs = document.querySelectorAll('.img-zoom-thumb img');
-    imgs.forEach((img: HTMLImageElement) => {
-        let src = img.src;
-        if (src) {
-            src = src.replace(/_60w_60h/, '_800w_800h');
-            data.images.push(src);
-        }
-    });
-
-    data.shopName = '苏宁易购';
-}
-
-// 页面加载完成后注入按钮
-if (document.readyState === 'complete') {
-    injectCopyButton();
-} else {
-    window.addEventListener('load', injectCopyButton);
-}
-
-// 监听URL变化(SPA应用)
-let lastUrl = location.href;
-new MutationObserver(() => {
-    const url = location.href;
-    if (url !== lastUrl) {
-        lastUrl = url;
-        console.log('[E-Commerce Scraper] URL changed, re-checking page type');
-        // 移除旧按钮
-        const oldBtn = document.getElementById('zcy-ecom-copy-btn');
-        if (oldBtn) {
-            oldBtn.remove();
-        }
-        // 重新注入
-        setTimeout(injectCopyButton, 1000);
     }
-}).observe(document, { subtree: true, childList: true });
+
+    // 3. Fallback: Script Data (JSON-LD or internal vars)
+    if (categoryParts.length === 0) {
+        // Try to find specific JS variables if possible (advanced)
+        // For now, let's stick to DOM and Meta
+    }
+
+    // Filter and Join
+    // Remove common non-category words like "首页", "Home", "全部商品"
+    const ignoreWords = ['首页', 'Home', '全部商品', '全部结果'];
+    data.category = categoryParts
+        .map(s => s.trim())
+        .filter(s => s && !ignoreWords.includes(s))
+        .join('/');
+
+    if (!data.category) {
+        console.warn('Category extraction failed');
+        data.category = '未分类'; // Mark as unclassified so user knows
+    }
+
+    return data
+}
+
+export default EcommerceScraperWidget

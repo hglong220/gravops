@@ -1,0 +1,41 @@
+diff --git a/app/dashboard/tasks/page.tsx b/app/dashboard/tasks/page.tsx
+index 1234567..abcdefg 100644
+--- a/app/dashboard/tasks/page.tsx
++++ b/app/dashboard/tasks/page.tsx
+@@ -180,9 +180,33 @@ export default function UnifiedTaskCenter() {
+         }
+     };
+ 
+-    const handlePublish = (draftId: string) => {
+-        window.open(`https://www.zcygov.cn/publish?draft_id=${draftId}`, '_blank');
++    const handlePublish = async (draftId: string) => {
++        const product = products.find(p => p.id === draftId);
++        if (!product) {
++            alert('商品信息未找到');
++            return;
++        }
++
++        try {
++            const skuData = product.skuData ? JSON.parse(product.skuData) : {};
++            const images = (product as any).images ? JSON.parse((product as any).images) : [];
++            const attributes = (product as any).attributes ? JSON.parse((product as any).attributes) : {};
++
++            const productData = {
++                title: product.title,
++                images,
++                attributes,
++                detailHtml: product.detailHtml ?? '',
++                itemCode: skuData.itemCode || '',
++                batchMarketPrice: skuData.price || '',
++                batchSalePrice: skuData.salePrice || skuData.price || '',
++                batchStockQuantity: skuData.stock || '100'
++            };
++
++            window.postMessage({ type: 'TRIGGER_ZCY_PUBLISH', data: productData }, '*');
++            alert(`已发起自动发布！\n商品：${product.title}\n图片数：${images.length}`);
++        } catch (error) {
++            alert('发布失败: ' + (error as Error).message);
++        }
+     };
+ 
+     const handleTaskAction = async (taskId: string, action: 'pause' | 'resume' | 'delete') => {

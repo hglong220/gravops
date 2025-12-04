@@ -34,13 +34,23 @@ interface CategorySelectorProps {
         categoryName: string;
     }) => void;
     disabled?: boolean;
+    onlyAuthorized?: boolean; // 新增：是否只显示用户授权的类目
+    userId?: string; // 新增：用户ID
 }
 
-const CategorySelector: FC<CategorySelectorProps> = ({ value, onChange, disabled = false }) => {
+const CategorySelector: FC<CategorySelectorProps> = ({
+    value,
+    onChange,
+    disabled = false,
+    onlyAuthorized = false,
+    userId
+}) => {
     const [categories, setCategories] = useState<Category[]>([]);
     const [level1List, setLevel1List] = useState<Category[]>([]);
     const [level2List, setLevel2List] = useState<Category[]>([]);
     const [level3List, setLevel3List] = useState<Category[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [needFetch, setNeedFetch] = useState(false);
 
     const [selected1, setSelected1] = useState<string>('');
     const [selected2, setSelected2] = useState<string>('');
@@ -48,14 +58,91 @@ const CategorySelector: FC<CategorySelectorProps> = ({ value, onChange, disabled
 
     // 加载类目数据
     useEffect(() => {
-        fetch('/api/categories.json')
-            .then(res => res.json())
-            .then(data => {
-                setCategories(data.tree || []);
-                setLevel1List(data.tree || []);
-            })
-            .catch(err => console.error('加载类目失败:', err));
-    }, []);
+        loadCategories();
+    }, [onlyAuthorized, userId]);
+
+    const loadCategories = async () => {
+        setLoading(true);
+
+        try {
+            if (onlyAuthorized && userId) {
+                // 加载用户授权类目
+                const res = await fetch('/api/user/categories', {
+                    headers: {
+                        'x-user-id': userId
+                    }
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    // 构建树形结构
+                    const tree = buildCategoryTree(data.categories);
+                    setCategories(tree);
+                    setLevel1List(tree);
+                    setNeedFetch(false);
+                } else if (data.needFetch) {
+                    // 需要先抓取授权类目
+                    setNeedFetch(true);
+                }
+            } else {
+                // 加载完整类目
+                const res = await fetch('/api/categories.json');
+                const data = await res.json();
+                setCategories(data.categories || data.tree || []);
+                setLevel1List(data.categories || data.tree || []);
+            }
+        } catch (err) {
+            console.error('加载类目失败:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 构建树形结构（从扁平数据）
+    const buildCategoryTree = (flatCategories: Category[]): Category[] => {
+        const level1 = flatCategories.filter(c => c.level === 1);
+
+        level1.forEach(cat1 => {
+            cat1.children = flatCategories.filter(c => c.level === 2 && c.parentId === cat1.id);
+
+            cat1.children?.forEach(cat2 => {
+                cat2.children = flatCategories.filter(c => c.level === 3 && c.parentId === cat2.id);
+            });
+        });
+
+        return level1;
+    };
+
+    // 抓取用户授权类目
+    const fetchUserCategories = async () => {
+        if (!userId) return;
+
+        setLoading(true);
+
+        try {
+            const res = await fetch('/api/user/fetch-categories', {
+                method: 'POST',
+                headers: {
+                    'x-user-id': userId
+                }
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                // 重新加载
+                await loadCategories();
+            } else {
+                alert('抓取授权类目失败: ' + data.message);
+            }
+        } catch (err) {
+            console.error('抓取授权类目失败:', err);
+            alert('抓取授权类目失败');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // 初始化选中值
     useEffect(() => {
@@ -142,6 +229,33 @@ const CategorySelector: FC<CategorySelectorProps> = ({ value, onChange, disabled
 
     return (
         <div className="category-selector">
+            {loading && (
+                <div className="loading-indicator">
+                    <div className="spinner"></div>
+                    <span>加载类目中...</span>
+                </div>
+            )}
+
+            {needFetch && (
+                <div className="fetch-prompt">
+                    <div className="prompt-icon">⚠️</div>
+                    <div className="prompt-content">
+                        <h4>需要抓取授权类目</h4>
+                        <p>首次使用需要从政采云抓取您有权限的类目，这样可以避免选择无权限类目导致上传失败。</p>
+                        <button onClick={fetchUserCategories} className="fetch-button">
+                            立即抓取我的授权类目
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {onlyAuthorized && !needFetch && level1List.length > 0 && (
+                <div className="info-banner">
+                    <span className="info-icon">ℹ️</span>
+                    <span>当前显示您有权限的 {level1List.length} 个类目</span>
+                </div>
+            )}
+
             <div className="category-level">
                 <label>一级类目</label>
                 <select
@@ -203,6 +317,92 @@ const CategorySelector: FC<CategorySelectorProps> = ({ value, onChange, disabled
           display: flex;
           flex-direction: column;
           gap: 16px;
+        }
+        
+        .loading-indicator {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px;
+          background: #f3f4f6;
+          border-radius: 8px;
+          color: #6b7280;
+          font-size: 14px;
+        }
+        
+        .spinner {
+          width: 20px;
+          height: 20px;
+          border: 3px solid #e5e7eb;
+          border-top-color: #3b82f6;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        
+        .fetch-prompt {
+          display: flex;
+          gap: 16px;
+          padding: 20px;
+          background: #fff7ed;
+          border: 1px solid #fdba74;
+          border-radius: 8px;
+        }
+        
+        .prompt-icon {
+          font-size: 32px;
+          flex-shrink: 0;
+        }
+        
+        .prompt-content h4 {
+          margin: 0 0 8px 0;
+          font-size: 16px;
+          font-weight: 600;
+          color: #92400e;
+        }
+        
+        .prompt-content p {
+          margin: 0 0 16px 0;
+          font-size: 14px;
+          color: #78350f;
+          line-height: 1.5;
+        }
+        
+        .fetch-button {
+          padding: 10px 20px;
+          background: #f59e0b;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        
+        .fetch-button:hover {
+          background: #d97706;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .info-banner {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 16px;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          border-radius: 6px;
+          font-size: 14px;
+          color: #1e40af;
+        }
+        
+        .info-icon {
+          font-size: 18px;
         }
 
         .category-level {

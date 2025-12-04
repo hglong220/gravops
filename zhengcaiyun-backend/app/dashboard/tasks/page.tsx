@@ -1,630 +1,745 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react'
 
-
-interface ProductDraft {
-    id: string;
-    title: string;
-    originalUrl: string;
-    shopName: string;
-    status: string;
-    createdAt: Date;
-    copyTaskId?: string;
-    skuData?: string;
-    detailHtml?: string;
+type ProductDraft = {
+  id: string
+  title: string
+  originalUrl: string
+  shopName?: string
+  status: string
+  createdAt: string | Date
+  copyTaskId?: string
+  skuData?: string
+  detailHtml?: string
+  attributes?: string
+  images?: string | string[]
+  mainImages?: string | string[]
+  detailImages?: string | string[]
+  model?: string
+  brand?: string
+  categoryPath?: string
 }
 
-interface CopyTask {
-    id: string;
-    shopName: string;
-    shopUrl: string;
-    totalCount: number;
-    successCount: number;
-    failedCount: number;
-    status: string;
-    createdAt: Date;
+type TaskGroup = {
+  id: string
+  name: string
+  icon?: string
+  count: number
+  type: 'single' | 'batch'
+  copyTaskId?: string
 }
 
-interface TaskGroup {
-    id: string;
-    name: string;
-    icon: string;
-    count: number;
-    type: 'single' | 'batch' | 'batch-all';
-    status?: string;
-    progress?: { current: number; total: number };
+const ZCY_CATEGORIES = [
+  {
+    name: '计算机设备',
+    children: [
+      {
+        name: '便携式计算机',
+        children: [{ name: '通用笔记本电脑' }, { name: '移动工作站' }, { name: '国产笔记本' }]
+      },
+      {
+        name: '台式计算机',
+        children: [{ name: '台式一体机' }, { name: '分体式台式机' }, { name: '国产台式机' }]
+      }
+    ]
+  },
+  {
+    name: '办公设备',
+    children: [
+      {
+        name: '打印设备',
+        children: [{ name: 'A4黑白激光打印机' }, { name: 'A3彩色激光打印机' }, { name: '喷墨打印机' }]
+      }
+    ]
+  }
+]
+
+const statusBadge = (status: string) => {
+  const map: Record<
+    string,
+    {
+      text: string
+      color: string
+    }
+  > = {
+    pending: { text: '待采集', color: 'bg-gray-100 text-gray-600' },
+    scraped: { text: '已采集', color: 'bg-blue-100 text-blue-600' },
+    published: { text: '已发布', color: 'bg-green-100 text-green-600' }
+  }
+  return map[status] || { text: status, color: 'bg-gray-100 text-gray-600' }
 }
 
-export default function UnifiedTaskCenter() {
-    const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([]);
-    const [products, setProducts] = useState<ProductDraft[]>([]);
-    const [selectedTask, setSelectedTask] = useState<string>('single');
-    const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({ total: 0, pending: 0, published: 0 });
+const parseJsonArray = (val: any): string[] => {
+  if (!val) return []
+  if (Array.isArray(val)) return val.filter(Boolean)
+  if (typeof val === 'string') {
+    try {
+      const arr = JSON.parse(val)
+      return Array.isArray(arr) ? arr.filter(Boolean) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
 
-    // Mock ZCY Categories
-    const ZCY_CATEGORIES = [
-        {
-            name: '计算机设备', children: [
-                {
-                    name: '便携式计算机', children: [
-                        { name: '通用笔记本电脑' },
-                        { name: '移动工作站' },
-                        { name: '国产笔记本' }
-                    ]
-                },
-                {
-                    name: '台式计算机', children: [
-                        { name: '台式一体机' },
-                        { name: '分体式台式机' },
-                        { name: '国产台式机' }
-                    ]
-                },
-                {
-                    name: '显示器', children: [
-                        { name: 'LED显示器' },
-                        { name: '触控显示器' }
-                    ]
-                }
-            ]
-        },
-        {
-            name: '办公设备', children: [
-                {
-                    name: '打印设备', children: [
-                        { name: 'A4黑白激光打印机' },
-                        { name: 'A3彩色激光打印机' },
-                        { name: '喷墨打印机' }
-                    ]
-                },
-                {
-                    name: '复印设备', children: [
-                        { name: '高速复印机' },
-                        { name: '便携式复印机' }
-                    ]
-                }
-            ]
-        }
-    ];
+const parseAttributes = (val: any): Record<string, string> => {
+  if (!val) return {}
+  if (typeof val === 'string') {
+    try {
+      const obj = JSON.parse(val)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        const out: Record<string, string> = {}
+        Object.entries(obj).forEach(([k, v]) => {
+          if (k) out[k] = String(v ?? '')
+        })
+        return out
+      }
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
 
-    // Edit Modal State
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingProduct, setEditingProduct] = useState<any>(null);
-    // Category Selection State
-    const [catL1, setCatL1] = useState('');
-    const [catL2, setCatL2] = useState('');
-    const [catL3, setCatL3] = useState('');
+export default function TaskPage() {
+  const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([])
+  const [products, setProducts] = useState<ProductDraft[]>([])
+  const [selectedTask, setSelectedTask] = useState<string>('single')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(true)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<ProductDraft | null>(null)
+  const [editMainImages, setEditMainImages] = useState<string[]>([])
+  const [editDetailImages, setEditDetailImages] = useState<string[]>([])
+  const [specEntries, setSpecEntries] = useState<Array<{ key: string; value: string }>>([])
+  const [catL1, setCatL1] = useState('')
+  const [catL2, setCatL2] = useState('')
+  const [catL3, setCatL3] = useState('')
+  const [missingNotice, setMissingNotice] = useState('')
 
-    const fetchData = async () => {
-        try {
-            // Fetch all drafts
-            const draftsRes = await fetch('http://localhost:3000/api/copy/drafts');
-            const draftsData = await draftsRes.json();
-            const allDrafts = draftsData.drafts || [];
+  const fetchData = async () => {
+    try {
+      const draftsRes = await fetch('http://localhost:3000/api/copy/drafts')
+      const draftsJson = await draftsRes.json()
+      const drafts: ProductDraft[] = draftsJson.drafts || []
 
-            // Fetch batch tasks
-            const tasksRes = await fetch('http://localhost:3000/api/copy/tasks');
-            const tasksData = await tasksRes.json();
-            const batchTasks = tasksData.tasks || [];
+      const single = drafts.filter((d) => !d.copyTaskId)
+      const batch = drafts.filter((d) => d.copyTaskId)
 
-            // Build task groups
-            const groups: TaskGroup[] = [];
+      const groups: TaskGroup[] = [
+        { id: 'single', name: '单品采集', count: single.length, type: 'single' },
+        { id: 'batch', name: '批量采集', count: batch.length, type: 'batch' },
+        { id: 'all', name: '全部任务', count: drafts.length, type: 'single' }
+      ]
 
-            // 1. Single Collection (单品采集)
-            const singleProducts = allDrafts.filter((d: ProductDraft) => !d.copyTaskId && (d as any).sourceType !== 'smart');
-            groups.push({
-                id: 'single',
-                name: '单品采集',
-                icon: '📦',
-                count: singleProducts.length,
-                type: 'single'
-            });
+      setTaskGroups(groups)
+      setProducts(selectedTask === 'single' ? single : selectedTask === 'batch' ? batch : drafts)
+    } catch (e) {
+      console.error('fetch data error', e)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-            // 2. Smart Collection (智能采集)
-            const smartProducts = allDrafts.filter((d: ProductDraft) => (d as any).sourceType === 'smart');
-            groups.push({
-                id: 'smart',
-                name: '智能采集',
-                icon: '🤖',
-                count: smartProducts.length,
-                type: 'single'
-            });
+  useEffect(() => {
+    fetchData()
+    const timer = setInterval(fetchData, 8000)
+    return () => clearInterval(timer)
+  }, [])
 
-            // 3. Centralized Collection (集中采集)
-            const batchTotal = batchTasks.reduce((acc: number, t: CopyTask) => acc + t.totalCount, 0);
-            groups.push({
-                id: 'batch-all',
-                name: '集中采集',
-                icon: '🏪',
-                count: batchTotal,
-                type: 'batch-all'
-            });
+  useEffect(() => {
+    fetchProductsForTask(selectedTask)
+  }, [selectedTask])
 
-            setTaskGroups(groups);
+  const fetchProductsForTask = async (taskId: string) => {
+    try {
+      const res = await fetch('http://localhost:3000/api/copy/drafts')
+      const data = await res.json()
+      const drafts: ProductDraft[] = data.drafts || []
+      if (taskId === 'single') setProducts(drafts.filter((d) => !d.copyTaskId))
+      else if (taskId === 'batch') setProducts(drafts.filter((d) => d.copyTaskId))
+      else setProducts(drafts)
+      setSelectedIds(new Set())
+    } catch (e) {
+      console.error('fetch products error', e)
+    }
+  }
 
-            // Calculate stats
-            setStats({
-                total: allDrafts.length,
-                pending: allDrafts.filter((d: ProductDraft) => d.status === 'pending' || d.status === 'scraped').length,
-                published: allDrafts.filter((d: ProductDraft) => d.status === 'published').length
-            });
+  const handleBatchDelete = async () => {
+    if (!selectedIds.size) return alert('请先选择商品')
+    if (!confirm(`确定删除选中的 ${selectedIds.size} 个商品吗？`)) return
+    try {
+      const res = await fetch('http://localhost:3000/api/copy/drafts/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) })
+      })
+      if (!res.ok) throw new Error('batch delete failed')
+      setSelectedIds(new Set())
+      fetchData()
+    } catch (e) {
+      alert('删除失败')
+    }
+  }
 
-        } catch (error) {
-            console.error('Failed to fetch data:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const handlePublish = (id: string) => {
+    const url = `https://www.zcygov.cn/goods-center/goods/category/attr/select?draft_id=${id}`
+    window.open(url, '_blank')
+  }
 
-    const fetchProductsForTask = async (taskId: string) => {
-        try {
-            const res = await fetch('http://localhost:3000/api/copy/drafts');
-            const data = await res.json();
-            const allDrafts = data.drafts || [];
+  const handleBatchPublish = () => {
+    if (!selectedIds.size) return alert('请先选择商品')
+    selectedIds.forEach((id) => handlePublish(id))
+  }
 
-            let filtered = [];
-            if (taskId === 'single') {
-                filtered = allDrafts.filter((d: ProductDraft) => !d.copyTaskId && (d as any).sourceType !== 'smart');
-            } else if (taskId === 'smart') {
-                filtered = allDrafts.filter((d: ProductDraft) => (d as any).sourceType === 'smart');
-            } else if (taskId === 'batch-all') {
-                filtered = allDrafts.filter((d: ProductDraft) => d.copyTaskId);
-            } else {
-                filtered = allDrafts.filter((d: ProductDraft) => d.copyTaskId === taskId);
-            }
+  const openEditModal = (product: ProductDraft) => {
+    const mainImgs = parseJsonArray(product.mainImages || product.images)
+    const detailImgs = parseJsonArray(product.detailImages)
+    const attrsObj = parseAttributes(product.attributes)
+    setEditMainImages(mainImgs)
+    setEditDetailImages(detailImgs)
+    setSpecEntries(Object.entries(attrsObj).map(([key, value]) => ({ key, value })))
+    const path = product.categoryPath || '计算机设备/便携式计算机/通用笔记本电脑'
+    const [l1, l2, l3] = path.split('/')
+    setCatL1(l1 || '')
+    setCatL2(l2 || '')
+    setCatL3(l3 || '')
+    setEditingProduct(product)
+    setMissingNotice('')
+    setIsEditModalOpen(true)
+  }
 
-            setProducts(filtered);
-        } catch (error) {
-            console.error('Failed to fetch products:', error);
-        }
-    };
+  const saveProduct = async () => {
+    if (!editingProduct) return
+    if (!editingProduct.title || !editingProduct.brand || !editingProduct.model || !editMainImages.length) {
+      setMissingNotice('请先补全：标题 / 品牌 / 型号 / 至少一张主图。')
+      return
+    }
+    setMissingNotice('')
+    const attrs = specEntries.reduce<Record<string, string>>((acc, cur) => {
+      if (cur.key.trim()) acc[cur.key.trim()] = cur.value
+      return acc
+    }, {})
+    const categoryPath = [catL1, catL2, catL3].filter(Boolean).join('/')
+    try {
+      const res = await fetch(`http://localhost:3000/api/copy/drafts/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editingProduct.title,
+          price: (editingProduct as any).price || '',
+          stock: (editingProduct as any).stock || '',
+          detailHtml: editingProduct.detailHtml || '',
+          categoryPath,
+          attributes: JSON.stringify(attrs),
+          images: JSON.stringify(editMainImages),
+          detailImages: JSON.stringify(editDetailImages),
+          model: editingProduct.model || '',
+          brand: editingProduct.brand || '',
+          originalUrl: editingProduct.originalUrl || ''
+        })
+      })
+      if (!res.ok) throw new Error('save failed')
+      setIsEditModalOpen(false)
+      fetchProductsForTask(selectedTask)
+    } catch (e) {
+      alert('保存失败')
+    }
+  }
 
-    const handlePublish = (draftId: string) => {
-        window.open(`https://www.zcygov.cn/publish?draft_id=${draftId}`, '_blank');
-    };
+  const sourceLabel = (url: string) => {
+    if (!url) return '未知'
+    if (url.includes('jd.com')) return '京东'
+    if (url.includes('tmall')) return '天猫'
+    if (url.includes('taobao')) return '淘宝'
+    if (url.includes('zcygov')) return '政采云'
+    return '其他'
+  }
 
-    const handleTaskAction = async (taskId: string, action: 'pause' | 'resume' | 'delete') => {
-        if (action === 'delete' && !confirm('确定要删除该任务及其所有商品吗？')) return;
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
 
-        try {
-            let url = `http://localhost:3000/api/copy/tasks/${taskId}`;
-            let method = 'POST';
+  const allSelected = useMemo(() => products.length && selectedIds.size === products.length, [products, selectedIds])
 
-            if (action === 'pause') url += '/pause';
-            if (action === 'resume') url += '/resume';
-            if (action === 'delete') method = 'DELETE';
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(products.map((p) => p.id)))
+    }
+  }
 
-            const res = await fetch(url, { method });
-            if (res.ok) {
-                fetchData();
-                if (action === 'delete' && selectedTask === taskId) {
-                    setSelectedTask('single');
-                }
-            } else {
-                alert('操作失败');
-            }
-        } catch (error) {
-            console.error('Task action failed:', error);
-            alert('操作出错');
-        }
-    };
-
-    useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
-    }, []);
-
-    useEffect(() => {
-        fetchProductsForTask(selectedTask);
-    }, [selectedTask]);
-
-    const openEditModal = (product: ProductDraft) => {
-        const skuData = JSON.parse(product.skuData || '{}');
-
-        // Mock Category Parsing or Default
-        // In real app, product.categoryPath would come from DB
-        const currentPath = (product as any).categoryPath || '计算机设备/便携式计算机/通用笔记本电脑';
-        const [l1, l2, l3] = currentPath.split('/');
-
-        setCatL1(l1 || '');
-        setCatL2(l2 || '');
-        setCatL3(l3 || '');
-
-        setEditingProduct({
-            id: product.id,
-            title: product.title,
-            price: skuData.price || '',
-            stock: skuData.stock || '',
-            detailHtml: product.detailHtml || '',
-            categoryPath: currentPath
-        });
-        setIsEditModalOpen(true);
-    };
-
-    const handleCategoryChange = (level: 1 | 2 | 3, value: string) => {
-        if (level === 1) {
-            setCatL1(value);
-            setCatL2('');
-            setCatL3('');
-        } else if (level === 2) {
-            setCatL2(value);
-            setCatL3('');
-        } else {
-            setCatL3(value);
-        }
-
-        // Update editingProduct immediately for preview (optional)
-        // Final string construction happens on Save or here
-    };
-
-    const saveProduct = async () => {
-        if (!editingProduct) return;
-
-        const fullCategoryPath = [catL1, catL2, catL3].filter(Boolean).join('/');
-
-        try {
-            const res = await fetch(`http://localhost:3000/api/copy/drafts/${editingProduct.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: editingProduct.title,
-                    price: editingProduct.price,
-                    stock: editingProduct.stock,
-                    detailHtml: editingProduct.detailHtml,
-                    categoryPath: fullCategoryPath // Save the category
-                })
-            });
-
-            if (res.ok) {
-                setIsEditModalOpen(false);
-                fetchProductsForTask(selectedTask); // Refresh list
-            } else {
-                alert('保存失败');
-            }
-        } catch (error) {
-            console.error('Save failed:', error);
-            alert('保存出错');
-        }
-    };
-
-    const getStatusBadge = (status: string) => {
-        const map: Record<string, { text: string; color: string }> = {
-            'pending': { text: '待采集', color: 'bg-gray-100 text-gray-600' },
-            'scraped': { text: '已采集', color: 'bg-blue-100 text-blue-600' },
-            'published': { text: '已发布', color: 'bg-green-100 text-green-600' }
-        };
-        const badge = map[status] || { text: status, color: 'bg-gray-100 text-gray-600' };
-        return <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>;
-    };
-
-    return (
-        <div className="h-full flex flex-col relative">
-            {/* Header */}
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-900">任务中心</h1>
-                <p className="text-gray-500 mt-1">统一管理商品采集和发布任务</p>
-            </div>
-
-            {/* Stats Bar */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-lg border border-gray-200 p-4 text-center">
-                    <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
-                    <div className="text-sm text-gray-500">总商品数</div>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 text-center">
-                    <div className="text-2xl font-bold text-blue-600">{stats.pending}</div>
-                    <div className="text-sm text-gray-500">待发布</div>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4 text-center">
-                    <div className="text-2xl font-bold text-green-600">{stats.published}</div>
-                    <div className="text-sm text-gray-500">已发布</div>
-                </div>
-            </div>
-
-            {/* Master-Detail Layout */}
-            <div className="flex-1 flex gap-[30px] overflow-hidden">
-                {/* Left Panel: Task Groups */}
-                <div className="w-80 bg-white rounded-lg border border-gray-200 overflow-y-auto self-stretch">
-                    <div className="p-4 border-b border-gray-200">
-                        <h2 className="font-semibold text-gray-900">任务列表</h2>
-                    </div>
-                    <div className="p-2">
-                        {taskGroups.map((group, index) => {
-                            const isActive = selectedTask === group.id;
-                            const showBatchHeader = group.type === 'batch' && (index === 0 || taskGroups[index - 1].type !== 'batch');
-
-                            return (
-                                <div key={group.id}>
-                                    {showBatchHeader && (
-                                        <div className="px-3 py-2 mt-4 mb-1 text-xs font-semibold text-gray-400 uppercase">
-                                            集中采集 (整店)
-                                        </div>
-                                    )}
-                                    <div className="mb-1 group relative">
-                                        <button
-                                            onClick={() => setSelectedTask(group.id)}
-                                            className={`w-full text-left p-3 rounded-lg transition-colors ${isActive ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-                                                }`}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-900 truncate max-w-[140px]">{group.name}</span>
-                                                        {group.status === 'paused' && (
-                                                            <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">暂停</span>
-                                                        )}
-                                                    </div>
-                                                    {group.type === 'batch' && group.progress && (
-                                                        <div className="mt-2">
-                                                            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                                                                <span>{group.progress.current} / {group.progress.total}</span>
-                                                                <span>{Math.round((group.progress.current / group.progress.total) * 100)}%</span>
-                                                            </div>
-                                                            <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                                                <div
-                                                                    className={`h-1.5 rounded-full ${group.status === 'paused' ? 'bg-yellow-500' : 'bg-blue-600'}`}
-                                                                    style={{ width: `${(group.progress.current / group.progress.total) * 100}%` }}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <span className="text-sm font-medium text-gray-500 ml-2">{group.count}</span>
-                                            </div>
-                                        </button>
-
-                                        {/* Task Controls (Hover) */}
-                                        {group.type === 'batch' && (
-                                            <div className="absolute top-2 right-2 hidden group-hover:flex gap-1 bg-white shadow-sm rounded p-1 border border-gray-100">
-                                                {group.status === 'running' ? (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleTaskAction(group.id, 'pause'); }}
-                                                        className="p-1 hover:bg-gray-100 rounded text-gray-600"
-                                                        title="暂停"
-                                                    >
-                                                        ⏸️
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleTaskAction(group.id, 'resume'); }}
-                                                        className="p-1 hover:bg-gray-100 rounded text-green-600"
-                                                        title="恢复"
-                                                    >
-                                                        ▶️
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleTaskAction(group.id, 'delete'); }}
-                                                    className="p-1 hover:bg-gray-100 rounded text-red-600"
-                                                    title="删除"
-                                                >
-                                                    🗑️
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Right Panel: Product List */}
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                        <h2 className="font-semibold text-gray-900">商品列表</h2>
-                        <div className="flex gap-2">
-                            <button className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-                                批量发布
-                            </button>
-                            <button className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
-                                批量删除
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto">
-                        {loading ? (
-                            <div className="text-center py-12">
-                                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                            </div>
-                        ) : products.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">
-                                暂无商品
-                            </div>
-                        ) : (
-                            <table className="w-full">
-                                <thead className="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">商品</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">来源平台</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">采集时间</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {products.map((product) => (
-                                        <tr key={product.id} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3">
-                                                <div className="text-black truncate max-w-md" style={{ fontFamily: 'SimHei, "Microsoft JhengHei", sans-serif' }}>{product.title}</div>
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-500" title={product.shopName}>
-                                                {(() => {
-                                                    const url = product.originalUrl || '';
-                                                    if (url.includes('jd.com')) return '京东';
-                                                    if (url.includes('tmall.com')) return '天猫';
-                                                    if (url.includes('suning.com')) return '苏宁';
-                                                    if (url.includes('zcygov.cn')) return '政采云';
-                                                    if (url.includes('taobao.com')) return '淘宝 (不支持)';
-                                                    return '其他';
-                                                })()}
-                                            </td>
-                                            <td className="px-4 py-3">{getStatusBadge(product.status)}</td>
-                                            <td className="px-4 py-3 text-sm text-gray-500">
-                                                {new Date(product.createdAt).toLocaleDateString()}
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    <button
-                                                        onClick={() => handlePublish(product.id)}
-                                                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                                                    >
-                                                        发布
-                                                    </button>
-                                                    <button
-                                                        onClick={() => openEditModal(product)}
-                                                        className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                                    >
-                                                        编辑
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Edit Modal */}
-            {isEditModalOpen && editingProduct && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-[700px] max-h-[85vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-gray-900">编辑商品信息</h3>
-                            <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* Category Selector (ZCY Standard) */}
-                            <div className="bg-blue-50 p-5 rounded-xl border border-blue-100">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-lg">🏷️</span>
-                                    <label className="block text-sm font-bold text-blue-900">政采云标准类目</label>
-                                    <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">机器核对 + 人工调整</span>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-3">
-                                    {/* Level 1 */}
-                                    <div>
-                                        <label className="block text-xs text-blue-600 mb-1">一级类目</label>
-                                        <select
-                                            className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                                            value={catL1}
-                                            onChange={(e) => handleCategoryChange(1, e.target.value)}
-                                        >
-                                            <option value="">请选择</option>
-                                            {ZCY_CATEGORIES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                                        </select>
-                                    </div>
-
-                                    {/* Level 2 */}
-                                    <div>
-                                        <label className="block text-xs text-blue-600 mb-1">二级类目</label>
-                                        <select
-                                            className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                                            value={catL2}
-                                            onChange={(e) => handleCategoryChange(2, e.target.value)}
-                                            disabled={!catL1}
-                                        >
-                                            <option value="">请选择</option>
-                                            {catL1 && ZCY_CATEGORIES.find(c => c.name === catL1)?.children.map(c => (
-                                                <option key={c.name} value={c.name}>{c.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    {/* Level 3 */}
-                                    <div>
-                                        <label className="block text-xs text-blue-600 mb-1">三级类目</label>
-                                        <select
-                                            className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                                            value={catL3}
-                                            onChange={(e) => handleCategoryChange(3, e.target.value)}
-                                            disabled={!catL2}
-                                        >
-                                            <option value="">请选择</option>
-                                            {catL1 && catL2 && ZCY_CATEGORIES.find(c => c.name === catL1)?.children.find(c => c.name === catL2)?.children.map((c: any) => (
-                                                <option key={c.name} value={c.name}>{c.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="mt-3 flex items-start gap-2">
-                                    <svg className="w-4 h-4 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    <p className="text-xs text-blue-600 leading-relaxed">
-                                        当前选择：<span className="font-bold">{[catL1, catL2, catL3].filter(Boolean).join(' > ') || '未选择'}</span>
-                                        <br />
-                                        <span className="opacity-75">系统已根据商品信息自动匹配最可能的类目，如有误请手动修正。</span>
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">商品标题</label>
-                                <input
-                                    type="text"
-                                    className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-black focus:border-black"
-                                    value={editingProduct.title}
-                                    onChange={e => setEditingProduct({ ...editingProduct, title: e.target.value })}
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">价格 (元)</label>
-                                    <input
-                                        type="number"
-                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-black focus:border-black"
-                                        value={editingProduct.price}
-                                        onChange={e => setEditingProduct({ ...editingProduct, price: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">库存</label>
-                                    <input
-                                        type="number"
-                                        className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-black focus:border-black"
-                                        value={editingProduct.stock}
-                                        onChange={e => setEditingProduct({ ...editingProduct, stock: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">商品详情 (HTML)</label>
-                                <textarea
-                                    className="w-full border border-gray-300 rounded px-3 py-2 h-40 font-mono text-xs focus:ring-black focus:border-black"
-                                    value={editingProduct.detailHtml}
-                                    onChange={e => setEditingProduct({ ...editingProduct, detailHtml: e.target.value })}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
-                            <button
-                                onClick={() => setIsEditModalOpen(false)}
-                                className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={saveProduct}
-                                className="px-5 py-2.5 bg-black text-white rounded-lg hover:opacity-80 font-medium transition-opacity shadow-lg shadow-gray-200"
-                            >
-                                保存修改
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+  return (
+    <div className="h-full flex flex-col relative p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">任务中心</h1>
+          <p className="text-gray-500 text-sm mt-1">统一管理采集和发布任务</p>
         </div>
-    );
+        <div className="flex gap-2">
+          <button
+            onClick={handleBatchPublish}
+            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+          >
+            批量发布
+          </button>
+          <button
+            onClick={handleBatchDelete}
+            className="px-3 py-2 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-sm"
+          >
+            批量删除
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-6 flex-1 overflow-hidden">
+        <div className="w-72 bg-white rounded-lg border border-gray-200 overflow-y-auto">
+          <div className="p-3 border-b border-gray-200 font-semibold text-gray-800">任务列表</div>
+          <div className="p-2 space-y-1">
+            {taskGroups.map((g) => {
+              const active = selectedTask === g.id
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => setSelectedTask(g.id)}
+                  className={`w-full text-left p-3 rounded-lg ${active ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-900">{g.name}</span>
+                    <span className="text-sm text-gray-500">{g.count}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <span>共 {products.length} 条</span>
+              {loading && <span className="text-gray-400">加载中…</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                className="h-4 w-4"
+                title="全选"
+              />
+              <span className="text-sm text-gray-500">全选</span>
+            </div>
+          </div>
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left">选择</th>
+                  <th className="px-4 py-2 text-left">标题</th>
+                  <th className="px-4 py-2 text-left">来源</th>
+                  <th className="px-4 py-2 text-left">状态</th>
+                  <th className="px-4 py-2 text-left">时间</th>
+                  <th className="px-4 py-2 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => {
+                  const badge = statusBadge(p.status)
+                  return (
+                    <tr key={p.id} className="border-b last:border-0">
+                      <td className="px-4 py-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(p.id)}
+                          onChange={() => toggleSelect(p.id)}
+                          className="h-4 w-4"
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="text-gray-900 font-medium line-clamp-2">{p.title}</div>
+                      </td>
+                      <td className="px-4 py-2 text-gray-600">{sourceLabel(p.originalUrl)}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>
+                      </td>
+                      <td className="px-4 py-2 text-gray-500">
+                        {new Date(p.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => handlePublish(p.id)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                          >
+                            发布
+                          </button>
+                          <button
+                            onClick={() => openEditModal(p)}
+                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                          >
+                            编辑
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!products.length && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
+                      暂无数据
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {isEditModalOpen && editingProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="relative">
+            <button
+              onClick={() => setIsEditModalOpen(false)}
+              className="absolute -right-10 -top-10 w-10 h-10 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow hover:bg-gray-50"
+              title="关闭"
+            >
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="bg-white rounded-lg p-6 w-[780px] max-h-[85vh] overflow-y-auto">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">编辑商品信息</h3>
+
+              {/* 类目选择 */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-5">
+                <div className="flex items-center gap-2 text-blue-800 font-semibold mb-3">
+                  <span>政采云标准类目</span>
+                  <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">机器核对 + 人工调整</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-blue-600 mb-1">一级类目</label>
+                    <select
+                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      value={catL1}
+                      onChange={(e) => {
+                        setCatL1(e.target.value)
+                        setCatL2('')
+                        setCatL3('')
+                      }}
+                    >
+                      <option value="">请选择</option>
+                      {ZCY_CATEGORIES.map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-blue-600 mb-1">二级类目</label>
+                    <select
+                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      value={catL2}
+                      onChange={(e) => {
+                        setCatL2(e.target.value)
+                        setCatL3('')
+                      }}
+                      disabled={!catL1}
+                    >
+                      <option value="">请选择</option>
+                      {catL1 &&
+                        ZCY_CATEGORIES.find((c) => c.name === catL1)?.children.map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-blue-600 mb-1">三级类目</label>
+                    <select
+                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                      value={catL3}
+                      onChange={(e) => setCatL3(e.target.value)}
+                      disabled={!catL2}
+                    >
+                      <option value="">请选择</option>
+                      {catL1 &&
+                        catL2 &&
+                        ZCY_CATEGORIES.find((c) => c.name === catL1)
+                          ?.children.find((c) => c.name === catL2)
+                          ?.children.map((c: any) => (
+                            <option key={c.name} value={c.name}>
+                              {c.name}
+                            </option>
+                          ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-blue-700">
+                  当前选择：{[catL1, catL2, catL3].filter(Boolean).join(' > ') || '未选择'}
+                </div>
+              </div>
+
+              {/* 原始信息 + 品牌型号 */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-200 bg-gray-50 rounded px-3 py-2 text-sm"
+                    value={editingProduct.originalUrl || ''}
+                    readOnly
+                  />
+                </div>
+                <div />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                    value={editingProduct.brand || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, brand: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">型号</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                    value={editingProduct.model || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, model: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">商品标题</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={editingProduct.title}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">价格 (元)</label>
+                  <input
+                    type="number"
+                    className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={(editingProduct as any).price || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, price: e.target.value as any })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">库存</label>
+                  <input
+                    type="number"
+                    className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={(editingProduct as any).stock || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, stock: e.target.value as any })}
+                  />
+                </div>
+              </div>
+
+              {/* 主图 */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">主图</label>
+                  <button
+                    onClick={() => setEditMainImages([...editMainImages, ''])}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    + 添加
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {editMainImages.map((url, idx) => (
+                    <div key={idx} className="border rounded-lg p-2 space-y-2">
+                      <div className="w-full h-28 bg-gray-50 flex items-center justify-center overflow-hidden rounded">
+                        {url ? <img src={url} alt="" className="object-contain max-h-28" /> : <span className="text-xs text-gray-400">无预览</span>}
+                      </div>
+                      <input
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
+                        value={url}
+                        placeholder="图片 URL"
+                        onChange={(e) => {
+                          const next = [...editMainImages]
+                          next[idx] = e.target.value
+                          setEditMainImages(next)
+                        }}
+                      />
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <button
+                          onClick={() => {
+                            const next = editMainImages.filter((_, i) => i !== idx)
+                            setEditMainImages(next)
+                          }}
+                          className="text-red-500 hover:underline"
+                        >
+                          删除
+                        </button>
+                        {idx > 0 && (
+                          <button
+                            onClick={() => {
+                              const next = [...editMainImages]
+                              ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                              setEditMainImages(next)
+                            }}
+                            className="hover:underline"
+                          >
+                            上移
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {!editMainImages.length && <div className="text-sm text-gray-400 col-span-3">暂无主图，可点击“添加”</div>}
+                </div>
+              </div>
+
+              {/* 详情图 */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">详情图</label>
+                  <button
+                    onClick={() => setEditDetailImages([...editDetailImages, ''])}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    + 添加
+                  </button>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {editDetailImages.map((url, idx) => (
+                    <div key={idx} className="border rounded-lg p-1 space-y-1">
+                      <div className="w-full h-20 bg-gray-50 flex items-center justify-center overflow-hidden rounded">
+                        {url ? <img src={url} alt="" className="object-contain max-h-20" /> : <span className="text-xs text-gray-400">无预览</span>}
+                      </div>
+                      <input
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
+                        value={url}
+                        placeholder="图片 URL"
+                        onChange={(e) => {
+                          const next = [...editDetailImages]
+                          next[idx] = e.target.value
+                          setEditDetailImages(next)
+                        }}
+                      />
+                      <div className="flex justify-between text-[11px] text-gray-500">
+                        <button
+                          onClick={() => {
+                            const next = editDetailImages.filter((_, i) => i !== idx)
+                            setEditDetailImages(next)
+                          }}
+                          className="text-red-500 hover:underline"
+                        >
+                          删
+                        </button>
+                        {idx > 0 && (
+                          <button
+                            onClick={() => {
+                              const next = [...editDetailImages]
+                              ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                              setEditDetailImages(next)
+                            }}
+                            className="hover:underline"
+                          >
+                            ↑
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {!editDetailImages.length && <div className="text-sm text-gray-400 col-span-4">暂无详情图，可点击“添加”</div>}
+                </div>
+              </div>
+
+              {/* 规格参数 */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">规格参数</label>
+                  <button
+                    onClick={() => setSpecEntries([...specEntries, { key: '', value: '' }])}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    + 添加
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {specEntries.map((row, idx) => (
+                    <div key={idx} className="grid grid-cols-5 gap-2 items-center">
+                      <input
+                        className="col-span-2 border border-gray-300 rounded px-2 py-1 text-sm"
+                        placeholder="参数名"
+                        value={row.key}
+                        onChange={(e) => {
+                          const next = [...specEntries]
+                          next[idx] = { ...next[idx], key: e.target.value }
+                          setSpecEntries(next)
+                        }}
+                      />
+                      <input
+                        className="col-span-3 border border-gray-300 rounded px-2 py-1 text-sm"
+                        placeholder="参数值"
+                        value={row.value}
+                        onChange={(e) => {
+                          const next = [...specEntries]
+                          next[idx] = { ...next[idx], value: e.target.value }
+                          setSpecEntries(next)
+                        }}
+                      />
+                      <button
+                        onClick={() => setSpecEntries(specEntries.filter((_, i) => i !== idx))}
+                        className="text-xs text-red-500 hover:underline col-span-5 text-right"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                  {!specEntries.length && <div className="text-sm text-gray-400">暂无规格，可点击“添加”</div>}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">商品详情 (HTML)</label>
+                <textarea
+                  className="w-full border border-gray-300 rounded px-3 py-2 h-40 font-mono text-xs focus:ring-blue-500 focus:border-blue-500"
+                  value={editingProduct.detailHtml || ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, detailHtml: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                {missingNotice && <div className="text-red-500 text-sm mr-auto">{missingNotice}</div>}
+                <button
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={saveProduct}
+                  className="px-5 py-2.5 bg-black text-white rounded-lg hover:opacity-80 font-medium transition-opacity shadow-lg shadow-gray-200"
+                >
+                  保存修改
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

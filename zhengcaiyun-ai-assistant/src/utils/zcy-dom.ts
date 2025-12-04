@@ -3,6 +3,8 @@
  * 负责识别和操作政采云网站的表单元素
  */
 
+import { fetchWithAuth } from "~src/utils/api"
+
 export interface ProductData {
     name: string;
     category?: string;
@@ -252,11 +254,6 @@ export function findImageUploadButton(): HTMLInputElement | null {
 /**
  * 上传图片文件
  */
-import { fetchWithAuth } from "~src/utils/api"
-
-/**
- * 上传图片文件
- */
 export async function uploadImage(imageUrl: string): Promise<boolean> {
     try {
         console.log('[DOM] 开始上传图片:', imageUrl);
@@ -362,9 +359,6 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Check approval status from DOM (Faster than AI)
- */
 /**
  * Extract the current ZCY Region/Province
  */
@@ -488,27 +482,371 @@ export function selectCategory(categoryName: string): boolean {
 }
 
 /**
- * Submit the form
+ * Find category search input
  */
-export function submitForm(): boolean {
+export function findCategorySearchInput(): HTMLInputElement | null {
     const selectors = [
-        'button[type="submit"]',
-        'button.submit-btn',
-        'button:contains("发布")',
-        'button:contains("提交")'
+        '#search', // Verified ID
+        'input[placeholder*="请输入类目名称"]',
+        'input.ant-input-search',
+        '.category-search input',
+        'input[type="text"]'
     ];
 
-    // Custom contains logic since querySelector doesn't support :contains
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const submitBtn = buttons.find(b =>
-        b.innerText.includes('发布') ||
-        b.innerText.includes('提交') ||
-        b.innerText.includes('保存')
+    // Filter for inputs that look like the search bar (usually at the top)
+    const inputs = Array.from(document.querySelectorAll('input'));
+    const searchInput = inputs.find(input =>
+        input.id === 'search' ||
+        input.placeholder.includes('类目名称') ||
+        input.placeholder.includes('关键词') ||
+        input.className.includes('search')
     );
 
-    if (submitBtn) {
-        submitBtn.click();
+    return searchInput as HTMLInputElement || null;
+}
+
+/**
+ * Search and select category
+ */
+export async function searchAndSelectCategory(keyword: string): Promise<boolean> {
+    console.log('[DOM] Searching for category:', keyword);
+
+    const input = findCategorySearchInput();
+    if (!input) {
+        console.warn('[DOM] Category search input not found');
+        return false;
+    }
+
+    // Visual Debug: Highlight the input
+    const originalBorder = input.style.border;
+    input.style.border = '2px solid red';
+
+    // 1. Type keyword
+    input.focus();
+    input.value = keyword;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    await sleep(500);
+
+    // Trigger search (Enter or Click icon)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // Try finding search button
+    const searchBtn = input.nextElementSibling as HTMLElement ||
+        input.parentElement?.querySelector('.ant-input-search-icon') ||
+        input.parentElement?.querySelector('button');
+
+    if (searchBtn) {
+        searchBtn.click();
+        console.log('[DOM] Clicked search button');
+    }
+
+    await sleep(2000); // Wait for results
+    input.style.border = originalBorder; // Remove highlight
+
+    // 2. Select first result
+    // Strategy: Look for the result list items
+    // ZCY uses custom class .doraemon-select-dropdown-menu-item for search results
+    const resultItems = document.querySelectorAll('li.doraemon-select-dropdown-menu-item, .ant-select-dropdown-menu-item');
+
+    if (resultItems.length > 0) {
+        // Click the first item
+        const node = resultItems[0] as HTMLElement;
+        if (node) {
+            node.click();
+            console.log('[DOM] Selected category node by dropdown item');
+            return true;
+        }
+    }
+
+    // Fallback: Try to find text match in the category tree/list area
+    // Also check for highlighted text
+    const highlighted = document.querySelectorAll('.ant-tree-node-content-wrapper span[style*="color"]');
+    if (highlighted.length > 0) {
+        const node = highlighted[0].closest('.ant-tree-node-content-wrapper') as HTMLElement;
+        if (node) {
+            node.click();
+            console.log('[DOM] Selected category node by highlight');
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Handle Modals (Duplicate Product, SPU Application)
+ */
+export async function handleModals(): Promise<void> {
+    console.log('[DOM] Checking for modals...');
+
+    // 1. Duplicate Product Modal
+    // Usually has text "重复铺货" or "已发布"
+    // Buttons: "继续发品" (Continue) or "取消" (Cancel)
+    // We want to continue if possible, or cancel if blocked.
+    // User strategy: If "Duplicate", maybe we should just continue?
+    // Let's look for "继续发品"
+    const continueBtns = Array.from(document.querySelectorAll('button')).filter(b => b.textContent?.includes('继续发品'));
+    if (continueBtns.length > 0) {
+        console.log('[DOM] Found "Continue Publishing" button, clicking...');
+        continueBtns[0].click();
+        await sleep(1000);
+        return;
+    }
+
+    // 2. SPU Application Modal (Standard Product Unit)
+    // Usually "标准商品", "申请", "返回修改"
+    // If we hit this, we might be in the wrong category or need to apply.
+    // For automation, we usually want to "Return" and try another category or just close it.
+    // But if we can't proceed, we are stuck.
+    // Let's try to close it if it's blocking.
+    const closeBtns = Array.from(document.querySelectorAll('.ant-modal-close, button.ant-btn-default'));
+    const returnBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('返回修改'));
+
+    if (returnBtn) {
+        console.log('[DOM] Found "Return to Modify" button, clicking...');
+        returnBtn.click();
+        await sleep(1000);
+        return;
+    }
+}
+
+/**
+ * Select Brand by Name
+ */
+export async function selectBrand(brandName: string): Promise<boolean> {
+    console.log(`[DOM] Trying to select brand: ${brandName}`);
+
+    // 1. Find Brand Section
+    // Usually a label "品牌" and a container next to it
+    const brandLabel = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('品牌'));
+    if (!brandLabel) return false;
+
+    const container = brandLabel.closest('.ant-row') || brandLabel.parentElement?.parentElement;
+    if (!container) return false;
+
+    // 2. Check if it's a search box (Select/Cascader) or a list
+    // ZCY Brand selector is often a custom search box or an Ant Select
+    const searchInput = container.querySelector('input[placeholder*="品牌"], input.ant-select-search__field') as HTMLInputElement;
+
+    if (searchInput) {
+        console.log('[DOM] Found brand search input');
+        // Type brand name
+        searchInput.focus();
+        searchInput.value = brandName;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(1000); // Wait for search results
+
+        // Select first result
+        // The results usually appear in a dropdown portal, not inside the container
+        // We look for .ant-select-dropdown-menu-item containing the text
+        const options = Array.from(document.querySelectorAll('.ant-select-dropdown-menu-item, li[role="option"]'));
+        const targetOption = options.find(opt => opt.textContent?.includes(brandName));
+
+        if (targetOption) {
+            (targetOption as HTMLElement).click();
+            console.log('[DOM] Selected brand from dropdown');
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Fill All Required Attributes (Brute Force)
+ */
+export async function fillAllRequiredAttributes(): Promise<void> {
+    console.log('[DOM] Brute-forcing all required attributes...');
+
+    // Find all required labels
+    const requiredLabels = document.querySelectorAll('label.ant-form-item-required');
+
+    for (const label of Array.from(requiredLabels)) {
+        const container = label.closest('.ant-row') || label.parentElement?.parentElement;
+        if (!container) continue;
+
+        // Check if already filled
+        const input = container.querySelector('input, select, textarea') as HTMLInputElement;
+        if (input && input.value) continue; // Already has value
+
+        // 1. Radio Buttons
+        const radios = container.querySelectorAll('input[type="radio"]');
+        if (radios.length > 0) {
+            // Select "No" or "Other" or first one
+            // Strategy: Prefer "无", "否", "其他"
+            let targetRadio = Array.from(radios).find(r => {
+                const text = r.parentElement?.textContent || '';
+                return text.includes('无') || text.includes('否') || text.includes('其他');
+            });
+
+            if (!targetRadio) targetRadio = radios[0]; // Default to first
+
+            if (targetRadio && !(targetRadio as HTMLInputElement).checked) {
+                (targetRadio as HTMLElement).click();
+                await sleep(200);
+            }
+            continue;
+        }
+
+        // 2. Checkboxes
+        // Be careful not to check everything. Maybe just check "无" if available.
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 0) {
+            const noneCheckbox = Array.from(checkboxes).find(c => {
+                const text = c.parentElement?.textContent || '';
+                return text.includes('无') || text.includes('不');
+            });
+
+            if (noneCheckbox && !(noneCheckbox as HTMLInputElement).checked) {
+                (noneCheckbox as HTMLElement).click();
+                await sleep(200);
+            }
+            continue;
+        }
+
+        // 3. Select/Cascader (Hard to automate blindly, but let's try opening and clicking first option)
+        const selectTrigger = container.querySelector('.ant-select, .ant-cascader-picker');
+        if (selectTrigger) {
+            (selectTrigger as HTMLElement).click();
+            await sleep(500);
+            // Try to click the first option in the dropdown
+            const firstOption = document.querySelector('.ant-select-dropdown-menu-item, .ant-cascader-menu-item');
+            if (firstOption) {
+                (firstOption as HTMLElement).click();
+                await sleep(200);
+            }
+        }
+    }
+}
+
+/**
+ * Fill Category Attributes (Brand/Model) - Enhanced
+ */
+export async function fillCategoryAttributes(brandName?: string): Promise<boolean> {
+    console.log('[DOM] Filling category attributes...');
+
+    // Helper to find and click checkbox by label text
+    const clickCheckboxByText = async (text: string) => {
+        const spans = Array.from(document.querySelectorAll('span, label, div'));
+        const targetSpan = spans.find(s => s.textContent?.includes(text) && s.children.length === 0);
+
+        if (targetSpan) {
+            let container = targetSpan.parentElement;
+            let checkbox: HTMLInputElement | null = null;
+
+            for (let i = 0; i < 4; i++) {
+                if (!container) break;
+                checkbox = container.querySelector('input[type="checkbox"]');
+                if (checkbox) break;
+                container = container.parentElement;
+            }
+
+            if (checkbox && !checkbox.checked) {
+                console.log(`[DOM] Found checkbox for "${text}", clicking...`);
+                checkbox.click();
+                checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                await sleep(500);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 1. Handle Brand
+    let brandSelected = false;
+    if (brandName) {
+        brandSelected = await selectBrand(brandName);
+    }
+
+    // Only click "No Brand" if we didn't select a brand AND we don't have a brand name to select
+    if (!brandSelected && !brandName) {
+        await clickCheckboxByText('无品牌');
+    }
+
+    // 2. Handle "No Model" (Usually safe to default to No Model if not provided)
+    await clickCheckboxByText('无型号');
+
+    // 3. Brute force others
+    await fillAllRequiredAttributes();
+
+    return true;
+}
+
+/**
+ * Click "Next Step" button
+ */
+export async function clickNextStep(): Promise<boolean> {
+    console.log('[DOM] Clicking Next Step...');
+
+    const nextBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('下一步'));
+
+    if (nextBtn && !nextBtn.disabled) {
+        nextBtn.click();
         return true;
     }
+
+    return false;
+}
+
+/**
+ * Submit Form
+ */
+export async function submitForm(): Promise<boolean> {
+    console.log('[DOM] 尝试提交表单...');
+
+    const selectors = [
+        'button.submit-btn',
+        'button[type="button"].ant-btn-primary', // Common AntD submit button
+        'button:contains("发布")',
+        'button:contains("提交")',
+        'button:contains("保存")'
+    ];
+
+    // Helper to find button by text
+    const findBtn = () => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        // Filter visible buttons only
+        const visibleButtons = buttons.filter(b => b.offsetParent !== null);
+
+        // Priority 1: Exact text match
+        let btn = visibleButtons.find(b =>
+            b.textContent?.trim() === '立即发布' ||
+            b.textContent?.trim() === '提交审核'
+        );
+
+        // Priority 2: Contains text
+        if (!btn) {
+            btn = visibleButtons.find(b =>
+                b.textContent?.includes('立即发布') ||
+                b.textContent?.includes('提交审核')
+            );
+        }
+
+        return btn;
+    };
+
+    const submitBtn = findBtn();
+
+    if (submitBtn) {
+        console.log('[DOM] 找到提交按钮:', submitBtn.textContent);
+        submitBtn.click();
+
+        // Handle potential "Confirm" dialog
+        await sleep(1000);
+
+        // Look for a secondary confirm button in a modal
+        const confirmBtn = document.querySelector('.ant-modal-confirm-btns button.ant-btn-primary, .ant-modal-footer button.ant-btn-primary') as HTMLElement;
+        if (confirmBtn) {
+            console.log('[DOM] 找到确认弹窗按钮，点击确认...');
+            confirmBtn.click();
+        }
+
+        return true;
+    }
+
+    console.warn('[DOM] 未找到提交按钮');
     return false;
 }

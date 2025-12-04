@@ -1,0 +1,3 @@
+Fetching json/list...
+Connecting to ws://127.0.0.1:7217/devtools/page/84D859FEC16E09D0242C08B2CDB6B2FD
+Error: ProtocolError: Protocol error (Target.getBrowserContexts): Not allowed

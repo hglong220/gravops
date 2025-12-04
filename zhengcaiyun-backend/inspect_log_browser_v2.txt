@@ -1,0 +1,8 @@
+Fetching json/version...
+Connecting to Browser WS: ws://127.0.0.1:7217/devtools/browser/e1955699-35e8-4ea3-9a7a-e411ed66ee15
+Connected to browser!
+Found 0 pages.
+No pages found via browser.pages()
+Targets: 2
+Target: browser - 
+Target: browser - 

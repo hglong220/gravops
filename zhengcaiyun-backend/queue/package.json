@@ -1,0 +1,17 @@
+{
+    "name": "zhengcaiyun-queue",
+    "version": "1.0.0",
+    "scripts": {
+        "worker": "tsx worker.ts",
+        "worker:dev": "tsx watch worker.ts"
+    },
+    "dependencies": {
+        "bullmq": "^4.18.3",
+        "ioredis": "^5.3.2"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "tsx": "^4.7.0",
+        "typescript": "^5.3.0"
+    }
+}

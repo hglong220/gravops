@@ -1,5 +1,8 @@
 // Background Service Worker for Screenshot Capture & E-commerce Copy
 // Handles chrome.tabs.captureVisibleTab requests from content scripts
+// + Auto-Publish functionality for ZCY
+
+import { storage, type PublishConfig } from "~src/utils/storage"
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'capturePage') {
@@ -30,6 +33,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }).catch(error => {
             sendResponse({ success: false, error: error.message });
         });
+        return true;
+    } else if (message.type === 'TRIGGER_PUBLISH') {
+        // Handle auto-publish trigger
+        handlePublishRequest(message.productData);
+        sendResponse({ received: true });
+        return true;
+    } else if (message.type === 'PUBLISH_RESULT') {
+        // Handle publish result
+        handlePublishResult(message);
+        sendResponse({ received: true });
+        return true;
+    } else if (message.type === 'SYNC_PERMISSIONS') {
+        // Handle permission sync
+        handleSyncPermissions(message.permissions);
+        sendResponse({ received: true });
         return true;
     }
 });
@@ -75,7 +93,157 @@ async function handleSaveProduct(data: any): Promise<any> {
 
 console.log('[Background] Service worker initialized');
 
+// ======================================
+// Auto-Publish Functions
+// ======================================
+
+/**
+ * 构造发布页面URL
+ */
+function buildPublishUrl(productData: any, config: PublishConfig): string {
+    const params = new URLSearchParams({
+        categoryId: productData.categoryId || config.defaultCategoryId || '',
+        protocolId: config.protocolId,
+        bidId: config.bidId,
+        instanceCode: config.instanceCode
+    });
+
+    // 如果有spuId（编辑模式），添加到URL
+    if (productData.spuId) {
+        params.append('spuId', productData.spuId);
+    }
+
+    return `https://www.zcygov.cn/goods-center/goods/publish?${params.toString()}`;
+}
+
+/**
+ * 处理发布请求
+ */
+async function handlePublishRequest(productData: any) {
+    console.log('[Background] Received publish request:', productData);
+
+    try {
+        // 1. 读取配置
+        const config = await storage.getConfig();
+        if (!config) {
+            console.error('[Background] No config found');
+            chrome.runtime.sendMessage({
+                type: 'PUBLISH_ERROR',
+                message: '请先在插件设置中配置发布参数'
+            });
+            return;
+        }
+
+        console.log('[Background] Using config:', config);
+
+        // 2. 构造发布页面URL
+        const publishUrl = buildPublishUrl(productData, config);
+        console.log('[Background] Publish URL:', publishUrl);
+
+        // 3. 创建新Tab
+        const tab = await chrome.tabs.create({
+            url: publishUrl,
+            active: true // 前台打开，确保用户看到
+        });
+
+        console.log('[Background] Created tab:', tab.id);
+
+        // 4. 等待页面加载完成
+        chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
+            if (tabId === tab.id && changeInfo.status === 'complete') {
+                console.log('[Background] Tab loaded, sending data to content script');
+
+                // 移除监听器
+                chrome.tabs.onUpdated.removeListener(listener);
+
+                // 5. 向content script发送数据
+                chrome.tabs.sendMessage(tab.id!, {
+                    type: 'START_AUTO_PUBLISH',
+                    productData: {
+                        ...productData,
+                        config // 同时传递配置
+                    }
+                }).catch(err => {
+                    console.error('[Background] Failed to send message to content script:', err);
+                });
+            }
+        });
+
+        // 设置超时保护（5分钟）
+        setTimeout(() => {
+            chrome.tabs.get(tab.id!).then(t => {
+                if (t && t.status !== 'complete') {
+                    console.warn('[Background] Tab load timeout');
+                    // chrome.tabs.remove(tab.id!); // Disable auto-close for now
+                }
+            }).catch(() => {
+                // Tab可能已经关闭
+            });
+        }, 300000);
+
+    } catch (error) {
+        console.error('[Background] Error handling publish request:', error);
+        chrome.runtime.sendMessage({
+            type: 'PUBLISH_ERROR',
+            message: '发布失败: ' + (error as Error).message
+        });
+    }
+}
+
+/**
+ * 处理发布结果
+ */
+async function handlePublishResult(result: any) {
+    console.log('[Background] Received publish result:', result);
+
+    // 记录到历史
+    await storage.addHistory({
+        productName: result.productData?.title || '未知商品',
+        publishTime: Date.now(),
+        status: result.success ? 'success' : 'failed',
+        errorMessage: result.success ? undefined : result.message
+    });
+
+    // 通知用户
+    if (result.success) {
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon.png',
+            title: '发布成功',
+            message: result.message
+        });
+    } else {
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon.png',
+            title: '发布失败',
+            message: result.message
+        });
+    }
+}
+
+/**
+ * 同步权限到后端
+ */
+async function handleSyncPermissions(permissions: any[]) {
+    console.log('[Background] Syncing permissions:', permissions.length);
+
+    try {
+        const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+        await fetch(`${backendUrl}/api/user/permissions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ permissions })
+        });
+        console.log('[Background] Permissions synced to backend');
+    } catch (error) {
+        console.error('[Background] Failed to sync permissions:', error);
+    }
+}
+
+// ======================================
 // Task Runner Configuration
+// ======================================
 const POLLING_INTERVAL = 5000; // 5 seconds
 let isPolling = false;
 
