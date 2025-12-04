@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { fetchWithAuth } from "~src/utils/api"
 import { extractRegion } from "~src/utils/zcy-dom"
+import { startCollection } from "~src/utils/zcy-pro-scraper"
 
 
 
@@ -64,7 +65,8 @@ export const getStyle: PlasmoGetStyle = () => {
   return style
 }
 
-// 绾櫧绠€鍖栫増鍥炬爣锛岄伩鍏嶅唴鍦堝簳鑹?const ICON_WHITE_SVG = `data:image/svg+xml;base64,${btoa(`
+// White simplified icon
+const ICON_WHITE_SVG = `data:image/svg+xml;base64,${btoa(`
 <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M100 15c7 0 12 6 15 13l13 35c3 8 12 12 20 9l35-13c7-3 13 0 16 7 3 7-1 14-7 18l-30 21c-7 5-9 14-4 21l21 30c5 6 5 13-1 18-6 5-14 4-19-1l-27-25c-6-6-16-5-21 1l-23 28c-5 6-12 7-18 2-6-5-7-12-4-19l14-34c3-8 0-17-8-20l-35-14c-7-3-11-10-8-17s10-11 17-9l36 10c8 2 16-3 18-11l9-36c2-7 8-13 15-13Z" stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
@@ -195,7 +197,7 @@ const ZcyScraperWidget = () => {
   }
 
   // 整店采集：列表/店铺页的商品链接 + 标题
-    const collectProductItems = () => {
+  const collectProductItems = () => {
     const items = new Map<string, string | undefined>()
     const origin = location.origin
     const normalize = (u: string) => {
@@ -482,11 +484,17 @@ const ZcyScraperWidget = () => {
         setFabColor(COLOR_BLUE)
         setSuccessMsg(`批量提交成功，共${items.length}个商品`)
       } else {
-        const data = await collectProductDataFromPage()
-        await uploadSingleProduct(data)
-        setPushSuccess(true)
-        setFabColor(COLOR_BLUE)
-        setSuccessMsg("采集成功")
+        // 使用新的Pro采集引擎
+        console.log('[ZCY Scraper] 使用Pro采集引擎...')
+        const result = await startCollection()
+        console.log('[ZCY Scraper] Pro引擎结果:', result)
+        if (result.success) {
+          setPushSuccess(true)
+          setFabColor(COLOR_BLUE)
+          setSuccessMsg("采集成功！")
+        } else {
+          throw new Error(result.message || '采集失败')
+        }
       }
     } catch (error) {
       console.error("[ZCY Scraper] Error:", error)
@@ -576,9 +584,9 @@ const collectProductDataFromPage = async () => {
 
   // 属性
   const specs: Record<string, any> = {}
-  ;(params?.data?.specs || []).forEach((s: any) => {
-    if (s?.key && s?.value) specs[s.key] = s.value
-  })
+    ; (params?.data?.specs || []).forEach((s: any) => {
+      if (s?.key && s?.value) specs[s.key] = s.value
+    })
   if (!Object.keys(specs).length) {
     Object.assign(specs, domData.attributes)
   }

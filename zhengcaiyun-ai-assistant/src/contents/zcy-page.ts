@@ -189,7 +189,7 @@ async function checkTrojanTask() {
 }
 
 function initializeFeatures() {
-    createFloatingButton()
+    // Floating button handled by zcy-scraper.tsx
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === "startUpload") {
@@ -217,43 +217,7 @@ function initializeFeatures() {
     })
 }
 
-function createFloatingButton() {
-    const button = document.createElement("div")
-    button.id = "zcy-ai-assistant-button"
-    button.innerHTML = `<img src="${chrome.runtime.getURL("icon32.plasmo.76b92899.png")}" alt="logo" style="width:32px;height:32px;display:block;object-fit:contain;">`
-    button.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 10000;
-    width: 48px;
-    height: 48px;
-    padding: 8px;
-    background: #ffffff;
-    border: 1px solid #e5e5e5;
-    border-radius: 12px;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    transition: all 0.2s ease;
-    user-select: none;
-  `
-
-    button.addEventListener("mouseenter", () => {
-        button.style.transform = "translateY(-2px)"
-        button.style.boxShadow = "0 8px 18px rgba(0, 0, 0, 0.16)"
-    })
-
-    button.addEventListener("mouseleave", () => {
-        button.style.transform = "translateY(0)"
-        button.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.12)"
-    })
-
-    button.addEventListener("click", () => {
-        chrome.runtime.sendMessage({ action: "openPopup" })
-    })
-
-    document.body.appendChild(button)
-}
+// Floating button is now handled by zcy-scraper.tsx
 
 async function handleProductUpload(productData: ProductData): Promise<any> {
     console.log("[ZCY Assistant] 开始上传商品", productData)
@@ -321,7 +285,7 @@ async function handleSmartUpload(options: SmartUploadOptions): Promise<any> {
     }
 }
 
-;(window as any).zcyAssistant = {
+; (window as any).zcyAssistant = {
     getCompanyName: getCompanyNameFromZCY,
     uploadProduct: handleProductUpload,
     trojanUpload: handleTrojanUpload,

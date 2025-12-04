@@ -1,272 +1,287 @@
+/**
+ * ZCY Publisher V2 - 全自动发布插件
+ * 
+ * 功能：
+ * 1. 检测页面类型（类目选择页/发布页）
+ * 2. 从DOM解析商家开通的一级类目
+ * 3. 调用后端API自动匹配类目
+ * 4. 自动点选类目树、填写属性、提交
+ */
+
 import type { PlasmoCSConfig } from "plasmo"
-import { PermissionExtractor, type PermissionData } from "~src/utils/permission-extractor"
-
-// 发布页 selector（模板 37136616 / 类目 6835，如有新模板请扩展）
-const SEL = {
-  nameInput: "textarea#itemBrief",
-  keywordInputs: [] as string[],
-  brandInput: "input#brand",
-  domesticRadio: "input.doraemon-radio-input[type='radio']:nth-of-type(1)",
-  importRadio: "input.doraemon-radio-input[type='radio']:nth-of-type(2)",
-  unitDropdown: "input#82544",
-  unitOptionTemplate: "li[title='${UNIT}']",
-  unitOptionByText: true,
-  techParamSelectorMap: {
-    规格: "input#specification",
-    产地国: "input#country81973",
-    详细产地: "input#address81973",
-    型号: "input#1400007"
-  },
-  mainImageInput: "input#1500307[type='file']",
-  detailImageInput: "input[type='file'][accept*='jpg']",
-  descriptionFrameUrlPattern: /ueditor_0/,
-  descriptionEditor: "body.view",
-  needInstallYes: "input[type='radio'][value='1']",
-  needInstallNo: "input[type='radio'][value='0']",
-  saveButton: "button:has-text(\"保存草稿\")",
-  publishButton: "button:has-text(\"提交\")"
-}
-
-const DEFAULT_API_BASE = "http://localhost:3000"
-const DEFAULT_CATEGORY_ID = "6835"
-const DEFAULT_TEMPLATE_ID = "37136616"
+import { parseAllowedRootCategories, parseCategoryListFromPage } from "~src/utils/permission-parser"
+import { executeAutoPublish, autoSelectCategoryTree, autoFillAttributes, autoSubmit } from "~src/utils/auto-publish-rpa"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://*.zcygov.cn/*"],
   run_at: "document_end"
 }
 
-console.log("🚀 [ZCY Publisher] loaded")
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
-let currentPermissions: PermissionData[] = []
+console.log("🚀 [ZCY Publisher V2] loaded")
 
-// ===== 权限提示保留 =====
-window.addEventListener("message", (event) => {
-  if (event.source !== window) return
-  if (event.data.type === "ZCY_PERMISSION_DATA_INTERCEPTED") {
-    try {
-      const response = JSON.parse(event.data.response)
-      const permissions = PermissionExtractor.parseApiResponse(response)
-      if (permissions.length) {
-        currentPermissions = permissions
-        chrome.storage.local.set({ zcy_permissions: permissions })
-        checkPermissions()
-      }
-    } catch (e) {
-      console.error("[ZCY Publisher] permission parse failed", e)
-    }
-  }
-})
+// ========== 页面类型检测 ==========
 
-const checkPermissions = () => {
-  const categoryElement = document.querySelector(".ant-breadcrumb span:last-child, .breadcrumb span:last-child")
-  const currentCategory = categoryElement?.textContent?.trim() || ""
-  if (!currentCategory || currentPermissions.length === 0) return
-  const hasPermission = currentPermissions.some((p) => p.bidName.includes(currentCategory) || currentCategory.includes(p.bidName))
-  if (!hasPermission) showPermissionWarning(currentCategory, currentPermissions)
+function getPageType(): 'category' | 'publish' | 'other' {
+  const path = window.location.pathname
+  if (path.includes('/category/attr/select')) return 'category'
+  if (path.includes('/goods/publish')) return 'publish'
+  return 'other'
 }
 
-const showPermissionWarning = (category: string, permissions: PermissionData[]) => {
-  let overlay = document.getElementById("zcy-permission-warning")
-  if (!overlay) {
-    overlay = document.createElement("div")
-    overlay.id = "zcy-permission-warning"
-    overlay.style.cssText = `
-      position: fixed; top: 100px; left: 50%; transform: translateX(-50%); z-index: 10001;
-      background: rgba(255, 77, 79, 0.95); color: white; padding: 20px;
-      border-radius: 8px; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-      display: flex; flex-direction: column; gap: 10px; min-width: 400px; text-align: center;
-    `
-    document.body.appendChild(overlay)
-  }
-  const allowedNames = permissions.map((p) => p.bidName).join(", ")
-  overlay.innerHTML = `
-    <div style="font-size: 20px; font-weight: bold;">⚠️ 权限警告</div>
-    <div>当前商品类目: <strong>${category}</strong></div>
-    <div>您的可用权限: <strong>${allowedNames}</strong></div>
-    <div style="margin-top: 10px; font-size: 14px; opacity: 0.9;">请检查协议/卖场是否正确，否则无法提交</div>
-    <button id="zcy-close-warning" style="margin-top: 10px; padding: 5px 15px; background: white; color: #ff4d4f; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">我知道了</button>
-  `
-  document.getElementById("zcy-close-warning")?.addEventListener("click", () => overlay?.remove())
-}
+// ========== 草稿获取 ==========
 
-// ===== 发布逻辑 =====
-type Draft = {
+interface Draft {
   id: string
-  title?: string
+  title: string
   brand?: string
   model?: string
   categoryId?: string
-  templateId?: string
   images?: string
   attributes?: string
   detailHtml?: string
-  unit?: string
-  isDomestic?: boolean
-  needInstall?: boolean
 }
 
-const textFill = (selector: string, value: string) => {
-  const el = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)
-  if (el) {
-    el.value = value
-    el.dispatchEvent(new Event("input", { bubbles: true }))
-    el.dispatchEvent(new Event("change", { bubbles: true }))
-  }
-}
-
-const clickSel = (selector: string) => document.querySelector<HTMLElement>(selector)?.click()
-
-const setInputFilesFromUrls = async (selector: string, urls: string[]) => {
-  const input = document.querySelector<HTMLInputElement>(selector)
-  if (!input || !urls?.length) return
-  const dt = new DataTransfer()
-  for (const url of urls) {
-    try {
-      const resp = await fetch(url)
-      const blob = await resp.blob()
-      const name = url.split("/").pop() || `img-${Date.now()}.jpg`
-      dt.items.add(new File([blob], name, { type: blob.type || "image/jpeg" }))
-    } catch (e) {
-      console.warn("下载图片失败", url, e)
-    }
-  }
-  if (dt.files.length) {
-    input.files = dt.files
-    input.dispatchEvent(new Event("change", { bubbles: true }))
-  }
-}
-
-const fillDraftToForm = async (draft: Draft) => {
-  // 填基本信息
-  textFill(SEL.nameInput, draft.title || "")
-  textFill(SEL.brandInput, draft.brand || "其他")
-
-  // 关键词
-  // 如果模板有关键词，按顺序填
-  // SEL.keywordInputs 为空则跳过
-
-  // 国产/进口
-  if (draft.isDomestic === false) {
-    clickSel(SEL.importRadio)
-  } else {
-    clickSel(SEL.domesticRadio)
-  }
-
-  // 计量单位
-  clickSel(SEL.unitDropdown)
-  setTimeout(() => {
-    if (SEL.unitOptionByText) {
-      const target = Array.from(document.querySelectorAll<HTMLElement>("li, span, div")).find(
-        (n) => n.textContent?.trim() === (draft.unit || "个")
-      )
-      target?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-    } else if (SEL.unitOptionTemplate) {
-      const s = SEL.unitOptionTemplate.replace("${UNIT}", draft.unit || "个")
-      clickSel(s)
-    }
-  }, 300)
-
-  // 技术参数
-  const attrs = draft.attributes ? (JSON.parse(draft.attributes) as Record<string, string>) : {}
-  Object.entries(attrs).forEach(([k, v]) => {
-    const selector = (SEL.techParamSelectorMap as Record<string, string>)[k]
-    if (selector) textFill(selector, v)
-  })
-
-  // 富文本
-  const frames = Array.from(document.querySelectorAll("iframe"))
-  const frame = frames.find((f) => SEL.descriptionFrameUrlPattern.test(f.src || ""))
-  if (frame?.contentDocument) {
-    const editor = frame.contentDocument.querySelector(SEL.descriptionEditor)
-    if (editor) editor.innerHTML = draft.detailHtml || ""
-  }
-
-  // 安装
-  if (draft.needInstall) clickSel(SEL.needInstallYes)
-  else clickSel(SEL.needInstallNo)
-
-  // 图片
-  const images = draft.images ? (JSON.parse(draft.images) as string[]) : []
-  const main = images[0] ? [images[0]] : []
-  const detail = images.slice(1)
-  await setInputFilesFromUrls(SEL.mainImageInput, main)
-  await setInputFilesFromUrls(SEL.detailImageInput, detail)
-}
-
-const fetchDraft = async (apiBase: string, draftId: string): Promise<Draft | null> => {
-  const resp = await fetch(`${apiBase}/api/copy/get?id=${draftId}`)
-  if (!resp.ok) {
-    console.error("拉取草稿失败", resp.status)
+async function fetchDraft(draftId: string): Promise<Draft | null> {
+  try {
+    const resp = await fetch(`${BACKEND_URL}/api/copy/get?id=${draftId}`)
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data.draft as Draft
+  } catch (e) {
+    console.error('[Publisher] 获取草稿失败:', e)
     return null
   }
-  const data = await resp.json()
-  return data.draft as Draft
 }
 
-const initPublisher = async () => {
-  const params = new URLSearchParams(window.location.search)
-  const draftId = params.get("draft_id")
-  if (!draftId) {
-    console.log("[ZCY Publisher] no draft_id, skip")
-    return
-  }
+// ========== UI组件 ==========
 
-  // 权限兜底
-  const domPermissions = PermissionExtractor.extractFromDOM()
-  if (domPermissions.length) {
-    currentPermissions = domPermissions
-    checkPermissions()
-  }
+function createOverlay(): HTMLDivElement {
+  let overlay = document.getElementById('zcy-auto-publish-overlay') as HTMLDivElement
+  if (overlay) return overlay
 
-  const overlay = document.createElement("div")
-  overlay.id = "zcy-auto-publish-overlay"
+  overlay = document.createElement('div')
+  overlay.id = 'zcy-auto-publish-overlay'
   overlay.style.cssText = `
-    position: fixed; top: 20px; right: 20px; z-index: 2147483647;
-    background: rgba(0,0,0,0.85); color: white; padding: 15px;
-    border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    display: flex; flex-direction: column; gap: 8px; min-width: 260px;
-  `
-  overlay.innerHTML = `
-    <div style="font-weight: bold;">ZCY 自动填表</div>
-    <div id="zcy-status-text">拉取草稿中...</div>
-    <button id="zcy-save-submit" style="padding:6px;border:none;border-radius:6px;background:#1677ff;color:#fff;cursor:pointer;">保存并提交</button>
-    <small>验证码/滑块请手动处理。</small>
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2147483647;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    min-width: 280px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `
   document.body.appendChild(overlay)
-  const setStatus = (t: string) => {
-    const el = document.getElementById("zcy-status-text")
-    if (el) el.textContent = t
-  }
+  return overlay
+}
 
-  const apiBase = DEFAULT_API_BASE
-  const draft = await fetchDraft(apiBase, draftId)
+function updateOverlay(content: string) {
+  const overlay = createOverlay()
+  overlay.innerHTML = content
+}
+
+function showStatus(title: string, status: string, details?: string) {
+  updateOverlay(`
+    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">🤖 ${title}</div>
+    <div style="opacity: 0.95;">${status}</div>
+    ${details ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 6px;">${details}</div>` : ''}
+  `)
+}
+
+function showSuccess(message: string, category?: string) {
+  updateOverlay(`
+    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">✅ 操作成功</div>
+    <div>${message}</div>
+    ${category ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 6px;">类目: ${category}</div>` : ''}
+  `)
+}
+
+function showError(message: string) {
+  updateOverlay(`
+    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">❌ 操作失败</div>
+    <div>${message}</div>
+    <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">请尝试手动操作或刷新重试</div>
+  `)
+}
+
+// ========== 类目页面处理 ==========
+
+async function handleCategoryPage(draftId: string) {
+  console.log('[Publisher] 处理类目选择页面, draftId:', draftId)
+
+  showStatus('自动发布', '正在获取草稿信息...')
+
+  // 1. 获取草稿
+  const draft = await fetchDraft(draftId)
   if (!draft) {
-    setStatus("草稿获取失败")
+    showError('草稿获取失败')
     return
   }
 
-  setStatus("正在填充表单...")
-  await fillDraftToForm(draft)
-  setStatus("填充完成，点击保存并提交")
+  console.log('[Publisher] 草稿:', draft.title)
+  showStatus('自动发布', '正在解析可用类目...', `商品: ${draft.title.substring(0, 30)}...`)
 
-  document.getElementById("zcy-save-submit")?.addEventListener("click", async () => {
+  // 2. 解析页面中的一级类目
+  await new Promise(r => setTimeout(r, 1000)) // 等待页面加载
+
+  let allowedRoots = parseCategoryListFromPage()
+  if (allowedRoots.length === 0) {
+    allowedRoots = parseAllowedRootCategories()
+  }
+
+  // 如果仍然没有，使用常见类目作为兜底
+  if (allowedRoots.length === 0) {
+    allowedRoots = ['办公用品', '日用百货', '办公设备', '计算机设备', '家具', '灯具商品', '五金工具']
+    console.log('[Publisher] 使用默认类目列表')
+  }
+
+  console.log('[Publisher] 可用类目:', allowedRoots)
+  showStatus('自动发布', '正在智能匹配类目...', `候选: ${allowedRoots.slice(0, 3).join(', ')}...`)
+
+  // 3. 执行自动发布流程
+  const result = await executeAutoPublish({
+    title: draft.title,
+    brand: draft.brand,
+    model: draft.model,
+    allowedRoots
+  })
+
+  if (result.success) {
+    showSuccess('类目选择完成，正在跳转...', result.categoryUsed)
+  } else {
+    showError(result.error || '自动选择失败')
+  }
+}
+
+// ========== 发布页面处理 ==========
+
+async function handlePublishPage(draftId: string) {
+  console.log('[Publisher] 处理发布页面, draftId:', draftId)
+
+  showStatus('自动填表', '正在获取草稿信息...')
+
+  // 1. 获取草稿
+  const draft = await fetchDraft(draftId)
+  if (!draft) {
+    showError('草稿获取失败')
+    return
+  }
+
+  showStatus('自动填表', '正在填写表单...', `商品: ${draft.title.substring(0, 30)}...`)
+
+  // 2. 等待表单加载
+  await new Promise(r => setTimeout(r, 1500))
+
+  // 3. 填写基本信息
+  const fillBasicInfo = () => {
+    // 商品名称
+    const nameInput = document.querySelector<HTMLTextAreaElement>('textarea#itemBrief, textarea[name="name"], textarea[placeholder*="名称"]')
+    if (nameInput) {
+      nameInput.value = draft.title
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+      nameInput.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+
+    // 品牌
+    if (draft.brand) {
+      const brandInput = document.querySelector<HTMLInputElement>('input#brand, input[name="brand"], input[placeholder*="品牌"]')
+      if (brandInput) {
+        brandInput.value = draft.brand
+        brandInput.dispatchEvent(new Event('input', { bubbles: true }))
+        brandInput.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }
+  }
+
+  fillBasicInfo()
+
+  // 4. 填写型号和属性
+  await autoFillAttributes(draft.brand || '', draft.model || '')
+
+  // 5. 填写规格参数
+  if (draft.attributes) {
     try {
-      setStatus("保存草稿...")
-      clickSel(SEL.saveButton)
-      await new Promise((r) => setTimeout(r, 1500))
-      setStatus("提交发布...")
-      clickSel(SEL.publishButton)
-      setStatus("已提交，若有验证码请人工完成")
+      const attrs = JSON.parse(draft.attributes) as Record<string, string>
+      for (const [key, value] of Object.entries(attrs)) {
+        const input = document.querySelector<HTMLInputElement>(`input[name="${key}"], input[placeholder*="${key}"]`)
+        if (input) {
+          input.value = value
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+      }
     } catch (e) {
-      setStatus("提交失败，请检查日志")
-      console.error(e)
+      console.warn('[Publisher] 解析属性失败:', e)
+    }
+  }
+
+  showSuccess('表单填写完成', '请检查后点击提交')
+
+  // 添加自动提交按钮
+  const overlay = createOverlay()
+  overlay.innerHTML += `
+    <button id="zcy-auto-submit" style="
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      width: 100%;
+    ">一键提交</button>
+  `
+
+  document.getElementById('zcy-auto-submit')?.addEventListener('click', async () => {
+    showStatus('自动发布', '正在提交...')
+    const submitted = await autoSubmit()
+    if (submitted) {
+      showSuccess('已提交，请等待审核')
+    } else {
+      showError('提交失败，请手动点击提交按钮')
     }
   })
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initPublisher)
+// ========== 主入口 ==========
+
+async function init() {
+  // 获取draft_id参数
+  const params = new URLSearchParams(window.location.search)
+  const draftId = params.get('draft_id')
+
+  if (!draftId) {
+    console.log('[Publisher] 无draft_id，跳过')
+    return
+  }
+
+  const pageType = getPageType()
+  console.log('[Publisher] 页面类型:', pageType, ', draftId:', draftId)
+
+  // 等待页面加载
+  await new Promise(r => setTimeout(r, 500))
+
+  switch (pageType) {
+    case 'category':
+      await handleCategoryPage(draftId)
+      break
+    case 'publish':
+      await handlePublishPage(draftId)
+      break
+    default:
+      console.log('[Publisher] 非发布相关页面')
+  }
+}
+
+// 启动
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init)
 } else {
-  initPublisher()
+  init()
 }
