@@ -2,8 +2,13 @@
 // 不允许修改政采云相关代码，此为独立新增文件
 // 采用3层采集策略：1.主世界脚本 2.Script标签解析 3.DOM兜底
 
+// 导入SKU多规格采集模块（增强版）
+import { extractJDSkuData, extractJDSkuVariants } from './sku.jd'
+
 // 缓存主世界脚本传来的数据
 let cachedMainWorldData: Record<string, string> | null = null;
+let cachedColorSize: any[] = [];
+let cachedImageAndVideoJson: any[] = [];  // 新增：缓存主图数据
 
 // 监听主世界脚本的消息
 if (typeof window !== 'undefined') {
@@ -11,13 +16,35 @@ if (typeof window !== 'undefined') {
         if (event.data?.type === 'ECOMMERCE_PRODUCT_DATA' && event.data?.platform === 'JD') {
             console.log('[JD Pro] 收到主世界数据:', Object.keys(event.data.params || {}).length, '项参数');
             cachedMainWorldData = event.data.params || {};
+
+            // 接收colorSize数据
+            if (event.data.colorSize && Array.isArray(event.data.colorSize)) {
+                cachedColorSize = event.data.colorSize;
+                console.log('[JD Pro] 收到colorSize:', cachedColorSize.length, '个SKU');
+            }
+
+            // 接收imageAndVideoJson数据
+            if (event.data.imageAndVideoJson && Array.isArray(event.data.imageAndVideoJson)) {
+                cachedImageAndVideoJson = event.data.imageAndVideoJson;
+                console.log('[JD Pro] 收到imageAndVideoJson:', cachedImageAndVideoJson.length, '张主图');
+            }
         }
     });
+}
+
+// 导出获取colorSize的函数供SKU模块使用
+export function getCachedColorSize(): any[] {
+    return cachedColorSize;
 }
 
 export async function scrapeJDPro(): Promise<any> {
     const doc = document;
     const product: any = {};
+
+    // 请求主世界脚本获取数据
+    window.postMessage({ type: 'REQUEST_PRODUCT_DATA' }, '*');
+    // 等待数据返回
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // 标题 - 优先级方式获取
     product.title = getJDTitle(doc);
@@ -30,6 +57,12 @@ export async function scrapeJDPro(): Promise<any> {
 
     // 参数 - 3层策略
     product.specs = await extractJDParamsLayered();
+
+    // SKU多规格数据（增强版 - 政采云兼容格式）
+    // 传入主世界获取的colorSize
+    const skuData = await extractJDSkuData(cachedColorSize)
+    product.skuData = skuData
+    product.skuVariants = await extractJDSkuVariants() // 保持向后兼容
 
     product.url = location.href;
     product.platform = "JD";
@@ -44,64 +77,89 @@ async function extractJDParamsLayered(): Promise<Record<string, string>> {
 
     console.log('[JD Pro] 开始参数提取...');
 
-    // 方法1: 从京东参数表格提取 (最稳定)
-    const tableSelectors = [
-        '.Ptable .Ptable-item',          // 新版京东
-        '.p-parameter-list li',          // 老版京东
-        '#parameter2 .p-parameter-list li',
-        '.detail-list li'
+    // 方法1: 直接从页面文本提取（天猫方式，最有效）
+    const pageText = document.body.innerText || '';
+    console.log('[JD Pro] 页面文本长度:', pageText.length);
+
+    // 京东常用参数正则 - 更严格的品牌匹配
+    const labelPatterns: [string, RegExp][] = [
+        // 品牌：只匹配短的品牌名（通常是英文或中文2-8个字符）
+        ['品牌', /品牌[：:\s]+([A-Za-z][A-Za-z0-9\-\/]{1,20}|[\u4e00-\u9fa5]{2,8}[A-Za-z]*)/],
+        ['型号', /型号[：:\s]+([A-Za-z0-9\-\/\s]{2,30})/],
+        ['货号', /货号[：:\s]+([A-Za-z0-9\-]{2,30})/],
+        ['商品名称', /商品名称[：:\s]+([^\n]{5,50})/],
+        ['商品编号', /商品编号[：:\s]+(\d{10,})/],
+        ['商品毛重', /商品毛重[：:\s]+([0-9.]+\s*[kgKG千克克]+)/],
+        ['商品产地', /商品产地[：:\s]+(中国[^\s\n]*|[^\s\n]{2,15})/],
+        ['材质', /材质[：:\s]+([^\s\n]{2,20})/],
+        ['颜色', /颜色[：:\s]*(白色|黑色|银色|红色|蓝色|灰色|金色|粉色|绿色|紫色)/],
     ];
 
-    for (const sel of tableSelectors) {
-        document.querySelectorAll(sel).forEach(item => {
-            // Ptable格式: dt/dd
-            const dt = item.querySelector('dt, .Ptable-key, .name');
-            const dd = item.querySelector('dd, .Ptable-val, .value');
-            if (dt && dd) {
-                const key = dt.textContent?.trim().replace(/[：:]/g, '') || '';
-                const val = dd.textContent?.trim() || '';
-                if (key && val && key.length <= 15 && val.length <= 100 && !params[key]) {
-                    params[key] = val;
-                    console.log(`[JD Pro] DOM提取: ${key}=${val}`);
-                }
+    // 垃圾词过滤（品牌不应该包含这些词）
+    const garbageWords = ['选择', '好看', '不错', '推荐', '喜欢', '正品', '加入', '购买', '立即',
+        '请选择', '属于', '国内', '高端', '前5名', '可以', '应该', '评价', '晒单'];
+
+    for (const [label, pattern] of labelPatterns) {
+        const match = pageText.match(pattern);
+        if (match && match[1]) {
+            const value = match[1].trim();
+            // 更严格的垃圾词过滤
+            const isGarbage = garbageWords.some(w => value.includes(w));
+            // 品牌名不应该太长（通常不超过20个字符）
+            const isTooLong = label === '品牌' && value.length > 20;
+            if (value.length >= 2 && value.length <= 50 && !isGarbage && !isTooLong) {
+                params[label] = value;
+                console.log(`[JD Pro] 文本提取: ${label}=${value}`);
             }
-
-            // li格式: 整行文本
-            if (!dt && !dd) {
-                const text = item.textContent?.trim() || '';
-                const match = text.match(/^([^：:]{2,15})[：:](.+)$/);
-                if (match) {
-                    const key = match[1].trim();
-                    const val = match[2].trim();
-                    if (key && val && !params[key]) {
-                        params[key] = val;
-                        console.log(`[JD Pro] li提取: ${key}=${val}`);
-                    }
-                }
-            }
-        });
-    }
-
-    console.log('[JD Pro] DOM提取结果:', Object.keys(params).length, '项');
-
-    // 方法2: 如果DOM提取不够，从标题提取品牌
-    if (!params['品牌']) {
-        const title = document.title || '';
-        // 标题通常格式: "品牌名 商品描述"
-        const brandMatch = title.match(/^([A-Za-z]+|[\u4e00-\u9fa5]{2,6})\s/);
-        if (brandMatch) {
-            params['品牌'] = brandMatch[1];
-            console.log('[JD Pro] 从标题提取品牌:', brandMatch[1]);
         }
     }
 
-    // 方法3: 如果没有型号，用货号代替
+    // 方法2: 如果品牌没提取到，从标题提取
+    if (!params['品牌']) {
+        const title = getJDTitle(document);
+
+        // 常见品牌列表匹配
+        const knownBrands = ['联想', 'Lenovo', '华为', 'HUAWEI', '小米', 'Xiaomi', '三星', 'Samsung',
+            'Apple', '苹果', 'OPPO', 'vivo', '荣耀', 'Honor', 'Dell', '戴尔', 'HP', '惠普',
+            'ThinkPad', '华硕', 'ASUS', '宏碁', 'Acer', '微软', 'Microsoft', 'Sony', '索尼',
+            '品仪', 'JOMOW', '九牧', 'JOMOO', '箭牌', 'Arrow', '科勒', 'Kohler', '摩恩', 'Moen'];
+
+        for (const brand of knownBrands) {
+            if (title.toLowerCase().includes(brand.toLowerCase())) {
+                params['品牌'] = brand;
+                console.log('[JD Pro] 从标题匹配品牌:', brand);
+                break;
+            }
+        }
+
+        // 如果还没找到，尝试正则提取标题开头的品牌
+        if (!params['品牌']) {
+            const brandMatch = title.match(/^([A-Za-z][A-Za-z0-9]{0,15})/);
+            if (brandMatch && brandMatch[1].length >= 2) {
+                params['品牌'] = brandMatch[1];
+                console.log('[JD Pro] 从标题正则提取品牌:', brandMatch[1]);
+            }
+        }
+    }
+
+    // 方法3: 提取型号（从标题）
+    if (!params['型号']) {
+        const title = getJDTitle(document);
+        // 型号通常在标题中，如 "品仪老板椅" -> 提取后缀型号
+        const modelMatch = title.match(/([A-Za-z]+\d+[A-Za-z]*|[A-Za-z]{2,}\s*\d+)/i);
+        if (modelMatch) {
+            params['型号'] = modelMatch[1].trim();
+            console.log('[JD Pro] 从标题提取型号:', params['型号']);
+        }
+    }
+
+    // 方法4: 如果没有型号，用货号代替
     if (!params['型号'] && params['货号']) {
         params['型号'] = params['货号'];
         console.log('[JD Pro] 用货号作为型号:', params['型号']);
     }
 
-    // 方法4: 从URL提取商品编号
+    // 方法5: 从URL提取商品编号
     if (!params['商品编号']) {
         const urlMatch = location.href.match(/\/(\d{10,})\./);
         if (urlMatch) {
@@ -432,62 +490,70 @@ function isValidSpec(key: string, value: string): boolean {
 }
 
 
-// 京东标题提取
-function getJDTitle(doc: Document): string {
-    console.log('[JD Pro] 开始标题提取...');
+// ========== 标题采集（用户方案重写版） ==========
 
-    const selectors = [
-        // 商品信息区域的标题 - 优先级最高
+/**
+ * 温和清洗京东标题（用户方案）
+ * 只做"非常确定"的裁剪，保留规格信息
+ */
+function cleanJdTitle(raw: string): string {
+    if (!raw) return '';
+
+    let t = raw.trim();
+
+    // 去掉 -京东 / -JD.COM 等后缀
+    t = t.replace(/\s*[-_—–]\s*(京东|jd\.?com).*$/i, '');
+
+    // 去掉 JD 通用的【图片 价格 品牌 报价】等尾巴
+    t = t.replace(/【[^【】]*(图片|价格|品牌|报价|行情|评测)[^【】]*】$/i, '');
+
+    return t.trim();
+}
+
+function getJDTitle(doc: Document): string {
+    console.log('[JD Pro] 开始标题提取（用户方案）...');
+
+    let title = '';
+
+    // 1. 先尝试 DOM 里的 h1 / sku-name（兼容老页面）
+    const domSelectors = [
         '.product-intro .sku-name',
         '.itemInfo-wrap .sku-name',
-        '#J-detail-content .sku-name',
-        '.w .sku-name',  // 主内容区
-        // 商品名称专用
+        'h1.sku-name',
+        '.sku-name',
         '.p-name em',
         '.p-name',
-        '.itemInfo h1',
-        // 老版京东
-        '#name h1',
-        '.item-name h1',
-        // 最后尝试通用选择器
-        'h1.sku-name',
-        '[class*="SkuName"]'
+        '#name h1'
     ];
 
-    for (const sel of selectors) {
+    for (const sel of domSelectors) {
         try {
             const el = doc.querySelector(sel);
             const text = el?.textContent?.trim();
-            console.log(`[JD Pro] 选择器 "${sel}":`, text?.substring(0, 30) || '(空)');
 
-            // 过滤掉店铺名（通常包含"专营店"、"旗舰店"等）
             if (text && text.length > 5 && text.length < 200) {
+                // 过滤掉店铺名
                 if (!text.includes('专营店') && !text.includes('旗舰店') &&
                     !text.includes('自营') && !text.includes('官方店')) {
-                    console.log('[JD Pro] 标题选中:', text.substring(0, 50));
-                    return text;
+                    console.log('[JD Pro] DOM标题选中:', text.substring(0, 50));
+                    title = text;
+                    break;
                 }
             }
         } catch { }
     }
 
-    // Fallback: 从页面标题提取
-    const pageTitle = doc.title.split(/[-|–—]/)[0].replace(/京东|JD|商品详情/gi, '').trim();
-    console.log('[JD Pro] 使用页面标题:', pageTitle);
-
-    if (pageTitle && pageTitle.length > 5 &&
-        !pageTitle.includes('专营店') && !pageTitle.includes('旗舰店')) {
-        return pageTitle;
+    // 2. 兜底：document.title（不再暴力裁剪！）
+    if (!title) {
+        title = doc.title;
+        console.log('[JD Pro] 使用页面标题:', title);
     }
 
-    // 最后fallback：用meta description
-    const metaDesc = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
-    if (metaDesc && metaDesc.length > 10) {
-        console.log('[JD Pro] 使用meta description');
-        return metaDesc.substring(0, 100);
-    }
+    // 3. 温和清洗（只砍京东尾巴和【图片 价格 品牌 报价】）
+    title = cleanJdTitle(title);
 
-    return '未知商品';
+    console.log('[JD Pro] 最终标题:', title.substring(0, 80));
+    return title || '未知商品';
 }
 
 // 京东价格提取
@@ -522,145 +588,132 @@ function getJDPrice(doc: Document): number | null {
 }
 
 // 京东图片提取
+// ========== 图片采集（用户方案重写版） ==========
+
+/**
+ * 判断是否是京东活动图标/LOGO（需要过滤）
+ */
+function isBadJdIcon(url: string): boolean {
+    if (!url) return false;
+    const u = url.toLowerCase();
+
+    // 活动图、角标常见域名/路径
+    if (u.includes('/jdg/')) return true;          // HOT/12.12 这类
+    if (u.includes('/popshop/')) return true;      // 品牌&店铺小图
+    if (u.includes('/imagetools/')) return true;   // 很多营销图
+    if (u.includes('/da/')) return true;           // 广告图
+    if (u.includes('/cms/')) return true;          // CMS营销内容
+
+    // 关键词过滤
+    if (/hot|12\.12|logo|icon|badge|coupon|vip|member|avatar|qrcode/i.test(u)) return true;
+
+    return false;
+}
+
+/**
+ * 标准化京东图片URL
+ */
+function normalizeJdImg(url: string): string {
+    if (!url) return '';
+    let u = url.trim();
+    if (u.startsWith('//')) u = 'https:' + u;
+    return u.replace(/^http:/, 'https:');
+}
+
 function getJDImages(doc: Document): string[] {
-    const images: string[] = [];
+    const result: string[] = [];
     const seen = new Set<string>();
-    const videoUrls = new Set<string>(); // 记录视频相关URL
 
     console.log('[JD Pro] 开始图片采集...');
+    console.log('[JD Pro] cachedImageAndVideoJson长度:', cachedImageAndVideoJson?.length || 0);
 
-    // 先找出所有视频相关的元素
-    document.querySelectorAll('[class*="video"], [class*="Video"], [data-video], .video-item, .J-video').forEach(el => {
-        const img = el.querySelector('img');
-        if (img) {
-            const src = img.src || img.getAttribute('data-src') || '';
-            if (src) videoUrls.add(src);
-        }
-    });
+    const addImage = (url: string, source: string = '') => {
+        const normalized = normalizeJdImg(url);
+        if (!normalized) return;
+        if (seen.has(normalized)) return;
 
-    const addImage = (src: string, source: string = '', element?: Element) => {
-        if (!src) return;
-
-        // 过滤视频URL（增强版）
-        if (src.includes('.mp4') || src.includes('.webm') || src.includes('.m3u8') ||
-            src.includes('video') || src.includes('play') || src.includes('.gif') ||
-            src.includes('jdv') || src.includes('vodeo') || videoUrls.has(src)) {
-            console.log('[JD Pro] 过滤视频:', src.substring(0, 50));
+        // 过滤活动图标
+        if (isBadJdIcon(normalized)) {
             return;
         }
 
-        // 检查父元素是否是视频容器
-        if (element) {
-            const parent = element.closest('[class*="video"], [class*="Video"], .video-item, .J-video');
-            if (parent) {
-                console.log('[JD Pro] 过滤视频容器内的图片');
-                return;
-            }
+        // 必须是京东图片
+        if (!normalized.includes('360buyimg.com') && !normalized.includes('jd.com')) {
+            return;
         }
 
-        // 转为高清大图
-        let hdSrc = src
-            .replace(/\/n\d+\//, '/n1/')   // n5 -> n1 高清
-            .replace(/s\d+x\d+_/, '')      // 去掉尺寸前缀
-            .replace(/_\d+x\d+[^.]*\.(jpg|png|webp)/i, '.$1');
-
-        // 确保是https
-        if (hdSrc.startsWith('//')) hdSrc = 'https:' + hdSrc;
-
-        // 放宽域名限制
-        const isJdImage = hdSrc.includes('jd.com') || hdSrc.includes('360buyimg.com') || hdSrc.includes('jd.hk');
-        if (!seen.has(hdSrc) && isJdImage) {
-            seen.add(hdSrc);
-            images.push(hdSrc);
-            console.log(`[JD Pro] 找到图片 #${images.length} [${source}]:`, hdSrc.substring(0, 60));
-        }
+        seen.add(normalized);
+        result.push(normalized);
+        console.log(`[JD Pro] 添加图片 #${result.length} [${source}]:`, normalized.substring(0, 60));
     };
 
-    // 新版京东图片选择器 - 增加更多
-    const selectors = [
-        // 主图轮播区域
-        '#spec-list img',
-        '#spec-img img',
-        '.spec-items img',
-        '[class*="PicGallery"] img',
-        // 缩略图列表
-        '#spec-list li:not(.video-item) img',
-        '.lh li:not(.video-item) img',
-        '.spec-list li:not(.video-item) img',
-        // 大图
-        '#spec-n1 img',
-        '#preview img',
-        '.jqzoom img',
-        // 通用
-        '.product-img img',
-        '.slider-main img',
-        // 新增选择器
-        '.img-hover img',
-        '.small-pic img',
-        '[class*="sku-name"] img',
-        '.J-pic-main img',
-        '.pic-main img',
-        '[data-role="img-list"] img'
-    ];
-
-    for (const sel of selectors) {
-        try {
-            doc.querySelectorAll(sel).forEach((img: HTMLImageElement) => {
-                // 获取各种属性
-                const src = img.src ||
-                    img.getAttribute('data-src') ||
-                    img.getAttribute('data-lazy-img') ||
-                    img.getAttribute('data-origin') ||
-                    img.getAttribute('src') || '';
-                addImage(src, sel, img);
-            });
-        } catch { }
+    // 1. 优先使用缓存的imageAndVideoJson
+    if (cachedImageAndVideoJson && cachedImageAndVideoJson.length > 0) {
+        console.log('[JD Pro] 使用缓存imageAndVideoJson:', cachedImageAndVideoJson.length, '项');
+        for (const item of cachedImageAndVideoJson) {
+            if (item.type === 1 || item.type === '1' || !item.type) {
+                const url = item.img || item.imgUrl || item.image || item.url || '';
+                if (url) addImage(url, 'cached-imageAndVideoJson');
+            }
+        }
     }
 
-    // Fallback: 从页面JS对象获取
-    if (images.length === 0) {
+    // 2. 直接从window读取imageAndVideoJson（绕过message传递时序问题！）
+    if (result.length < 3) {
+        console.log('[JD Pro] 尝试直接从window获取imageAndVideoJson...');
         try {
             const win = window as any;
-            // 尝试多种全局变量
-            const imageList =
-                win.pageConfig?.product?.imageList ||
-                win.itemData?.imageList ||
-                win.top_itemData?.imageList ||
-                [];
-            if (Array.isArray(imageList)) {
-                imageList.forEach((p: string) => addImage(p));
+            const paths = [
+                win.pageConfig?.product?.imageAndVideoJson,
+                win.pageConfig?.imageAndVideoJson,
+                win.itemData?.imageAndVideoJson
+            ];
+
+            for (const arr of paths) {
+                if (Array.isArray(arr) && arr.length > 0) {
+                    console.log('[JD Pro] 直接从window获取到:', arr.length, '项');
+                    for (const item of arr) {
+                        if (item.type === 1 || item.type === '1' || !item.type) {
+                            const url = item.img || item.imgUrl || item.image || item.url || '';
+                            if (url) addImage(url, 'window-direct');
+                        }
+                    }
+                    break;
+                }
             }
-        } catch { }
+        } catch (e) {
+            console.log('[JD Pro] 直接读取window失败:', e);
+        }
     }
 
-    // Fallback: 扫描所有360buyimg图片（放宽条件）
-    if (images.length === 0) {
-        console.log('[JD Pro] 使用全页扫描兜底...');
-        const allImgs = doc.querySelectorAll('img');
-        console.log('[JD Pro] 页面共有图片:', allImgs.length);
+    // 3. 从DOM主图区域采集
+    if (result.length < 3) {
+        console.log('[JD Pro] 从DOM采集主图...');
+        const mainImageSelectors = [
+            '#spec-n1 img',
+            '#spec-list img',
+            '.preview-img img',
+            '.spec-items img',
+            '.lh li:not(.video-item) img'
+        ];
 
-        allImgs.forEach((img: HTMLImageElement) => {
-            const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-img') || '';
-            // 放宽条件：只要包含jd相关域名
-            if ((src.includes('360buyimg.com') || src.includes('jd.com')) && !src.includes('icon') && !src.includes('logo')) {
-                addImage(src, 'fallback-scan');
-            }
-        });
+        for (const sel of mainImageSelectors) {
+            try {
+                doc.querySelectorAll(sel).forEach((img: HTMLImageElement) => {
+                    const parent = img.closest('[class*="video"], .video-item');
+                    if (parent) return;
+
+                    const url = img.src ||
+                        img.getAttribute('data-src') ||
+                        img.getAttribute('data-url') || '';
+                    addImage(url, sel);
+                });
+            } catch { }
+        }
     }
 
-    // 最后兜底：从所有 img 标签的各种属性中提取
-    if (images.length === 0) {
-        console.log('[JD Pro] 使用属性扫描兜底...');
-        doc.querySelectorAll('[data-src], [data-lazy-img], [data-origin]').forEach((el) => {
-            const src = el.getAttribute('data-src') || el.getAttribute('data-lazy-img') || el.getAttribute('data-origin') || '';
-            if (src.includes('360buyimg.com')) {
-                addImage(src, 'attr-scan');
-            }
-        });
-    }
-
-    console.log('[JD Pro] 最终图片数量:', images.length);
-    return images.slice(0, 15);
+    console.log('[JD Pro] 最终图片数量:', result.length);
+    return result.slice(0, 15);
 }
 
 // 京东参数解析（完整 Pro 级）
