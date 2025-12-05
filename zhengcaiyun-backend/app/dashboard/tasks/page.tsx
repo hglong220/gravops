@@ -19,6 +19,7 @@ type ProductDraft = {
   model?: string
   brand?: string
   categoryPath?: string
+  price?: number | string
 }
 
 type TaskGroup = {
@@ -64,6 +65,7 @@ const statusBadge = (status: string) => {
     }
   > = {
     pending: { text: '待采集', color: 'bg-gray-100 text-gray-600' },
+    collected: { text: '已采集', color: 'bg-blue-100 text-blue-600' },
     scraped: { text: '已采集', color: 'bg-blue-100 text-blue-600' },
     published: { text: '已发布', color: 'bg-green-100 text-green-600' }
   }
@@ -206,7 +208,18 @@ export default function TaskPage() {
     setCatL1(l1 || '')
     setCatL2(l2 || '')
     setCatL3(l3 || '')
-    setEditingProduct(product)
+
+    // 从 skuData 解析 price 和 stock
+    let productWithPrice = { ...product } as any
+    if (product.skuData) {
+      try {
+        const skuObj = JSON.parse(product.skuData)
+        productWithPrice.price = skuObj.price || ''
+        productWithPrice.stock = skuObj.stock || 99
+      } catch { }
+    }
+
+    setEditingProduct(productWithPrice)
     setMissingNotice('')
     setIsEditModalOpen(true)
   }
@@ -419,90 +432,21 @@ export default function TaskPage() {
             <div className="bg-white rounded-lg p-6 w-[780px] max-h-[85vh] overflow-y-auto">
               <h3 className="text-xl font-bold text-gray-900 mb-4">编辑商品信息</h3>
 
-              {/* 类目选择 */}
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-5">
-                <div className="flex items-center gap-2 text-blue-800 font-semibold mb-3">
-                  <span>政采云标准类目</span>
-                  <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">机器核对 + 人工调整</span>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs text-blue-600 mb-1">一级类目</label>
-                    <select
-                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                      value={catL1}
-                      onChange={(e) => {
-                        setCatL1(e.target.value)
-                        setCatL2('')
-                        setCatL3('')
-                      }}
-                    >
-                      <option value="">请选择</option>
-                      {ZCY_CATEGORIES.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-blue-600 mb-1">二级类目</label>
-                    <select
-                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                      value={catL2}
-                      onChange={(e) => {
-                        setCatL2(e.target.value)
-                        setCatL3('')
-                      }}
-                      disabled={!catL1}
-                    >
-                      <option value="">请选择</option>
-                      {catL1 &&
-                        ZCY_CATEGORIES.find((c) => c.name === catL1)?.children.map((c) => (
-                          <option key={c.name} value={c.name}>
-                            {c.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-blue-600 mb-1">三级类目</label>
-                    <select
-                      className="w-full border-blue-200 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
-                      value={catL3}
-                      onChange={(e) => setCatL3(e.target.value)}
-                      disabled={!catL2}
-                    >
-                      <option value="">请选择</option>
-                      {catL1 &&
-                        catL2 &&
-                        ZCY_CATEGORIES.find((c) => c.name === catL1)
-                          ?.children.find((c) => c.name === catL2)
-                          ?.children.map((c: any) => (
-                            <option key={c.name} value={c.name}>
-                              {c.name}
-                            </option>
-                          ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-blue-700">
-                  当前选择：{[catL1, catL2, catL3].filter(Boolean).join(' > ') || '未选择'}
-                </div>
+              {/* 类目选择 - UI已隐藏，由后台自动匹配。保留 ZCY_CATEGORIES 数据和 catL1/catL2/catL3 状态供插件使用 */}
+
+              {/* 商品标题 */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">商品标题</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={editingProduct.title}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                />
               </div>
 
-              {/* 原始信息 + 品牌型号 */}
+              {/* 品牌型号 */}
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
-                  <input
-                    type="text"
-                    className="w-full border border-gray-200 bg-gray-50 rounded px-3 py-2 text-sm"
-                    value={editingProduct.originalUrl || ''}
-                    readOnly
-                  />
-                </div>
-                <div />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
                   <input
@@ -523,13 +467,14 @@ export default function TaskPage() {
                 </div>
               </div>
 
+              {/* 原始链接 */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">商品标题</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
                 <input
                   type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={editingProduct.title}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                  className="w-full border border-gray-200 bg-gray-50 rounded px-3 py-2 text-sm"
+                  value={editingProduct.originalUrl || ''}
+                  readOnly
                 />
               </div>
 
@@ -595,7 +540,7 @@ export default function TaskPage() {
                           <button
                             onClick={() => {
                               const next = [...editMainImages]
-                              ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                                ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
                               setEditMainImages(next)
                             }}
                             className="hover:underline"
@@ -651,7 +596,7 @@ export default function TaskPage() {
                           <button
                             onClick={() => {
                               const next = [...editDetailImages]
-                              ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+                                ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
                               setEditDetailImages(next)
                             }}
                             className="hover:underline"

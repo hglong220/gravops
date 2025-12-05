@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
             specs,
             detailHtml,
             sourceUrl,
+            originalUrl,  // 采集引擎发送的是这个字段名
+            zcyItemUrl,
             price,
             stock
         } = product
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
         const draft = await prisma.productDraft.create({
             data: {
                 userId: 'test-user-001',
-                originalUrl: sourceUrl || 'plugin-upload',
+                originalUrl: originalUrl || sourceUrl || zcyItemUrl || 'plugin-upload',
                 title: title || '未知商品',
                 brand: brand || null,
                 model: model || null,
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
                 detailHtml: detailHtml || JSON.stringify(detailImages || []),
                 attributes: JSON.stringify(specs || {}),
                 skuData: JSON.stringify({ price: price || 0, stock: stock || 99 }),
-                status: 'pending',
+                status: 'collected',
             }
         })
 

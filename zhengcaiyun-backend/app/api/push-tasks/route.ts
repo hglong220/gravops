@@ -40,8 +40,11 @@ export async function POST(request: NextRequest) {
           status: "scraped",
           images: JSON.stringify(safeData.images || []),
           attributes: JSON.stringify(safeData.attributes || {}),
+          brand: safeData.brand || "",
+          model: safeData.model || "",
           skuData: JSON.stringify({
             price: safeData.price,
+            stock: 99,
             images: safeData.images,
             attributes: safeData.attributes
           }),

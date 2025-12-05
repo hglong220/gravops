@@ -287,13 +287,31 @@ async function checkAndRunTask() {
 
     // 2. Open tab to process task
     // Append auto_scrape=true to trigger zcy-scraper.tsx
-    const targetUrl = new URL(data.task.originalUrl);
-    targetUrl.searchParams.set('auto_scrape', 'true');
+    let taskUrl = data.task.originalUrl;
 
-    await chrome.tabs.create({
-        url: targetUrl.toString(),
-        active: true // Set to false if we want background processing, but true is better for stability
-    });
+    // Validate URL before constructing
+    if (!taskUrl || typeof taskUrl !== 'string') {
+        console.error('[Task Runner] Invalid task URL:', taskUrl);
+        return;
+    }
+
+    // Ensure URL starts with http/https
+    if (!taskUrl.startsWith('http://') && !taskUrl.startsWith('https://')) {
+        console.error('[Task Runner] Task URL missing protocol:', taskUrl);
+        return;
+    }
+
+    try {
+        const targetUrl = new URL(taskUrl);
+        targetUrl.searchParams.set('auto_scrape', 'true');
+
+        await chrome.tabs.create({
+            url: targetUrl.toString(),
+            active: true // Set to false if we want background processing, but true is better for stability
+        });
+    } catch (e) {
+        console.error('[Task Runner] Failed to parse task URL:', taskUrl, e);
+    }
 
     // Note: The content script (zcy-scraper.tsx) will handle:
     // 1. Scrape data

@@ -33,16 +33,28 @@ interface ParamRow {
 
 function isUsefulImage(url: string): boolean {
     if (!url) return false
+    // Quick validation before URL construction
+    if (!url.startsWith('http') && !url.startsWith('//') && !url.startsWith('/')) {
+        return url.includes('itemcdn.zcycdn.com')
+    }
     try {
-        const u = new URL(url)
+        // Normalize the URL first
+        let normalizedUrl = url
+        if (url.startsWith('//')) {
+            normalizedUrl = 'https:' + url
+        } else if (url.startsWith('/') && !url.startsWith('//')) {
+            normalizedUrl = 'https://itemcdn.zcycdn.com' + url
+        }
+        const u = new URL(normalizedUrl)
         // 仅保留 itemcdn 图片
         if (!u.hostname.includes('itemcdn.zcycdn.com')) return false
         // 后缀限制（也接受无后缀的CDN图片）
         const path = u.pathname.toLowerCase()
         if (path.includes('.') && !/\.(jpg|jpeg|png|webp|gif)$/i.test(path)) return false
         return true
-    } catch {
+    } catch (e) {
         // 如果URL解析失败，检查是否是相对路径
+        console.warn('[ZCY Pro V2] URL parse failed:', url.substring(0, 50), e)
         return url.includes('itemcdn.zcycdn.com')
     }
 }
@@ -550,7 +562,8 @@ function extractTitle(): string {
             const text = el?.textContent?.trim()
             if (text && text.length > 8 && text.length < 200) {
                 if (!text.includes('服务') && !text.includes('安装调试') &&
-                    !text.includes('政采云') && !text.includes('电子卖场')) {
+                    !text.includes('政采云') && !text.includes('电子卖场') &&
+                    !text.includes('下载采云学院') && !text.includes('采云学院')) {
                     console.log('[ZCY Pro V2] 标题(选择器):', text.substring(0, 50))
                     return text
                 }
@@ -600,7 +613,9 @@ function extractTitle(): string {
     const h1 = document.querySelector('h1')
     if (h1?.textContent?.trim()) {
         const text = h1.textContent.trim()
-        if (text.length > 5 && text.length < 150 && !text.includes('政采云') && !text.includes('电子卖场')) {
+        if (text.length > 5 && text.length < 150 &&
+            !text.includes('政采云') && !text.includes('电子卖场') &&
+            !text.includes('下载采云学院') && !text.includes('采云学院')) {
             console.log('[ZCY Pro V2] 标题(h1):', text.substring(0, 50))
             return text
         }
@@ -612,9 +627,11 @@ function extractTitle(): string {
         .replace(/商品详情/g, '')
         .replace(/政采云/g, '')
         .replace(/电子卖场/g, '')
+        .replace(/下载采云学院APP/g, '')
+        .replace(/采云学院/g, '')
         .trim()
 
-    if (pageTitle && pageTitle.length > 5) {
+    if (pageTitle && pageTitle.length > 5 && !pageTitle.includes('采云学院')) {
         console.log('[ZCY Pro V2] 标题(页面title):', pageTitle.substring(0, 50))
         return pageTitle
     }
@@ -894,5 +911,164 @@ export async function startCollection(): Promise<{ success: boolean; data?: Extr
     })
 }
 
+// ========== 新增：京东（JD）采集函数 ==========
+
+async function scrapeJD(doc: Document): Promise<Partial<ExtractedData>> {
+    const result: Partial<ExtractedData> = {}
+
+    // 标题
+    result.title =
+        doc.querySelector('.sku-name')?.textContent?.trim() ||
+        doc.querySelector('.product-intro .title-text')?.textContent?.trim() ||
+        ''
+
+    // 价格（DOM）
+    const priceText =
+        doc.querySelector('.p-price .price')?.textContent ||
+        doc.querySelector('.summary-price-wrap .price')?.textContent ||
+        ''
+    result.price = priceText.replace(/[^\d.]/g, '') || '0'
+
+    // 主图（高清）
+    result.images = [...doc.querySelectorAll('#spec-list img, #spec-n1 img')].map(img =>
+        (img as HTMLImageElement).src.replace(/\/n\d+\//, '/n1/')
+    ).filter(Boolean)
+
+    // 品牌
+    const brandNode = doc.querySelector('.parameter-brand li, #parameter-brand li')
+    result.brand = brandNode?.textContent?.replace(/品牌[：:]?/g, '').trim() || ''
+
+    // 规格参数
+    result.specs = {}
+    doc.querySelectorAll('#detail .parameter2 li, .Ptable-item dl').forEach(li => {
+        const txt = li.textContent?.trim() || ''
+        const match = txt.match(/^(.+?)[：:](.+)$/)
+        if (match) {
+            result.specs![match[1].trim()] = match[2].trim()
+        }
+    })
+
+    result.originalUrl = location.href
+    result.zcyItemUrl = location.href
+    result.shopName = ''
+    result.model = ''
+    result.detailImages = []
+    result.detailHtml = ''
+
+    console.log('[JD Scraper] 采集结果:', { title: result.title?.substring(0, 30), price: result.price, images: result.images?.length })
+    return result
+}
+
+// ========== 新增：天猫（Tmall）采集函数 ==========
+
+async function scrapeTmall(doc: Document): Promise<Partial<ExtractedData>> {
+    const result: Partial<ExtractedData> = {}
+
+    // 标题
+    result.title = doc.querySelector('.tb-detail-hd h1')?.textContent?.trim() || ''
+
+    // 价格
+    const priceText =
+        doc.querySelector('.tm-price')?.textContent ||
+        doc.querySelector('#J_StrPrice .tm-price')?.textContent ||
+        ''
+    result.price = priceText.replace(/[^\d.]/g, '') || '0'
+
+    // 主图
+    result.images = [...doc.querySelectorAll('#J_UlThumb img')].map(img =>
+        (img as HTMLImageElement).src.replace(/_60x60q90\.jpg/i, '')
+    ).filter(Boolean)
+
+    // 品牌
+    result.brand = doc.querySelector('#J_BrandAttr .attr-value')?.textContent?.trim() || ''
+
+    // 规格参数
+    result.specs = {}
+    doc.querySelectorAll('#J_AttrUL li').forEach(li => {
+        const txt = li.textContent?.trim() || ''
+        const match = txt.match(/^(.+?)[：:](.+)$/)
+        if (match) {
+            result.specs![match[1].trim()] = match[2].trim()
+        }
+    })
+
+    result.originalUrl = location.href
+    result.zcyItemUrl = location.href
+    result.shopName = ''
+    result.model = ''
+    result.detailImages = []
+    result.detailHtml = ''
+
+    console.log('[Tmall Scraper] 采集结果:', { title: result.title?.substring(0, 30), price: result.price, images: result.images?.length })
+    return result
+}
+
+// ========== 新增：苏宁（Suning）采集函数 ==========
+
+async function scrapeSuning(doc: Document): Promise<Partial<ExtractedData>> {
+    const result: Partial<ExtractedData> = {}
+
+    // 标题
+    result.title = doc.querySelector('.proinfo-title')?.textContent?.trim() || ''
+
+    // 价格
+    const priceText =
+        doc.querySelector('.mainprice')?.textContent ||
+        doc.querySelector('#promotionPrice')?.textContent ||
+        ''
+    result.price = priceText.replace(/[^\d.]/g, '') || '0'
+
+    // 主图
+    result.images = [...doc.querySelectorAll('.imgzoom-thumb-main img')].map(img =>
+        (img as HTMLImageElement).src.replace(/_60x60\.jpg/i, '')
+    ).filter(Boolean)
+
+    // 品牌
+    result.brand = doc.querySelector('.proinfo-brand a')?.textContent?.trim() || ''
+
+    // 规格参数
+    result.specs = {}
+    doc.querySelectorAll('.parameter2 li, .itemparameter li').forEach(li => {
+        const txt = li.textContent?.trim() || ''
+        const match = txt.match(/^(.+?)[：:](.+)$/)
+        if (match) {
+            result.specs![match[1].trim()] = match[2].trim()
+        }
+    })
+
+    result.originalUrl = location.href
+    result.zcyItemUrl = location.href
+    result.shopName = ''
+    result.model = ''
+    result.detailImages = []
+    result.detailHtml = ''
+
+    console.log('[Suning Scraper] 采集结果:', { title: result.title?.substring(0, 30), price: result.price, images: result.images?.length })
+    return result
+}
+
+// ========== 新增：平台自动识别 ==========
+
+export function detectPlatform(): 'JD' | 'Tmall' | 'Suning' | 'ZCY' | null {
+    const host = location.host
+    if (host.includes('jd.com')) return 'JD'
+    if (host.includes('tmall.com')) return 'Tmall'
+    if (host.includes('suning.com')) return 'Suning'
+    if (host.includes('zcygov.cn')) return 'ZCY'
+    return null
+}
+
+export async function scrapeByPlatform(): Promise<Partial<ExtractedData> | null> {
+    const platform = detectPlatform()
+    console.log('[Platform Scraper] 检测平台:', platform)
+
+    if (platform === 'JD') return scrapeJD(document)
+    if (platform === 'Tmall') return scrapeTmall(document)
+    if (platform === 'Suning') return scrapeSuning(document)
+
+    // ZCY 或其他平台，返回 null，使用原有逻辑
+    return null
+}
+
 export type { ExtractedData }
-export { extractAllData, isUsefulImage, isValidBrand, findEcommerceLink }
+export { extractAllData, isUsefulImage, isValidBrand, findEcommerceLink, scrapeJD, scrapeTmall, scrapeSuning }

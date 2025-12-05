@@ -1,14 +1,20 @@
 import type { PlasmoCSConfig, PlasmoGetStyle, PlasmoMountShadowHost } from "plasmo"
 import { useEffect, useState } from "react"
 
-// 配置 Plasmo Content Script - 支持京东、天猫、淘宝
+// 导入Pro采集引擎（新增，不影响政采云）
+import { scrapeJDPro } from "../utils/scraper.jd.pro"
+import { scrapeTmallPro } from "../utils/scraper.tmall.pro"
+import { scrapeSuningPro } from "../utils/scraper.suning.pro"
+
+// 配置 Plasmo Content Script - 支持京东、天猫、淘宝、苏宁
 export const config: PlasmoCSConfig = {
     matches: [
         "https://*.jd.com/*",
         "https://*.jd.hk/*",
         "https://*.tmall.com/*",
         "https://*.tmall.hk/*",
-        "https://*.taobao.com/*"
+        "https://*.taobao.com/*",
+        "https://*.suning.com/*"
     ],
     run_at: "document_idle"
 }
@@ -18,14 +24,14 @@ export const mountShadowHost: PlasmoMountShadowHost = ({ shadowHost }) => {
     document.body.appendChild(shadowHost)
 }
 
-// 注入样式
+// 注入样式（与政采云保持一致）
 export const getStyle: PlasmoGetStyle = () => {
     const style = document.createElement("style")
     style.textContent = `
         .zcy-fab-container {
             position: fixed;
             bottom: 20px;
-            right: 30px;
+            right: 130px;
             z-index: 2147483647;
             display: flex;
             flex-direction: column;
@@ -34,47 +40,54 @@ export const getStyle: PlasmoGetStyle = () => {
             pointer-events: none;
         }
         .zcy-fab-btn {
-            width: 60px;
-            height: 60px;
+            width: 56px;
+            height: 56px;
             padding: 0;
-            background-color: var(--zcy-fab-bg, #0085D0);
+            background-color: var(--zcy-fab-bg, #1677FF);
             border: none;
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0 4px 16px rgba(0, 133, 208, 0.4);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             pointer-events: auto;
         }
         .zcy-fab-btn:hover {
-            transform: scale(1.1);
-            box-shadow: 0 8px 24px rgba(0, 133, 208, 0.6);
+            transform: scale(1.06);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
         }
         .zcy-fab-btn:active {
             transform: scale(0.95);
         }
+        @keyframes zcy-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
         .zcy-fab-img {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
+            width: 28px;
+            height: 28px;
             display: block;
-            background: transparent;
+            object-fit: contain;
         }
     `
     return style
 }
 
-// 图标资源
-import pngIcon from "data-base64:~assets/icon.png"
-const ICON_SVG_BASE64 = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAyMDAgMjAwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xMDAgMzAgQzExMCAzMCwgMTE1IDQwLCAxMjAgNTUgTDEzNSA5NSBDMTQwIDEwNSwgMTU1IDEwNSwgMTYwIDk1IEwxNzUgNTUgQzE4MCA0MCwgMTk1IDQwLCAxOTUgNTUgQzE5MCA3NSwgMTc1IDkwLCAxNjAgMTAwIEwxMzAgMTIwIEMxMjAgMTI1LCAxMjAgMTQwLCAxMzAgMTQ1IEwxNjAgMTY1IEMxNzUgMTc1LCAxNzAgMTk1LCAxNTAgMTkwIEwxMTAgMTgwIEMxMDAgMTc1LCA5MCAxODUsIDk1IDE5NSBDMTAwIDIxNSwgNzUgMjE1LCA3MCAxOTUgQzc1IDE4NSwgNjUgMTc1LCA1NSAxODAgTDE1IDE5MCBDLTUgMTk1LCAtMTAgMTc1LCA1IDE2NSBMMzUgMTQ1IEM0NSAxNDAsIDQ1IDEyNSwgMzUgMTIwIEw1IDEwMCBDLTEwIDkwLCA1IDc1LCAyNSA3NSBMNDAgNzUgQzU1IDc1LCA2MCA2MCwgNjUgNDUgTDgwIDUgQzg1IC0xMCwgMTE1IC0xMCwgMTIwIDUgWiIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+`
+// 白色星形图标（与政采云一致）
+const ICON_WHITE_SVG = `data:image/svg+xml;base64,${btoa(`
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M100 15c7 0 12 6 15 13l13 35c3 8 12 12 20 9l35-13c7-3 13 0 16 7 3 7-1 14-7 18l-30 21c-7 5-9 14-4 21l21 30c5 6 5 13-1 18-6 5-14 4-19-1l-27-25c-6-6-16-5-21 1l-23 28c-5 6-12 7-18 2-6-5-7-12-4-19l14-34c3-8 0-17-8-20l-35-14c-7-3-11-10-8-17s10-11 17-9l36 10c8 2 16-3 18-11l9-36c2-7 8-13 15-13Z" stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+`)}`
 
 // React 组件
 const EcommerceScraperWidget = () => {
+    const COLOR_BLUE = "#1677FF"
     const [showCopyBtn, setShowCopyBtn] = useState(false)
     const [loading, setLoading] = useState(false)
-    const [fabColor, setFabColor] = useState("#0085D0")
+    const [fabColor, setFabColor] = useState(COLOR_BLUE)
     const [pushSuccess, setPushSuccess] = useState(false)
     const [successMsg, setSuccessMsg] = useState("")
 
@@ -91,6 +104,8 @@ const EcommerceScraperWidget = () => {
             if (hostname.includes('tmall.com') && url.includes('item.htm')) isProduct = true
             // 淘宝商品详情页
             if (hostname.includes('taobao.com') && url.includes('item.htm')) isProduct = true
+            // 苏宁商品详情页
+            if (hostname.includes('suning.com') && /\/\d+\.html/.test(url)) isProduct = true
 
             setShowCopyBtn(isProduct)
         }
@@ -105,8 +120,33 @@ const EcommerceScraperWidget = () => {
     const handleCopy = async () => {
         setLoading(true)
         try {
-            const productData = scrapePageData()
+            const hostname = window.location.hostname
+            let productData: any
+
+            // 根据平台选择Pro采集引擎（新增逻辑，不影响政采云）
+            if (hostname.includes('jd.com')) {
+                productData = await scrapeJDPro()
+            } else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
+                productData = await scrapeTmallPro()
+            } else if (hostname.includes('suning.com')) {
+                productData = await scrapeSuningPro()
+            } else {
+                productData = scrapePageData() // 兜底使用原逻辑
+            }
+
             if (!productData.title) throw new Error('无法获取商品标题，请刷新页面重试')
+
+            // 转换Pro引擎输出格式
+            const pushData = {
+                originalUrl: productData.url || window.location.href,
+                title: productData.title,
+                price: String(productData.price || '0'),
+                images: productData.images || [],
+                attributes: productData.specs || {},
+                shopName: productData.platform || '电商平台',
+                brand: productData.specs?.['品牌'] || '',
+                model: productData.specs?.['型号'] || ''
+            }
 
             // 推送到本地 dashboard/tasks
             await fetch("http://localhost:3000/api/push-tasks", {
@@ -115,21 +155,19 @@ const EcommerceScraperWidget = () => {
                 body: JSON.stringify({
                     type: "single",
                     link: window.location.href,
-                    data: productData
+                    data: pushData
                 })
             })
 
             setPushSuccess(true)
-            setFabColor("#4CAF50")
-            setSuccessMsg("推送成功")
+            setSuccessMsg("采集成功！")
         } catch (error) {
-            setPushSuccess(false)
-            setSuccessMsg("推送失败: " + (error as Error).message)
+            setPushSuccess(true)
+            setSuccessMsg("采集失败: " + (error as Error).message)
         } finally {
             setLoading(false)
             setTimeout(() => {
                 setPushSuccess(false)
-                setFabColor("#0085D0")
                 setSuccessMsg("")
             }, 2000)
         }
@@ -143,33 +181,35 @@ const EcommerceScraperWidget = () => {
                 className="zcy-fab-btn"
                 onClick={handleCopy}
                 disabled={loading}
-                style={{
-                    backgroundColor: fabColor,
-                    boxShadow: `0 4px 16px ${fabColor === "#4CAF50" ? "rgba(76,175,80,0.4)" : "rgba(0,133,208,0.4)"}`
-                }}
+                style={{ backgroundColor: fabColor }}
             >
                 {loading ? (
-                    <span style={{ color: 'white', fontWeight: 'bold' }}>...</span>
+                    <span style={{
+                        width: 24,
+                        height: 24,
+                        border: '3px solid rgba(255,255,255,0.3)',
+                        borderTop: '3px solid white',
+                        borderRadius: '50%',
+                        animation: 'zcy-spin 1s linear infinite'
+                    }} />
                 ) : (
                     <img
                         className="zcy-fab-img"
-                        src={pngIcon}
+                        src={ICON_WHITE_SVG}
                         alt="政采云助手"
-                        onError={e => {
-                            (e.target as HTMLImageElement).src = ICON_SVG_BASE64
-                        }}
                     />
                 )}
             </button>
             {pushSuccess && (
                 <div style={{
                     marginTop: 8,
-                    background: "#4CAF50",
+                    background: COLOR_BLUE,
                     color: "#fff",
-                    borderRadius: 8,
-                    padding: "6px 16px",
+                    borderRadius: 20,
+                    padding: "8px 20px",
                     fontSize: 14,
-                    boxShadow: "0 2px 8px rgba(76,175,80,0.15)"
+                    fontWeight: 500,
+                    boxShadow: "0 4px 12px rgba(22, 119, 255, 0.3)"
                 }}>
                     {successMsg}
                 </div>
@@ -190,40 +230,114 @@ function scrapePageData() {
         attributes: {} as Record<string, string>,
         detailHtml: '',
         shopName: '',
-        category: ''
+        category: '',
+        brand: '',
+        model: ''
+    }
+
+    // 通用图片采集函数 - 收集页面上所有大尺寸商品图
+    const collectImages = () => {
+        const imgs: string[] = []
+        document.querySelectorAll('img').forEach((img: HTMLImageElement) => {
+            let src = img.src || img.getAttribute('data-src') || img.getAttribute('data-url') || img.getAttribute('data-lazy-img')
+            if (!src) return
+            // 过滤掉小图标、视频、base64
+            if (src.includes('data:image')) return
+            if (src.includes('video') || src.includes('.mp4') || src.includes('play')) return
+            if (img.width < 100 && img.height < 100 && img.naturalWidth < 100) return
+            // 转换为高清
+            src = src.replace(/\/n\d+\//, '/n1/')
+            src = src.replace(/_\d+x\d+[^.]*\.(jpg|png|webp)/i, '.$1')
+            src = src.replace(/_60x60\.jpg/i, '')
+            // 去重
+            if (!imgs.includes(src)) imgs.push(src)
+        })
+        return imgs.slice(0, 15)  // 最多15张
+    }
+
+    // 通用标题采集 - 从页面title提取
+    const getTitle = () => {
+        // 页面标题通常是：商品名 - 平台名
+        let title = document.title.split(/[-–—|_]/)[0].trim()
+        // 去掉平台后缀
+        title = title.replace(/京东|天猫|淘宝|苏宁|tmall|taobao|jd|suning/gi, '').trim()
+        return title
     }
 
     // 京东
     if (hostname.includes('jd.com')) {
-        const titleEl = document.querySelector('.sku-name') || document.querySelector('h1')
-        if (titleEl) data.title = titleEl.textContent?.trim() || ''
-        const priceEl = document.querySelector('.price') || document.querySelector('.p-price .price')
-        if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '') || ''
-        const imgs = document.querySelectorAll('#spec-list img, .lh img')
-        imgs.forEach((img: HTMLImageElement) => {
-            let src = img.src || img.getAttribute('data-url')
-            if (src) {
-                src = src.replace('/n5/', '/n1/').replace('/n7/', '/n1/')
-                data.images.push(src)
-            }
-        })
+        // 标题 - 优先尝试选择器，失败则用页面title
+        let title = ''
+        const titleEl = document.querySelector('.sku-name, .itemInfo-wrap .sku-name, h1')
+        if (titleEl?.textContent?.trim()?.length > 5) {
+            title = titleEl.textContent.trim()
+        }
+        if (!title) title = getTitle()
+        data.title = title
+
+        // 价格
+        const priceText = document.body.innerText.match(/[¥￥]\s*(\d+\.?\d*)/)?.[1] || ''
+        data.price = priceText
+
+        // 主图
+        data.images = collectImages()
+
+        // 尝试从页面文本提取品牌
+        const brandMatch = document.body.innerText.match(/品牌[：:]\s*([^\s\n]+)/)
+        if (brandMatch) data.brand = brandMatch[1]
+
         data.shopName = '京东'
+        console.log('[JD采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
     }
     // 天猫/淘宝
     else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
-        const titleEl = document.querySelector('.tb-main-title') || document.querySelector('h1')
-        if (titleEl) data.title = titleEl.getAttribute('data-title') || titleEl.textContent?.trim() || ''
-        const priceEl = document.querySelector('.tm-price') || document.querySelector('.tb-rmb-num')
-        if (priceEl) data.price = priceEl.textContent?.trim() || ''
-        const imgs = document.querySelectorAll('#J_UlThumb img')
-        imgs.forEach((img: HTMLImageElement) => {
-            let src = img.src
-            if (src) {
-                src = src.replace(/_\d+x\d+\.jpg.*/, '')
-                data.images.push(src)
-            }
-        })
+        // 标题
+        let title = ''
+        const titleEl = document.querySelector('[class*="mainTitle"], .tb-main-title, h1')
+        if (titleEl?.textContent?.trim()?.length > 5) {
+            title = titleEl.textContent.trim()
+        }
+        if (!title) title = getTitle()
+        data.title = title
+
+        // 价格
+        const priceText = document.body.innerText.match(/[¥￥]\s*(\d+\.?\d*)/)?.[1] || ''
+        data.price = priceText
+
+        // 主图
+        data.images = collectImages()
+
+        // 品牌
+        const brandMatch = document.body.innerText.match(/品牌[：:]\s*([^\s\n]+)/)
+        if (brandMatch) data.brand = brandMatch[1]
+
         data.shopName = '淘宝/天猫'
+        console.log('[天猫采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
+    }
+    // 苏宁
+    else if (hostname.includes('suning.com')) {
+        // 标题
+        let title = ''
+        const titleEl = document.querySelector('.proinfo-title, #itemDisplayName, h1')
+        if (titleEl?.textContent?.trim()?.length > 5) {
+            title = titleEl.textContent.trim()
+        }
+        if (!title) title = getTitle()
+        data.title = title
+
+        // 价格
+        const priceEl = document.querySelector('.mainprice, #promotionPrice')
+        if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '') || ''
+
+        // 主图
+        data.images = collectImages()
+
+        // 品牌
+        const brandEl = document.querySelector('.proinfo-brand a')
+        if (brandEl) data.brand = brandEl.textContent?.trim() || ''
+
+        data.shopName = '苏宁'
+        console.log('[苏宁采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
     }
 
     if (!data.title) data.title = document.title

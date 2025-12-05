@@ -8,68 +8,59 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  password      String
-  name          String?  // Legal Representative Name
-  phone         String?
-  isBanned      Boolean  @default(false)
-  
-  // Company Info
-  companyName   String?
-  creditCode    String?  // Unified Social Credit Code
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  licenses      License[]
-  orders        Order[]
-  
+  id          String    @id @default(cuid())
+  email       String    @unique
+  password    String
+  name        String?
+  phone       String?
+  isBanned    Boolean   @default(false)
+  companyName String?
+  creditCode  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  licenses    License[]
+  orders      Order[]
+
   @@index([email])
 }
 
 model Order {
   id            String   @id @default(cuid())
-  user          User     @relation(fields: [userId], references: [id])
   userId        String
-  plan          String   // 'monthly' | 'yearly'
-  amount        Int      // 金额（分）
-  status        String   @default("pending") // 'pending' | 'paid' | 'cancelled'
-  paymentMethod String   @default("wechat") // 'wechat'
+  plan          String
+  amount        Int
+  status        String   @default("pending")
+  paymentMethod String   @default("wechat")
   transactionId String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  
   license       License?
-  
+  user          User     @relation(fields: [userId], references: [id])
+
   @@index([userId])
   @@index([status])
 }
 
 model License {
-  id            String   @id @default(cuid())
-  key           String   @unique
-  user          User?    @relation(fields: [userId], references: [id])
+  id            String        @id @default(cuid())
+  key           String        @unique
   userId        String?
-  order         Order?   @relation(fields: [orderId], references: [id])
-  orderId       String?  @unique
+  orderId       String?       @unique
   companyName   String
   companyDomain String?
   plan          String
-  
-  // Quotas & Limits
-  maxDevices    Int      @default(1)
-  maxUsers      Int      @default(1)
-  monthlyQuota  Int      @default(100)
-  
-  createdAt     DateTime @default(now())
+  maxDevices    Int           @default(1)
+  maxUsers      Int           @default(1)
+  monthlyQuota  Int           @default(100)
+  createdAt     DateTime      @default(now())
   expiresAt     DateTime
-  status        String   @default("active") // 'active', 'suspended', 'expired'
+  status        String        @default("active")
   suspendReason String?
-  
   devices       Device[]
+  order         Order?        @relation(fields: [orderId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id])
   usageRecords  UsageRecord[]
-  
+
   @@index([key])
   @@index([userId])
   @@index([companyName])
@@ -77,46 +68,42 @@ model License {
 
 model Device {
   id          String   @id @default(cuid())
-  license     License  @relation(fields: [licenseId], references: [id])
   licenseId   String
   fingerprint String
   lastSeen    DateTime @default(now())
   createdAt   DateTime @default(now())
-  
+  license     License  @relation(fields: [licenseId], references: [id])
+
   @@unique([licenseId, fingerprint])
   @@index([licenseId])
 }
 
 model UsageRecord {
   id          String   @id @default(cuid())
-  license     License  @relation(fields: [licenseId], references: [id])
   licenseId   String
   productName String
   status      String
   createdAt   DateTime @default(now())
-  
+  license     License  @relation(fields: [licenseId], references: [id])
+
   @@index([licenseId])
   @@index([createdAt])
 }
 
 model Product {
-  id            String   @id @default(cuid())
-  zcyProductId  String?  @unique
-  name          String
-  originalName  String?
-  category      String?
-  status        String   // 'draft', 'uploading', 'uploaded', 'failed'
-  
-  // Trojan Strategy
-  isTrojan      Boolean  @default(false)
-  trojanStatus  String?  // 'pending_substitute', 'substitute_uploaded', 'monitoring', 'restored'
-  riskLevel     String?  // 'low', 'medium', 'high'
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  images        ImageResource[]
-  
+  id           String          @id @default(cuid())
+  zcyProductId String?         @unique
+  name         String
+  originalName String?
+  category     String?
+  status       String
+  isTrojan     Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  riskLevel    String?
+  trojanStatus String?
+  images       ImageResource[]
+
   @@index([status])
   @@index([zcyProductId])
 }
@@ -124,16 +111,14 @@ model Product {
 model ImageResource {
   id          String   @id @default(cuid())
   url         String
-  source      String   // 'jd', 'tmall', 'taobao', 'baidu'
+  source      String
   originalUrl String?
   width       Int?
   height      Int?
-  size        Int?     // bytes
-  
-  product     Product? @relation(fields: [productId], references: [id])
+  size        Int?
   productId   String?
-  
   createdAt   DateTime @default(now())
+  product     Product? @relation(fields: [productId], references: [id])
 
   @@index([url])
 }
@@ -141,46 +126,39 @@ model ImageResource {
 model CrawlerLog {
   id           String   @id @default(cuid())
   target       String
-  status       String   // 'success', 'failed'
-  duration     Int      // ms
+  status       String
+  duration     Int
   itemsFound   Int
   errorMessage String?
   createdAt    DateTime @default(now())
 }
 
-// --- New Core: Product Replication System ---
-
 model ProductDraft {
-  id           String   @id @default(cuid())
-  userId       String   // Owner of this draft
-  
-  // Source Info
-  originalUrl  String   // Source product URL (ZCY)
-  originalId   String?  // Source product ID
-  shopName     String?  // Source shop name
-  
-  // Content
+  id           String    @id @default(cuid())
+  userId       String
+  originalUrl  String
+  originalId   String?
+  shopName     String?
   title        String
-  categoryPath String?  // e.g. "Office / Paper / A4"
-  categoryId   String?  // ZCY category ID
+  categoryPath String?
+  categoryId   String?
   brand        String?
   model        String?
-  
-  // JSON Data for complex structures
-  images       String   // JSON: string[]
-  attributes   String   // JSON: Record<string, string>
-  skuData      String   // JSON: SKU definitions and combinations
-  detailHtml   String   // Full HTML of the detail description
-  
-  // Status
-  status       String   @default("pending") // 'pending', 'published', 'failed'
-  publishUrl   String?  // URL after successful publishing
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  copyTask     CopyTask? @relation(fields: [copyTaskId], references: [id])
+  images       String
+  attributes   String
+  skuData      String
+  detailHtml   String
+  status       String    @default("pending")
+  publishUrl   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   copyTaskId   String?
+  detailImages String?
+  errorMessage String?
+  price        Float?
+  publishedAt  DateTime?
+  stock        Int?      @default(99)
+  copyTask     CopyTask? @relation(fields: [copyTaskId], references: [id])
 
   @@index([userId])
   @@index([status])
@@ -188,22 +166,17 @@ model ProductDraft {
 }
 
 model CopyTask {
-  id           String   @id @default(cuid())
+  id           String         @id @default(cuid())
   userId       String
-  
   shopUrl      String
   shopName     String?
-  
-  totalCount   Int      @default(0)
-  successCount Int      @default(0)
-  failedCount  Int      @default(0)
-  
-  status       String   @default("running") // 'running', 'paused', 'completed', 'failed'
+  totalCount   Int            @default(0)
+  successCount Int            @default(0)
+  failedCount  Int            @default(0)
+  status       String         @default("running")
   errorMessage String?
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   drafts       ProductDraft[]
 
   @@index([userId])
@@ -211,22 +184,22 @@ model CopyTask {
 }
 
 model ComplianceRule {
-  id          String   @id @default(cuid())
-  content     String   // 规则内容 (e.g. "标题不得包含'特供'")
-  region      String   @default("Global") // 适用区域 (e.g. "甘肃", "浙江", "Global")
-  isEnabled   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  content   String
+  region    String   @default("Global")
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([region])
 }
 
 model SystemLog {
   id        String   @id @default(cuid())
-  level     String   // 'INFO', 'WARN', 'ERROR', 'SUCCESS'
-  module    String   // 'AUTH', 'TASK', 'AI', 'SYSTEM'
+  level     String
+  module    String
   message   String
-  meta      String?  // JSON string for extra details
+  meta      String?
   createdAt DateTime @default(now())
 
   @@index([createdAt])
