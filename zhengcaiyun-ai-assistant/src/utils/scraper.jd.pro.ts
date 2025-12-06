@@ -620,100 +620,158 @@ function normalizeJdImg(url: string): string {
     return u.replace(/^http:/, 'https:');
 }
 
+/**
+ * 标准化京东图片URL为大图URL
+ * 处理缩略图参数，确保获取高清原图
+ */
+function normalizeJdImgToHD(url: string): string {
+    if (!url) return '';
+    let u = url.trim();
+
+    // 协议标准化
+    if (u.startsWith('//')) u = 'https:' + u;
+    u = u.replace(/^http:/, 'https:');
+
+    // 移除缩略图前缀（如 s54x54_ s40x40_ s60x60_）
+    u = u.replace(/\/s\d+x\d+_/g, '/');
+    u = u.replace(/s\d+x\d+_jfs/g, 'jfs');
+
+    // 转换小图路径为大图路径
+    u = u.replace(/\/n5\//g, '/n1/');
+    u = u.replace(/\/n7\//g, '/n1/');
+    u = u.replace(/\/n9\//g, '/n1/');
+
+    // 移除尺寸限制参数（如 s1440x1440_ 等）
+    // 但保留完整路径，只移除前缀
+    u = u.replace(/s\d+x\d+_jfs/gi, 'jfs');
+
+    return u;
+}
+
 function getJDImages(doc: Document): string[] {
-    const result: string[] = [];
-    const seen = new Set<string>();
-
     console.log('[JD Pro] 开始图片采集...');
-    console.log('[JD Pro] cachedImageAndVideoJson长度:', cachedImageAndVideoJson?.length || 0);
 
-    const addImage = (url: string, source: string = '') => {
-        const normalized = normalizeJdImg(url);
-        if (!normalized) return;
-        if (seen.has(normalized)) return;
+    const urls: string[] = []; // 用于去重和结果存储
 
-        // 过滤活动图标
-        if (isBadJdIcon(normalized)) {
-            return;
-        }
+    /**
+     * 添加图片URL（带去重）
+     */
+    const pushImg = (rawUrl: string | undefined | null, debugFrom: string) => {
+        if (!rawUrl) return;
+        let url = rawUrl.trim();
+        if (!url) return;
+
+        // 补全协议
+        if (url.startsWith('//')) url = 'https:' + url;
+        url = url.replace(/^http:/, 'https:');
 
         // 必须是京东图片
-        if (!normalized.includes('360buyimg.com') && !normalized.includes('jd.com')) {
+        if (!url.includes('360buyimg.com') && !url.includes('jd.com')) {
+            console.log(`[JD Pro] 跳过非京东图片 ${debugFrom}:`, url.substring(0, 50));
             return;
         }
 
-        seen.add(normalized);
-        result.push(normalized);
-        console.log(`[JD Pro] 添加图片 #${result.length} [${source}]:`, normalized.substring(0, 60));
+        // 过滤活动图标
+        if (isBadJdIcon(url)) {
+            console.log(`[JD Pro] 跳过活动图标 ${debugFrom}:`, url.substring(0, 50));
+            return;
+        }
+
+        // 去重检查（使用原始URL，不做过度标准化）
+        if (urls.includes(url)) {
+            console.log(`[JD Pro] 跳过重复 ${debugFrom}:`, url.substring(0, 50));
+            return;
+        }
+
+        urls.push(url);
+        console.log(`[JD Pro] 添加图片 #${urls.length} ${debugFrom}:`, url.substring(0, 80));
     };
 
-    // 1. 优先使用缓存的imageAndVideoJson
-    if (cachedImageAndVideoJson && cachedImageAndVideoJson.length > 0) {
-        console.log('[JD Pro] 使用缓存imageAndVideoJson:', cachedImageAndVideoJson.length, '项');
-        for (const item of cachedImageAndVideoJson) {
-            if (item.type === 1 || item.type === '1' || !item.type) {
-                const url = item.img || item.imgUrl || item.image || item.url || '';
-                if (url) addImage(url, 'cached-imageAndVideoJson');
+    // 1) 优先用缓存的 imageAndVideoJson
+    console.log('[JD Pro] cachedImageAndVideoJson长度:', cachedImageAndVideoJson?.length || 0);
+
+    if (Array.isArray(cachedImageAndVideoJson) && cachedImageAndVideoJson.length > 0) {
+        console.log('[JD Pro] 缓存内容预览:', JSON.stringify(cachedImageAndVideoJson.slice(0, 2)).substring(0, 200));
+
+        cachedImageAndVideoJson.forEach((item, idx) => {
+            if (!item) return;
+
+            // 过滤视频项
+            if (item.type === 2 || item.type === '2' || item.type === 'video') {
+                console.log(`[JD Pro] 跳过视频项 #${idx + 1}`);
+                return;
             }
-        }
+
+            // 尝试多个可能的URL字段
+            const imgUrl = item.img || item.imgUrl || item.imageUrl || item.bigImgUrl ||
+                item.mainUrl || item.url || item.src || item.image || '';
+            pushImg(imgUrl, `[cached #${idx + 1}]`);
+        });
     }
 
-    // 2. 直接从window读取imageAndVideoJson（绕过message传递时序问题！）
-    if (result.length < 3) {
-        console.log('[JD Pro] 尝试直接从window获取imageAndVideoJson...');
+    // 2) 再从 window.imageAndVideoJson 兜底
+    if (urls.length < 3) {
         try {
             const win = window as any;
-            const paths = [
+            const winSources = [
+                win.imageAndVideoJson,
+                win.imageList,
                 win.pageConfig?.product?.imageAndVideoJson,
                 win.pageConfig?.imageAndVideoJson,
                 win.itemData?.imageAndVideoJson
             ];
 
-            for (const arr of paths) {
-                if (Array.isArray(arr) && arr.length > 0) {
-                    console.log('[JD Pro] 直接从window获取到:', arr.length, '项');
-                    for (const item of arr) {
-                        if (item.type === 1 || item.type === '1' || !item.type) {
-                            const url = item.img || item.imgUrl || item.image || item.url || '';
-                            if (url) addImage(url, 'window-direct');
-                        }
-                    }
-                    break;
+            for (const imageAndVideoJson of winSources) {
+                if (Array.isArray(imageAndVideoJson) && imageAndVideoJson.length > 0) {
+                    console.log('[JD Pro] 从window获取imageAndVideoJson，长度:', imageAndVideoJson.length);
+
+                    imageAndVideoJson.forEach((item: any, idx: number) => {
+                        if (!item) return;
+                        if (item.type === 2 || item.type === '2' || item.type === 'video') return;
+
+                        const imgUrl = item.img || item.imgUrl || item.imageUrl || item.bigImgUrl ||
+                            item.mainUrl || item.url || item.src || item.image || '';
+                        pushImg(imgUrl, `[window #${idx + 1}]`);
+                    });
+                    break; // 找到一个有效源就停止
                 }
             }
         } catch (e) {
-            console.log('[JD Pro] 直接读取window失败:', e);
+            console.warn('[JD Pro] 读取window.imageAndVideoJson出错:', e);
         }
     }
 
-    // 3. 从DOM主图区域采集
-    if (result.length < 3) {
-        console.log('[JD Pro] 从DOM采集主图...');
-        const mainImageSelectors = [
-            '#spec-n1 img',
-            '#spec-list img',
-            '.preview-img img',
-            '.spec-items img',
-            '.lh li:not(.video-item) img'
-        ];
+    // 3) 最后从 DOM 里再扫一遍主图区域做兜底
+    if (urls.length < 3) {
+        try {
+            console.log('[JD Pro] 从DOM采集主图...');
+            const selectors = [
+                '#spec-list img',
+                '#spec-n1 img',
+                '.preview-wrap img',
+                '.spec-items img',
+                '.lh li:not(.video-item) img'
+            ];
 
-        for (const sel of mainImageSelectors) {
-            try {
-                doc.querySelectorAll(sel).forEach((img: HTMLImageElement) => {
-                    const parent = img.closest('[class*="video"], .video-item');
-                    if (parent) return;
+            selectors.forEach(sel => {
+                doc.querySelectorAll<HTMLImageElement>(sel).forEach((img, idx) => {
+                    // 跳过视频容器内的图片
+                    if (img.closest('.video-item, [class*="video"]')) return;
 
-                    const url = img.src ||
+                    const src = img.getAttribute('data-url') ||
                         img.getAttribute('data-src') ||
-                        img.getAttribute('data-url') || '';
-                    addImage(url, sel);
+                        img.getAttribute('data-lazy-img') ||
+                        img.src || '';
+                    pushImg(src, `[DOM ${sel} #${idx + 1}]`);
                 });
-            } catch { }
+            });
+        } catch (e) {
+            console.warn('[JD Pro] 从DOM采集主图出错:', e);
         }
     }
 
-    console.log('[JD Pro] 最终图片数量:', result.length);
-    return result.slice(0, 15);
+    console.log('[JD Pro] 最终图片数量:', urls.length);
+    return urls.slice(0, 15);
 }
 
 // 京东参数解析（完整 Pro 级）

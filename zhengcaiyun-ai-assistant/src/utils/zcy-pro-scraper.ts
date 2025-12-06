@@ -6,7 +6,13 @@
  * 2. 图片URL：确保完整路径
  * 3. 规格参数：过滤价格等脏数据
  * 4. 详情图：改进提取逻辑
+ * 
+ * V2.3 新增：
+ * 5. SKU多规格采集（颜色分类、尺码等）
  */
+
+// 导入SKU多规格采集模块（增强版）
+import { extractZcySkuData, type ZcySkuData } from './sku.zcy'
 
 // ========== 类型定义 ==========
 
@@ -22,6 +28,7 @@ interface ExtractedData {
     shopName: string
     originalUrl: string
     zcyItemUrl: string
+    skuData?: ZcySkuData  // 新增：SKU多规格数据
 }
 
 interface ParamRow {
@@ -787,9 +794,13 @@ async function extractAllData(): Promise<ExtractedData> {
     // 10. 店铺名
     const shopName = extractShopName()
 
+    // 11. SKU多规格数据（新增 - 政采云兼容格式）
+    const skuData = await extractZcySkuData()
+
     const result: ExtractedData = {
         title, price, brand, model, specs, images, detailImages, detailHtml, shopName,
-        originalUrl: ecommerceUrl, zcyItemUrl: zcyUrl
+        originalUrl: ecommerceUrl, zcyItemUrl: zcyUrl,
+        skuData  // 新增
     }
 
     console.log('[ZCY Pro V2] ========== 提取完成 ==========')

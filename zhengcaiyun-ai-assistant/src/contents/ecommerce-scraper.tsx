@@ -145,7 +145,9 @@ const EcommerceScraperWidget = () => {
                 attributes: productData.specs || {},
                 shopName: productData.platform || '电商平台',
                 brand: productData.specs?.['品牌'] || '',
-                model: productData.specs?.['型号'] || ''
+                model: productData.specs?.['型号'] || '',
+                // 新增：SKU多规格数据（政采云兼容格式）
+                skuData: productData.skuData || null
             }
 
             // 推送到本地 dashboard/tasks

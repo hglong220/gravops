@@ -158,45 +158,87 @@ function extractJDImageAndVideoJson(): any[] {
     const domImages: any[] = [];
     const seen = new Set<string>();
 
-    // 从主图区域提取
+    /**
+     * 标准化京东图片URL为唯一基准形式
+     * 处理所有尺寸变体，确保同一图片只保留一份
+     */
+    const normalizeToBase = (rawUrl: string): string => {
+        if (!rawUrl) return '';
+        let u = rawUrl.trim();
+
+        // 协议标准化
+        if (u.startsWith('//')) u = 'https:' + u;
+        u = u.replace(/^http:/, 'https:');
+
+        // 移除所有尺寸前缀: s54x54_, s60x60_, s1440x1440_, 等
+        // 格式: sWxH_ 或 sWxH_jfs
+        u = u.replace(/s\d+x\d+_jfs/gi, 'jfs');
+        u = u.replace(/\/s\d+x\d+_/g, '/');
+        u = u.replace(/s\d+x\d+_/g, '');
+
+        // 统一路径: /n5/, /n7/, /n9/ 都转为 /n1/ (大图)
+        u = u.replace(/\/n[579]\//g, '/n1/');
+
+        return u;
+    };
+
+    // 优先级: data-url > data-src > src
+    // data-url 通常包含高清图片URL
     const selectors = [
-        '#spec-list li img',
-        '#spec-n1 img',
+        '#spec-list li img',      // 缩略图列表
+        '#spec-n1 img',           // 主预览图
         '.preview-list li img',
         '.spec-items li img',
-        '.lh li img'
+        '.lh li:not(.video-item) img',
+        '.plist li img'           // 新增选择器
     ];
 
     for (const sel of selectors) {
         document.querySelectorAll(sel).forEach((img: Element) => {
             const imgEl = img as HTMLImageElement;
+
             // 跳过视频项
             const li = imgEl.closest('li');
-            if (li?.classList.contains('video-item') || li?.className.includes('video')) return;
+            if (li?.classList.contains('video-item') || li?.className.includes('video')) {
+                return;
+            }
 
-            let url = imgEl.getAttribute('data-url') ||
+            // 优先使用 data-url（通常是高清大图URL）
+            let rawUrl = imgEl.getAttribute('data-url') ||
                 imgEl.getAttribute('data-src') ||
+                imgEl.getAttribute('data-lazy') ||
                 imgEl.getAttribute('src') || '';
 
-            // 处理缩略图URL，转换为大图
-            if (url.includes('s54x54_') || url.includes('s40x40_') || url.includes('s60x60_')) {
-                url = url.replace(/s\d+x\d+_/g, '');
-            }
-            if (url.includes('/n5/')) {
-                url = url.replace('/n5/', '/n1/');
+            if (!rawUrl || !rawUrl.includes('360buyimg.com')) {
+                return;
             }
 
-            if (url && !seen.has(url) && url.includes('360buyimg.com')) {
-                seen.add(url);
-                // 标准化为https
-                if (url.startsWith('//')) url = 'https:' + url;
-                domImages.push({ type: 1, img: url });
+            // 标准化URL用于去重
+            const baseUrl = normalizeToBase(rawUrl);
+
+            if (!baseUrl) return;
+
+            // 检查是否已存在（基于标准化后的URL）
+            if (seen.has(baseUrl)) {
+                console.log('[JD MainWorld] 跳过重复图片:', baseUrl.substring(0, 60));
+                return;
             }
+
+            seen.add(baseUrl);
+
+            // 构建高清图片URL（使用标准化后的URL）
+            const hdUrl = baseUrl;
+            console.log('[JD MainWorld] 添加图片:', hdUrl.substring(0, 80));
+            domImages.push({ type: 1, img: hdUrl });
         });
     }
 
     if (domImages.length > 0) {
         console.log('[JD MainWorld] 从DOM提取到图片:', domImages.length, '张');
+        // 打印所有图片URL便于调试
+        domImages.forEach((item, i) => {
+            console.log(`[JD MainWorld] 图片#${i + 1}:`, item.img?.substring(0, 100));
+        });
         return domImages;
     }
 

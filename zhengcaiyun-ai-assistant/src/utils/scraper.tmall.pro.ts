@@ -2,6 +2,9 @@
 // 不允许修改政采云相关代码，此为独立新增文件
 // 采用3层采集策略：1.主世界脚本 2.Script标签解析 3.DOM兜底
 
+// 导入SKU多规格采集模块（增强版）
+import { extractTmallSkuData, extractTmallSkuVariants } from './sku.tmall'
+
 // 缓存主世界脚本传来的数据
 let cachedMainWorldData: Record<string, string> | null = null;
 
@@ -30,6 +33,11 @@ export async function scrapeTmallPro(): Promise<any> {
 
     // 参数 - 3层策略
     product.specs = await extractTmallParamsLayered();
+
+    // SKU多规格数据（增强版 - 政采云兼容格式）
+    const skuData = await extractTmallSkuData()
+    product.skuData = skuData
+    product.skuVariants = await extractTmallSkuVariants() // 保持向后兼容
 
     product.url = location.href;
     product.platform = "Tmall";
