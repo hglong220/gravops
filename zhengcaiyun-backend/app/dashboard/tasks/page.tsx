@@ -267,6 +267,7 @@ export default function TaskPage() {
     if (url.includes('jd.com')) return '京东'
     if (url.includes('tmall')) return '天猫'
     if (url.includes('taobao')) return '淘宝'
+    if (url.includes('suning.com')) return '苏宁'
     if (url.includes('zcygov')) return '政采云'
     return '其他'
   }
@@ -350,16 +351,16 @@ export default function TaskPage() {
               <span className="text-sm text-gray-500">全选</span>
             </div>
           </div>
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
+          <div className="overflow-y-auto overflow-x-hidden">
+            <table className="w-full text-sm table-fixed">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-2 text-left">选择</th>
-                  <th className="px-4 py-2 text-left">标题</th>
-                  <th className="px-4 py-2 text-left">来源</th>
-                  <th className="px-4 py-2 text-left">状态</th>
-                  <th className="px-4 py-2 text-left">时间</th>
-                  <th className="px-4 py-2 text-right">操作</th>
+                  <th className="w-10 px-2 py-2 text-left whitespace-nowrap">选择</th>
+                  <th className="px-2 py-2 text-center">标题</th>
+                  <th className="w-16 px-2 py-2 text-center whitespace-nowrap" style={{ paddingRight: '300px' }}>来源</th>
+                  <th className="w-16 px-2 py-2 text-center whitespace-nowrap">状态</th>
+                  <th className="w-28 px-2 py-2 text-center whitespace-nowrap">时间</th>
+                  <th className="w-24 px-2 py-2 text-center whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -367,7 +368,7 @@ export default function TaskPage() {
                   const badge = statusBadge(p.status)
                   return (
                     <tr key={p.id} className="border-b last:border-0">
-                      <td className="px-4 py-2">
+                      <td className="px-2 py-2">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(p.id)}
@@ -375,27 +376,29 @@ export default function TaskPage() {
                           className="h-4 w-4"
                         />
                       </td>
-                      <td className="px-4 py-2">
-                        <div className="text-gray-900 font-medium line-clamp-2">{p.title}</div>
+                      <td className="px-2 py-2 overflow-hidden">
+                        <div className="truncate" title={p.title}>
+                          <span className="text-gray-900 font-medium">{p.title}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-2 text-gray-600">{sourceLabel(p.originalUrl)}</td>
-                      <td className="px-4 py-2">
+                      <td className="px-2 py-2 text-gray-600 text-center whitespace-nowrap" style={{ paddingRight: '300px' }}>{sourceLabel(p.originalUrl)}</td>
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>
                       </td>
-                      <td className="px-4 py-2 text-gray-500">
-                        {new Date(p.createdAt).toLocaleDateString()}
+                      <td className="px-2 py-2 text-gray-500 text-center whitespace-nowrap text-xs">
+                        {new Date(p.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td className="px-4 py-2 text-right">
-                        <div className="flex justify-end gap-2">
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
+                        <div className="flex justify-center gap-1">
                           <button
                             onClick={() => handlePublish(p.id)}
-                            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                           >
                             发布
                           </button>
                           <button
                             onClick={() => openEditModal(p)}
-                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
                           >
                             编辑
                           </button>
@@ -653,9 +656,56 @@ export default function TaskPage() {
                       </button>
                     </div>
                   ))}
-                  {!specEntries.length && <div className="text-sm text-gray-400">暂无规格，可点击“添加”</div>}
+                  {!specEntries.length && <div className="text-sm text-gray-400">暂无规格，可点击"添加"</div>}
                 </div>
               </div>
+
+              {/* SKU规格组 (新增) */}
+              {(() => {
+                let skuDataObj: any = null
+                try {
+                  if (editingProduct.skuData) {
+                    skuDataObj = typeof editingProduct.skuData === 'string'
+                      ? JSON.parse(editingProduct.skuData)
+                      : editingProduct.skuData
+                  }
+                } catch { }
+
+                if (!skuDataObj?.specGroups?.length) return null
+
+                return (
+                  <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <label className="block text-sm font-medium text-blue-700 mb-3">
+                      📦 SKU规格组 (已采集 {skuDataObj.specGroups.length} 组)
+                    </label>
+                    <div className="space-y-3">
+                      {skuDataObj.specGroups.map((group: any, gIdx: number) => (
+                        <div key={gIdx} className="bg-white rounded p-3 border border-blue-100">
+                          <div className="text-sm font-medium text-gray-700 mb-2">{group.name}</div>
+                          <div className="flex flex-wrap gap-2">
+                            {group.values?.map((val: any, vIdx: number) => (
+                              <div
+                                key={vIdx}
+                                className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs text-gray-700"
+                              >
+                                {val.image && (
+                                  <img src={val.image} alt="" className="w-5 h-5 object-cover rounded" />
+                                )}
+                                <span>{val.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {skuDataObj.defaultPrice && (
+                      <div className="mt-2 text-sm text-blue-600">
+                        默认价格: ¥{skuDataObj.defaultPrice}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">商品详情 (HTML)</label>

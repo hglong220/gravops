@@ -30,6 +30,23 @@ export async function POST(request: NextRequest) {
 
     if (type === "single") {
       const safeData = data && typeof data === "object" ? data : {};
+
+      // 构建skuData：优先使用采集到的完整skuData，否则使用基本信息
+      const skuDataPayload = safeData.skuData && safeData.skuData.specGroups
+        ? {
+          ...safeData.skuData,
+          price: safeData.price,
+          stock: 99
+        }
+        : {
+          price: safeData.price,
+          stock: 99,
+          images: safeData.images,
+          attributes: safeData.attributes,
+          specGroups: [],
+          skuPrices: []
+        };
+
       // 单品推送：直接创建已采集草稿
       const draft = await prisma.productDraft.create({
         data: {
@@ -42,12 +59,7 @@ export async function POST(request: NextRequest) {
           attributes: JSON.stringify(safeData.attributes || {}),
           brand: safeData.brand || "",
           model: safeData.model || "",
-          skuData: JSON.stringify({
-            price: safeData.price,
-            stock: 99,
-            images: safeData.images,
-            attributes: safeData.attributes
-          }),
+          skuData: JSON.stringify(skuDataPayload),
           detailHtml: safeData.detailHtml || "",
           categoryPath: safeData.category || null
         }
