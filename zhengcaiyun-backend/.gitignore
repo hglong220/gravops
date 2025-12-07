@@ -39,7 +39,7 @@ prisma/*.db
 prisma/*.db-journal
 
 # Large files
-public/api/政采云完整类目.json
+public/api/政采云完整类�?json
 
 # Temp files
 *.tmp
