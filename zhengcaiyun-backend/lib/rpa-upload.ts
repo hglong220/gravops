@@ -270,11 +270,9 @@ export class RPAUploadService {
      * 填写其他字段
      */
     private async fillOtherFields(page: Page, product: any) {
-        // 品牌
-        if (product.brand) {
-            await this.typeHumanLike(page, '#brand', product.brand);
-            await this.randomDelay(500, 1000);
-        }
+        // 品牌 / 型号使用政采云自研的 doraemon-select 组件，需要通过 aria-controls 精准找到下拉面板并点击选项
+        await this.fillBrandAndModel(page, product.brand, (product as any).model);
+        await this.randomDelay(500, 800);
 
         // 规格参数
         if (product.specs) {
@@ -304,6 +302,197 @@ export class RPAUploadService {
         const productId = await this.page.$eval('.product-id', el => el.textContent);
 
         return productId || 'unknown';
+    }
+
+    /**
+     * 在政采云品牌 / 型号字段中选择值
+     * 使用 aria-controls 找到对应的下拉面板，并在面板内点击选项，而不是直接改文本
+     */
+    private async fillBrandAndModel(page: Page, brand?: string, model?: string) {
+        await page.evaluate(
+            async ({ brand, model }) => {
+                const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+                const norm = (str = '') =>
+                    str.replace(/\s+/g, '').replace(/[\/\\]/g, '').toLowerCase();
+
+                const waitForElement = async <T extends Element>(
+                    getter: () => T | null,
+                    timeout = 8000,
+                    interval = 150
+                ): Promise<T | null> => {
+                    const start = Date.now();
+                    let el = getter();
+                    while (!el && Date.now() - start < timeout) {
+                        await sleep(interval);
+                        el = getter();
+                    }
+                    return el;
+                };
+
+                const findDoraSelectByLabel = (labelText: string) => {
+                    const selects = document.querySelectorAll('.doraemon-select-selection');
+                    for (const sel of selects) {
+                        let p: Element | null = sel;
+                        for (let i = 0; i < 12 && p; i++) {
+                            const txt = (p.textContent || '').replace(/\s+/g, '');
+                            if (txt.includes(labelText)) return sel as HTMLElement;
+                            p = p.parentElement;
+                        }
+                    }
+                    return null;
+                };
+
+                const findFieldByLabelText = (
+                    labelText: string,
+                    selector = 'input',
+                    depth = 10
+                ) => {
+                    const candidates = Array.from(document.querySelectorAll(selector));
+                    const target = norm(labelText);
+                    for (const el of candidates) {
+                        let p: Element | null = el;
+                        for (let i = 0; i < depth && p; i++) {
+                            const txt = (p.textContent || '').replace(/\s+/g, '');
+                            if (norm(txt).includes(target)) return el as HTMLInputElement;
+                            p = p.parentElement;
+                        }
+                    }
+                    return null;
+                };
+
+                const selectBrand = async (brandText?: string) => {
+                    if (!brandText) return;
+
+                    console.log('[RPA V3]   查找品牌下拉框...');
+                    const selectEl = await waitForElement(
+                        () => findDoraSelectByLabel('品牌'),
+                        8000
+                    );
+                    if (!selectEl) {
+                        console.log('[RPA V3]   ❌ 未找到品牌选择框');
+                        return;
+                    }
+
+                    const currentNameEl = selectEl.querySelector('.brand-item-name');
+                    const currentName = currentNameEl ? currentNameEl.textContent?.trim() || '' : '';
+                    if (currentName && norm(currentName).includes(norm(brandText))) {
+                        console.log('[RPA V3]   ✓ 品牌已是目标值，无需修改:', currentName);
+                        return;
+                    }
+
+                    console.log('[RPA V3]   找到品牌下拉框:', selectEl.className);
+                    selectEl.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    await sleep(200);
+
+                    const popupId = selectEl.getAttribute('aria-controls');
+                    const popup = await waitForElement(
+                        () => (popupId ? document.getElementById(popupId) : null),
+                        2000
+                    );
+                    if (!popup) {
+                        console.log('[RPA V3]   ❌ 找不到品牌下拉面板, popupId =', popupId);
+                        return;
+                    }
+
+                    const items = popup.querySelectorAll('.doraemon-select-dropdown-menu-item, li');
+                    console.log('[RPA V3]   下拉项个数:', items.length);
+
+                    let target: Element | null = null;
+                    for (const li of items) {
+                        const txt = li.textContent?.trim() || '';
+                        if (norm(txt).includes(norm(brandText))) {
+                            target = li;
+                            break;
+                        }
+                    }
+
+                    if (!target) {
+                        console.log('[RPA V3]   ❌ 下拉中未找到品牌:', brandText);
+                        return;
+                    }
+
+                    target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    console.log('[RPA V3]   ✓ 已选择品牌:', target.textContent?.trim());
+                };
+
+                const selectModel = async (modelText?: string) => {
+                    console.log('[RPA V3]   查找型号控件...');
+                    const selectEl = await waitForElement(
+                        () => findDoraSelectByLabel('型号'),
+                        8000
+                    );
+                    if (!selectEl) {
+                        console.log('[RPA V3]   ❌ 未找到型号选择框');
+                        return;
+                    }
+
+                    if (!modelText || norm(modelText) === '无') {
+                        const noModelCheckbox = findFieldByLabelText('无型号', 'input[type="checkbox"]', 10);
+                        if (noModelCheckbox && !(noModelCheckbox as HTMLInputElement).checked) {
+                            noModelCheckbox.click();
+                            console.log('[RPA V3]   ✓ 已勾选 无型号');
+                        }
+                        return;
+                    }
+
+                    selectEl.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    await sleep(200);
+
+                    const input = selectEl.querySelector<HTMLInputElement>('#specification');
+                    if (!input) {
+                        console.log('[RPA V3]   ❌ 型号搜索输入不存在');
+                        return;
+                    }
+
+                    input.focus();
+                    input.value = modelText;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    await sleep(300);
+
+                    const popupId = selectEl.getAttribute('aria-controls');
+                    const popup = await waitForElement(
+                        () => (popupId ? document.getElementById(popupId) : null),
+                        2000
+                    );
+                    if (!popup) {
+                        console.log('[RPA V3]   ❌ 找不到型号下拉面板, popupId =', popupId);
+                        return;
+                    }
+
+                    const items = popup.querySelectorAll('.doraemon-select-dropdown-menu-item, li');
+                    let target: Element | null = null;
+                    for (const li of items) {
+                        const txt = li.textContent?.trim() || '';
+                        if (norm(txt).includes(norm(modelText))) {
+                            target = li;
+                            break;
+                        }
+                    }
+
+                    if (!target && items.length) {
+                        input.dispatchEvent(
+                            new KeyboardEvent('keydown', {
+                                key: 'Enter',
+                                keyCode: 13,
+                                which: 13,
+                                bubbles: true
+                            })
+                        );
+                        console.log('[RPA V3]   ⚠ 未精确匹配型号，用回车选第一项');
+                        return;
+                    }
+
+                    if (target) {
+                        target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                        console.log('[RPA V3]   ✓ 已选择型号:', target.textContent?.trim());
+                    }
+                };
+
+                await selectBrand(brand);
+                await selectModel(model);
+            },
+            { brand: brand || '', model: model || '' }
+        );
     }
 
     /**

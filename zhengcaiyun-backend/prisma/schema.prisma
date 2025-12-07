@@ -205,3 +205,52 @@ model SystemLog {
   @@index([createdAt])
   @@index([level])
 }
+
+// ========== 类目匹配系统 ==========
+
+/// 类目模板库 - 缓存已匹配的商品类目，避免重复调用AI
+model CategoryTemplate {
+  id           String   @id @default(cuid())
+  /// 标题关键词（提取的核心词，如 "A4复印纸"）
+  titleKey     String
+  /// 电商平台（JD, TMALL, SUNING, ZCY）
+  platform     String?
+  /// 品牌名（可选）
+  brand        String?
+  /// 完整类目路径 JSON数组，如 ["办公设备", "办公用纸", "打印纸"]
+  categoryPath String
+  /// 命中次数（越高说明越常用）
+  hitCount     Int      @default(1)
+  /// 置信度（0-1）
+  confidence   Float    @default(1.0)
+  /// 来源（template=手动模板, ai=AI匹配, rule=规则匹配）
+  source       String   @default("ai")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([titleKey, platform, brand])
+  @@index([titleKey])
+  @@index([platform])
+  @@index([hitCount])
+}
+
+/// 用户权限类目 - 存储每个用户/商户有权限的类目
+model UserCategoryPermission {
+  id             String   @id @default(cuid())
+  /// 许可证Key（关联用户）
+  licenseKey     String
+  /// 电子卖场（如 "网上超市(青海网超)"）
+  market         String?
+  /// 一级类目名（如 "办公设备"）
+  level1Category String
+  /// 该一级类目下的所有子类目路径 JSON（完整的子树）
+  subCategories  String
+  /// 最后更新时间
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([licenseKey, level1Category])
+  @@index([licenseKey])
+  @@index([level1Category])
+}
+

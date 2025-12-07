@@ -62,14 +62,27 @@ export async function POST(request: NextRequest) {
 
             console.log(`[License] Activated ${licenseKey} for ${companyName}`);
 
-        } else if (license.companyName !== companyName) {
-            // 公司不匹配
-            console.warn(`[License] Company mismatch`);
+        } else {
+            // 模糊匹配公司名称（去除空格、省略号等）
+            const normalizedDbName = license.companyName.replace(/[\s\.…]/g, '').toLowerCase();
+            const normalizedInputName = companyName.replace(/[\s\.…]/g, '').toLowerCase();
 
-            return NextResponse.json({
-                error: '授权验证失败',
-                detail: `此授权码已绑定到"${license.companyName}"`
-            }, { status: 403 });
+            // 检查是否包含或被包含
+            const isMatch = normalizedDbName.includes(normalizedInputName) ||
+                normalizedInputName.includes(normalizedDbName) ||
+                normalizedDbName === normalizedInputName;
+
+            if (!isMatch) {
+                // 公司不匹配
+                console.warn(`[License] Company mismatch: DB="${license.companyName}" vs Input="${companyName}"`);
+
+                return NextResponse.json({
+                    error: '授权验证失败',
+                    detail: `此授权码已绑定到"${license.companyName}"`
+                }, { status: 403 });
+            }
+
+            console.log(`[License] Company matched (fuzzy): ${companyName}`);
         }
 
         // 6. 设备绑定（如果提供了deviceId）
