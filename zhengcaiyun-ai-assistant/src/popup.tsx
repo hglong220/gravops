@@ -60,8 +60,67 @@ function IndexPopup() {
             const result = await chrome.scripting.executeScript({
                 target: { tabId: tab.id! },
                 func: () => {
-                    const element = document.querySelector('.company-name');
-                    return element?.textContent?.trim() || null;
+                    // 用正则表达式提取公司名称
+                    const extractCompanyName = (text: string): string | null => {
+                        if (!text) return null;
+                        // 公司名称通常以省市名、方位词开头，以"有限公司"结尾
+                        // 排除常见的非公司名前缀
+                        const patterns = [
+                            // 以省市县/地名开头的公司名
+                            /((?:青海|北京|上海|广东|浙江|江苏|四川|山东|河南|湖北|湖南|安徽|陕西|福建|云南|贵州|甘肃|新疆|西藏|内蒙古|广西|宁夏|海南|黑龙江|吉林|辽宁|河北|山西|江西|天津|重庆)[\u4e00-\u9fa5]{1,20}(?:有限责任公司|有限公司|股份有限公司|股份公司))/,
+                            // 通用匹配：查找"省/市/县"后面跟着的公司名
+                            /([\u4e00-\u9fa5]{2,4}(?:省|市|县|区)[\u4e00-\u9fa5]{2,15}(?:有限责任公司|有限公司|股份有限公司))/,
+                            // 从"有限公司"往前找
+                            /([\u4e00-\u9fa5]{4,20}(?:有限责任公司|有限公司|股份有限公司))/
+                        ];
+                        for (const pattern of patterns) {
+                            const match = text.match(pattern);
+                            if (match) {
+                                let name = match[1];
+                                // 去掉常见的非公司名前缀
+                                const prefixes = ['管理', '经理', '负责', '联系', '采购', '供应', 'CA', '登录', '退出'];
+                                for (const prefix of prefixes) {
+                                    if (name.startsWith(prefix)) {
+                                        name = name.slice(prefix.length);
+                                    }
+                                }
+                                // 去掉人名（两个或三个字的连续汉字紧接公司名前）
+                                const nameMatch = name.match(/^[\u4e00-\u9fa5]{2,3}([\u4e00-\u9fa5]{2,}(?:省|市|县|区)[\u4e00-\u9fa5]+(?:有限|公司))/);
+                                if (nameMatch) {
+                                    name = nameMatch[1];
+                                }
+                                if (name.length > 6) return name;
+                            }
+                        }
+                        return null;
+                    };
+
+                    // 方法1: 从localStorage/sessionStorage提取（最准确）
+                    const keys = ['userInfo', 'companyInfo', 'user', 'loginInfo'];
+                    for (const key of keys) {
+                        const data = localStorage.getItem(key) || sessionStorage.getItem(key);
+                        if (data) {
+                            try {
+                                const parsed = JSON.parse(data);
+                                const name = parsed.companyName || parsed.company || parsed.corpName || parsed.enterpriseName;
+                                if (name) return name;
+                            } catch (e) { }
+                        }
+                    }
+
+                    // 方法2: 从页面文本中提取公司名称
+                    const allElements = document.querySelectorAll('span, div, a, p, td');
+                    for (const el of allElements) {
+                        const text = el.textContent?.trim();
+                        if (text) {
+                            const companyName = extractCompanyName(text);
+                            if (companyName && companyName.length > 4 && companyName.length < 30) {
+                                return companyName;
+                            }
+                        }
+                    }
+
+                    return null;
                 }
             });
 
@@ -218,66 +277,15 @@ function IndexPopup() {
                 <div className="logo-container">
                     <img src={logo} alt="Logo" className="logo" />
                     <h1>政采云智能助手</h1>
-                    <div className="activated-badge">✓ 已激活</div>
                 </div>
             </div>
 
             <div className="content">
-                <div className="license-info">
-                    <div className="info-row">
-                        <span className="label">公司：</span>
-                        <span className="value">{companyName}</span>
+                <div className="license-info" style={{ textAlign: 'center', padding: '12px 0' }}>
+                    <div style={{ fontSize: '16px', color: '#1a1a2e', marginBottom: '10px' }}>
+                        {companyName}
                     </div>
-                </div>
-
-                {currentUrl.includes('zcygov.cn/product/') ? (
-                    <div className="actions">
-                        <div className="hint">检测到政采云商品页</div>
-                        <button
-                            className="btn-primary"
-                            style={{ background: '#52c41a' }}
-                            onClick={handleOneClickCopy}
-                        >
-                            📋 一键复制此商品
-                        </button>
-                        <button
-                            className="btn-secondary"
-                            onClick={() => setCurrentUrl('')}>
-                            返回手动输入
-                        </button>
-                    </div>
-                ) : (
-                    <>
-                        <div className="form-group">
-                            <label>商品名称</label>
-                            <input
-                                type="text"
-                                placeholder="请输入商品名称"
-                                value={productName}
-                                onChange={(e) => setProductName(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="actions">
-                            <button
-                                className="btn-primary"
-                                onClick={handleUpload}
-                                disabled={loading}
-                            >
-                                {loading ? "处理中..." : "🚀 智能上传"}
-                            </button>
-
-                            <button
-                                className="btn-secondary"
-                                onClick={handleDeactivate} disabled={loading}>
-                                取消激活
-                            </button>
-                        </div>
-                    </>
-                )}
-
-                <div className="hint">
-                    📌 核心AI功能已开发完成！
+                    <div className="activated-badge">✓ 已激活</div>
                 </div>
             </div>
         </div>

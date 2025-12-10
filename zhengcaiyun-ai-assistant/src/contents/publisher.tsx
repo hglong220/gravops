@@ -1,16 +1,21 @@
 /**
- * ZCY Publisher V2 - 全自动发布插件
+ * ZCY Publisher - 旗舰 MAX 版
  * 
- * 功能：
- * 1. 检测页面类型（类目选择页/发布页）
- * 2. 从DOM解析商家开通的一级类目
- * 3. 调用后端API自动匹配类目
- * 4. 自动点选类目树、填写属性、提交
+ * 🚀 唯一执行引擎：FlagshipMax
+ * ❌ 不再调用任何 V5/V6/FINAL/SUPER 旧版本
  */
 
 import type { PlasmoCSConfig } from "plasmo"
-import { parseAllowedRootCategories, parseCategoryListFromPage } from "~src/utils/permission-parser"
-import { executeAutoPublish, autoSelectCategoryTree, autoFillAttributes, autoSubmit } from "~src/utils/auto-publish-rpa"
+import { getStoredLicense } from "~src/utils/license"
+
+// ⭐⭐⭐ 旗舰 MAX 引擎（唯一入口）⭐⭐⭐
+import { FlagshipMax, type TaskContext, type ScrapedData } from "~src/rpa/flagship-max"
+
+  /************************************************************
+   * 注入旗舰 MAX 到 window（调试用）
+   ************************************************************/
+  ; (window as any).FlagshipMax = FlagshipMax
+console.warn("🚀 已启用 RPA 旗舰 MAX 引擎（唯一版本）")
 
 export const config: PlasmoCSConfig = {
   matches: ["https://*.zcygov.cn/*"],
@@ -19,103 +24,55 @@ export const config: PlasmoCSConfig = {
 
 const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
-console.log("🚀 [ZCY Publisher V2] loaded")
+console.log("🚀 [ZCY Publisher 旗舰MAX] 已加载")
 
 // ========== 页面类型检测 ==========
 
 function getPageType(): 'category' | 'publish' | 'other' {
-  const path = window.location.pathname
-  if (path.includes('/category/attr/select')) return 'category'
-  if (path.includes('/goods/publish')) return 'publish'
+  const url = location.href
+  if (url.includes('/goods/category/attr/select') || url.includes('/goods/select/category')) {
+    return 'category'
+  }
+  if (url.includes('/goods/publish') || url.includes('/goods/edit')) {
+    return 'publish'
+  }
   return 'other'
 }
 
-// ========== 草稿获取 ==========
+// ========== UI 状态显示 ==========
 
-interface Draft {
-  id: string
-  title: string
-  brand?: string
-  model?: string
-  categoryId?: string
-  images?: string
-  attributes?: string
-  detailHtml?: string
-}
-
-async function fetchDraft(draftId: string): Promise<Draft | null> {
-  try {
-    const resp = await fetch(`${BACKEND_URL}/api/copy/get?id=${draftId}`)
-    if (!resp.ok) return null
-    const data = await resp.json()
-    return data.draft as Draft
-  } catch (e) {
-    console.error('[Publisher] 获取草稿失败:', e)
-    return null
-  }
-}
-
-// ========== UI组件 ==========
-
-function createOverlay(): HTMLDivElement {
-  let overlay = document.getElementById('zcy-auto-publish-overlay') as HTMLDivElement
-  if (overlay) return overlay
-
-  overlay = document.createElement('div')
-  overlay.id = 'zcy-auto-publish-overlay'
-  overlay.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 2147483647;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 16px 20px;
-    border-radius: 12px;
-    font-size: 14px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    min-width: 280px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  `
-  document.body.appendChild(overlay)
-  return overlay
-}
-
-function updateOverlay(content: string) {
-  const overlay = createOverlay()
-  overlay.innerHTML = content
-}
-
-function showStatus(title: string, status: string, details?: string) {
-  updateOverlay(`
-    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">🤖 ${title}</div>
-    <div style="opacity: 0.95;">${status}</div>
-    ${details ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 6px;">${details}</div>` : ''}
-  `)
-}
-
-function showSuccess(message: string, category?: string) {
-  updateOverlay(`
-    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">✅ 操作成功</div>
-    <div>${message}</div>
-    ${category ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 6px;">类目: ${category}</div>` : ''}
-  `)
+function showStatus(title: string, message: string, subtext?: string) {
+  console.log(`[旗舰MAX] ${title}: ${message}`, subtext || '')
 }
 
 function showError(message: string) {
-  updateOverlay(`
-    <div style="font-weight: 600; font-size: 15px; margin-bottom: 8px;">❌ 操作失败</div>
-    <div>${message}</div>
-    <div style="font-size: 12px; opacity: 0.7; margin-top: 8px;">请尝试手动操作或刷新重试</div>
-  `)
+  console.error(`[旗舰MAX] 错误: ${message}`)
+  alert(`[旗舰MAX] ${message}`)
+}
+
+// ========== 获取草稿 ==========
+
+async function fetchDraft(draftId: string): Promise<any> {
+  try {
+    // 正确的 API 路径：/api/copy/drafts/[id]
+    const resp = await fetch(`${BACKEND_URL}/api/copy/drafts/${draftId}`)
+    if (!resp.ok) {
+      console.error('[旗舰MAX] 草稿API返回:', resp.status, resp.statusText)
+      return null
+    }
+    return await resp.json()
+  } catch (e) {
+    console.error('[旗舰MAX] 获取草稿失败:', e)
+    return null
+  }
 }
 
 // ========== 类目页面处理 ==========
 
 async function handleCategoryPage(draftId: string) {
-  console.log('[Publisher] 处理类目选择页面, draftId:', draftId)
+  console.log('[旗舰MAX] 处理类目选择页面, draftId:', draftId)
 
-  showStatus('自动发布', '正在获取草稿信息...')
+  showStatus('旗舰MAX', '正在获取草稿信息...')
 
   // 1. 获取草稿
   const draft = await fetchDraft(draftId)
@@ -124,164 +81,209 @@ async function handleCategoryPage(draftId: string) {
     return
   }
 
-  console.log('[Publisher] 草稿:', draft.title)
-  showStatus('自动发布', '正在解析可用类目...', `商品: ${draft.title.substring(0, 30)}...`)
+  console.log('[旗舰MAX] 草稿:', draft.title)
+  showStatus('旗舰MAX', '正在调用 AI 分析...', `商品: ${draft.title.substring(0, 30)}...`)
 
-  // 2. 解析页面中的一级类目
-  await new Promise(r => setTimeout(r, 1000)) // 等待页面加载
+  // 2. 获取 License
+  const storedLicense = await getStoredLicense()
+  const licenseKey = storedLicense?.licenseKey || ''
 
-  let allowedRoots = parseCategoryListFromPage()
-  if (allowedRoots.length === 0) {
-    allowedRoots = parseAllowedRootCategories()
+  if (!licenseKey) {
+    showError('请先在插件中激活 License')
+    return
   }
 
-  // 如果仍然没有，使用常见类目作为兜底
-  if (allowedRoots.length === 0) {
-    allowedRoots = ['办公用品', '日用百货', '办公设备', '计算机设备', '家具', '灯具商品', '五金工具']
-    console.log('[Publisher] 使用默认类目列表')
+  console.log('[旗舰MAX] 使用 License:', licenseKey.substring(0, 8) + '...')
+
+  // 3. 调用 AI 分析
+  let aiResult
+  try {
+    const resp = await fetch(`${BACKEND_URL}/api/category-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        licenseKey,
+        productTitle: draft.title,
+        mode: 'full'
+      })
+    })
+    aiResult = await resp.json()
+  } catch (e) {
+    showError('AI 服务连接失败')
+    return
   }
 
-  console.log('[Publisher] 可用类目:', allowedRoots)
-  showStatus('自动发布', '正在智能匹配类目...', `候选: ${allowedRoots.slice(0, 3).join(', ')}...`)
+  if (!aiResult.success) {
+    showError(aiResult.error || 'AI 匹配失败')
+    console.error('[旗舰MAX] AI 匹配失败:', aiResult)
+    return
+  }
 
-  // 3. 执行自动发布流程
-  const result = await executeAutoPublish({
-    title: draft.title,
-    brand: draft.brand,
-    model: draft.model,
-    allowedRoots
+  const { categoryPath, brand, model, bid, suggestedLevel1 } = aiResult.data
+
+  if (!categoryPath || categoryPath.length === 0) {
+    showError('类目路径不完整')
+    return
+  }
+
+  console.log('[旗舰MAX] AI 返回:', {
+    categoryPath: categoryPath.join(' > '),
+    brand,
+    model,
+    bid
   })
 
-  if (result.success) {
-    showSuccess('类目选择完成，正在跳转...', result.categoryUsed)
-  } else {
-    showError(result.error || '自动选择失败')
+  showStatus('旗舰MAX', '开始执行 RPA...', categoryPath.join(' > '))
+
+  // 4. 准备采集数据
+  const specs = draft.attributes || {}
+  const price = draft.price ? parseFloat(draft.price) : undefined
+
+  // ⭐ 品牌清洗：优先使用 specs 中的品牌
+  let finalBrand = ''
+  if (specs && specs['品牌']) {
+    finalBrand = specs['品牌']
+    console.log('[旗舰MAX] 📌 从 specs 获取品牌:', finalBrand)
+  } else if (brand && brand.length <= 10) {
+    finalBrand = brand
+    console.log('[旗舰MAX] 📌 从 AI 获取品牌:', finalBrand)
+  }
+
+  // ⭐ 型号清洗：优先使用 specs 中的型号
+  let finalModel = ''
+  if (specs && (specs['型号'] || specs['商品型号'])) {
+    finalModel = specs['型号'] || specs['商品型号']
+    console.log('[旗舰MAX] 📌 从 specs 获取型号:', finalModel)
+  } else if (model) {
+    finalModel = model
+    console.log('[旗舰MAX] 📌 从 AI 获取型号:', finalModel)
+  }
+
+  // 5. 构造 TaskContext
+  const scraped: ScrapedData = {
+    title: draft.title,
+    brand: finalBrand,
+    model: finalModel,
+    stock: draft.stock || 999,
+    price: price,
+    specs: specs,
+    categoryPath: categoryPath,
+    categoryName: categoryPath[categoryPath.length - 1],
+    sourceUrl: draft.originalUrl,
+    images: draft.images || []
+  }
+
+  const ctx: TaskContext = {
+    draftId: draftId,
+    pageUrl: location.href,
+    scraped: scraped,
+    licenseKey: licenseKey
+  }
+
+  console.log('[旗舰MAX] 构造 TaskContext:', {
+    title: scraped.title,
+    brand: scraped.brand,
+    model: scraped.model,
+    categoryPath: scraped.categoryPath?.join(' > ')
+  })
+
+  // 6. ⭐⭐⭐ 调用旗舰 MAX 引擎 ⭐⭐⭐
+  try {
+    await FlagshipMax.run(ctx)
+    showStatus('旗舰MAX', '执行完成', categoryPath.join(' > '))
+  } catch (e) {
+    console.error('[旗舰MAX] 执行异常:', e)
+    showError(`执行异常: ${e}`)
   }
 }
 
 // ========== 发布页面处理 ==========
 
 async function handlePublishPage(draftId: string) {
-  console.log('[Publisher] 处理发布页面, draftId:', draftId)
+  console.log('[旗舰MAX] 处理发布页面, draftId:', draftId)
 
-  showStatus('自动填表', '正在获取草稿信息...')
+  showStatus('旗舰MAX', '正在获取草稿信息...')
 
-  // 1. 获取草稿
   const draft = await fetchDraft(draftId)
   if (!draft) {
     showError('草稿获取失败')
     return
   }
 
-  showStatus('自动填表', '正在填写表单...', `商品: ${draft.title.substring(0, 30)}...`)
+  const storedLicense = await getStoredLicense()
+  const licenseKey = storedLicense?.licenseKey || ''
 
-  // 2. 等待表单加载
-  await new Promise(r => setTimeout(r, 1500))
+  const specs = draft.attributes || {}
 
-  // 3. 填写基本信息
-  const fillBasicInfo = () => {
-    // 商品名称
-    const nameInput = document.querySelector<HTMLTextAreaElement>('textarea#itemBrief, textarea[name="name"], textarea[placeholder*="名称"]')
-    if (nameInput) {
-      nameInput.value = draft.title
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
-      nameInput.dispatchEvent(new Event('change', { bubbles: true }))
-    }
-
-    // 品牌
-    if (draft.brand) {
-      const brandInput = document.querySelector<HTMLInputElement>('input#brand, input[name="brand"], input[placeholder*="品牌"]')
-      if (brandInput) {
-        brandInput.value = draft.brand
-        brandInput.dispatchEvent(new Event('input', { bubbles: true }))
-        brandInput.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    }
+  const scraped: ScrapedData = {
+    title: draft.title,
+    brand: specs['品牌'] || draft.brand,
+    model: specs['型号'] || draft.model,
+    stock: draft.stock || 999,
+    price: draft.price ? parseFloat(draft.price) : undefined,
+    specs: specs,
+    sourceUrl: draft.originalUrl,
+    images: draft.images || []
   }
 
-  fillBasicInfo()
-
-  // 4. 填写型号和属性
-  await autoFillAttributes(draft.brand || '', draft.model || '')
-
-  // 5. 填写规格参数
-  if (draft.attributes) {
-    try {
-      const attrs = JSON.parse(draft.attributes) as Record<string, string>
-      for (const [key, value] of Object.entries(attrs)) {
-        const input = document.querySelector<HTMLInputElement>(`input[name="${key}"], input[placeholder*="${key}"]`)
-        if (input) {
-          input.value = value
-          input.dispatchEvent(new Event('input', { bubbles: true }))
-        }
-      }
-    } catch (e) {
-      console.warn('[Publisher] 解析属性失败:', e)
-    }
+  const ctx: TaskContext = {
+    draftId: draftId,
+    pageUrl: location.href,
+    scraped: scraped,
+    licenseKey: licenseKey
   }
 
-  showSuccess('表单填写完成', '请检查后点击提交')
-
-  // 添加自动提交按钮
-  const overlay = createOverlay()
-  overlay.innerHTML += `
-    <button id="zcy-auto-submit" style="
-      margin-top: 12px;
-      padding: 8px 16px;
-      background: white;
-      color: #667eea;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 600;
-      width: 100%;
-    ">一键提交</button>
-  `
-
-  document.getElementById('zcy-auto-submit')?.addEventListener('click', async () => {
-    showStatus('自动发布', '正在提交...')
-    const submitted = await autoSubmit()
-    if (submitted) {
-      showSuccess('已提交，请等待审核')
-    } else {
-      showError('提交失败，请手动点击提交按钮')
-    }
-  })
+  try {
+    await FlagshipMax.run(ctx)
+    showStatus('旗舰MAX', '发布页填写完成')
+  } catch (e) {
+    console.error('[旗舰MAX] 执行异常:', e)
+    showError(`执行异常: ${e}`)
+  }
 }
 
 // ========== 主入口 ==========
 
-async function init() {
-  // 获取draft_id参数
-  const params = new URLSearchParams(window.location.search)
-  const draftId = params.get('draft_id')
+async function main() {
+  const url = location.href
+  const pageType = getPageType()
+
+  console.log('[旗舰MAX] 页面类型:', pageType, '| URL:', url)
+
+  // 提取 draftId - 先从 URL 获取，再从 sessionStorage 获取
+  const urlParams = new URLSearchParams(location.search)
+  let draftId = urlParams.get('draftId') || urlParams.get('draft_id')
+
+  // 如果 URL 中没有，尝试从 sessionStorage 获取（用于发布页面）
+  if (!draftId && pageType === 'publish') {
+    draftId = sessionStorage.getItem('flagship_draftId')
+    console.log('[旗舰MAX] 从 sessionStorage 获取 draftId:', draftId)
+  }
 
   if (!draftId) {
-    console.log('[Publisher] 无draft_id，跳过')
+    console.log('[旗舰MAX] 无 draftId，跳过')
     return
   }
 
-  const pageType = getPageType()
-  console.log('[Publisher] 页面类型:', pageType, ', draftId:', draftId)
+  // 保存 draftId 到 sessionStorage（用于后续页面）
+  sessionStorage.setItem('flagship_draftId', draftId)
+
+  console.log('[旗舰MAX] draftId:', draftId)
 
   // 等待页面加载
-  await new Promise(r => setTimeout(r, 500))
+  await new Promise(r => setTimeout(r, 1500))
 
-  switch (pageType) {
-    case 'category':
-      await handleCategoryPage(draftId)
-      break
-    case 'publish':
-      await handlePublishPage(draftId)
-      break
-    default:
-      console.log('[Publisher] 非发布相关页面')
+  if (pageType === 'category') {
+    await handleCategoryPage(draftId)
+  } else if (pageType === 'publish') {
+    await handlePublishPage(draftId)
+  } else {
+    console.log('[旗舰MAX] 非支持页面，跳过')
   }
 }
 
 // 启动
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init)
-} else {
-  init()
-}
+main().catch(e => console.error('[旗舰MAX] 启动失败:', e))
+
+  // 暴露到 window，方便手动调用
+  ; (window as any).runPublisherMax = main

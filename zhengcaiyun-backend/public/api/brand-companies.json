@@ -1,0 +1,378 @@
+{
+    "_说明": "品牌企业信息库 - 真实公司名称、地址、规模，用于填写制造商和产地",
+    "brands": {
+        "惠普": {
+            "company": "中国惠普有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "朝阳区",
+            "scale": "大型企业",
+            "aliases": [
+                "HP",
+                "hp",
+                "惠普"
+            ]
+        },
+        "联想": {
+            "company": "联想(北京)有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "海淀区",
+            "scale": "大型企业",
+            "aliases": [
+                "Lenovo",
+                "lenovo",
+                "ThinkPad",
+                "thinkpad"
+            ]
+        },
+        "戴尔": {
+            "company": "戴尔(中国)有限公司",
+            "province": "福建省",
+            "city": "厦门市",
+            "district": "湖里区",
+            "scale": "大型企业",
+            "aliases": [
+                "Dell",
+                "dell",
+                "DELL"
+            ]
+        },
+        "华为": {
+            "company": "华为技术有限公司",
+            "province": "广东省",
+            "city": "深圳市",
+            "district": "龙岗区",
+            "scale": "大型企业",
+            "aliases": [
+                "HUAWEI",
+                "huawei",
+                "荣耀",
+                "Honor"
+            ]
+        },
+        "小米": {
+            "company": "小米科技有限责任公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "海淀区",
+            "scale": "大型企业",
+            "aliases": [
+                "MI",
+                "mi",
+                "Xiaomi",
+                "Redmi",
+                "红米"
+            ]
+        },
+        "得力": {
+            "company": "得力集团有限公司",
+            "province": "浙江省",
+            "city": "宁波市",
+            "district": "镇海区",
+            "scale": "大型企业",
+            "aliases": [
+                "Deli",
+                "deli",
+                "DELI"
+            ]
+        },
+        "晨光": {
+            "company": "上海晨光文具股份有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "奉贤区",
+            "scale": "大型企业",
+            "aliases": [
+                "M&G",
+                "mg",
+                "MG"
+            ]
+        },
+        "齐心": {
+            "company": "深圳齐心集团股份有限公司",
+            "province": "广东省",
+            "city": "深圳市",
+            "district": "南山区",
+            "scale": "大型企业",
+            "aliases": [
+                "Comix",
+                "comix",
+                "COMIX"
+            ]
+        },
+        "佳能": {
+            "company": "佳能(中国)有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "朝阳区",
+            "scale": "大型企业",
+            "aliases": [
+                "Canon",
+                "canon",
+                "CANON"
+            ]
+        },
+        "爱普生": {
+            "company": "爱普生(中国)有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "朝阳区",
+            "scale": "大型企业",
+            "aliases": [
+                "Epson",
+                "epson",
+                "EPSON"
+            ]
+        },
+        "兄弟": {
+            "company": "兄弟(中国)商业有限公司",
+            "province": "广东省",
+            "city": "深圳市",
+            "district": "南山区",
+            "scale": "大型企业",
+            "aliases": [
+                "Brother",
+                "brother",
+                "BROTHER"
+            ]
+        },
+        "海康威视": {
+            "company": "杭州海康威视数字技术股份有限公司",
+            "province": "浙江省",
+            "city": "杭州市",
+            "district": "滨江区",
+            "scale": "大型企业",
+            "aliases": [
+                "Hikvision",
+                "hikvision",
+                "HIKVISION"
+            ]
+        },
+        "大华": {
+            "company": "浙江大华技术股份有限公司",
+            "province": "浙江省",
+            "city": "杭州市",
+            "district": "滨江区",
+            "scale": "大型企业",
+            "aliases": [
+                "Dahua",
+                "dahua",
+                "DAHUA"
+            ]
+        },
+        "格力": {
+            "company": "珠海格力电器股份有限公司",
+            "province": "广东省",
+            "city": "珠海市",
+            "district": "香洲区",
+            "scale": "大型企业",
+            "aliases": [
+                "Gree",
+                "gree",
+                "GREE"
+            ]
+        },
+        "美的": {
+            "company": "美的集团股份有限公司",
+            "province": "广东省",
+            "city": "佛山市",
+            "district": "顺德区",
+            "scale": "大型企业",
+            "aliases": [
+                "Midea",
+                "midea",
+                "MIDEA"
+            ]
+        },
+        "海尔": {
+            "company": "海尔智家股份有限公司",
+            "province": "山东省",
+            "city": "青岛市",
+            "district": "崂山区",
+            "scale": "大型企业",
+            "aliases": [
+                "Haier",
+                "haier",
+                "HAIER"
+            ]
+        },
+        "TCL": {
+            "company": "TCL科技集团股份有限公司",
+            "province": "广东省",
+            "city": "惠州市",
+            "district": "惠城区",
+            "scale": "大型企业",
+            "aliases": [
+                "tcl"
+            ]
+        },
+        "苹果": {
+            "company": "苹果电脑贸易(上海)有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "浦东新区",
+            "scale": "大型企业",
+            "aliases": [
+                "Apple",
+                "apple",
+                "APPLE",
+                "iPhone",
+                "iPad",
+                "Mac"
+            ]
+        },
+        "三星": {
+            "company": "三星(中国)投资有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "朝阳区",
+            "scale": "大型企业",
+            "aliases": [
+                "Samsung",
+                "samsung",
+                "SAMSUNG"
+            ]
+        },
+        "华硕": {
+            "company": "华硕电脑(上海)有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "闵行区",
+            "scale": "大型企业",
+            "aliases": [
+                "ASUS",
+                "asus",
+                "Asus"
+            ]
+        },
+        "宏碁": {
+            "company": "宏碁电脑(上海)有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "闵行区",
+            "scale": "大型企业",
+            "aliases": [
+                "Acer",
+                "acer",
+                "ACER"
+            ]
+        },
+        "微软": {
+            "company": "微软(中国)有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "海淀区",
+            "scale": "大型企业",
+            "aliases": [
+                "Microsoft",
+                "microsoft",
+                "MICROSOFT",
+                "Surface"
+            ]
+        },
+        "金士顿": {
+            "company": "金士顿科技(上海)有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "闵行区",
+            "scale": "大型企业",
+            "aliases": [
+                "Kingston",
+                "kingston",
+                "KINGSTON"
+            ]
+        },
+        "西部数据": {
+            "company": "西部数据(深圳)有限公司",
+            "province": "广东省",
+            "city": "深圳市",
+            "district": "南山区",
+            "scale": "大型企业",
+            "aliases": [
+                "WD",
+                "wd",
+                "Western Digital"
+            ]
+        },
+        "希捷": {
+            "company": "希捷科技(苏州)有限公司",
+            "province": "江苏省",
+            "city": "苏州市",
+            "district": "工业园区",
+            "scale": "大型企业",
+            "aliases": [
+                "Seagate",
+                "seagate",
+                "SEAGATE"
+            ]
+        },
+        "罗技": {
+            "company": "罗技(中国)科技有限公司",
+            "province": "江苏省",
+            "city": "苏州市",
+            "district": "工业园区",
+            "scale": "大型企业",
+            "aliases": [
+                "Logitech",
+                "logitech",
+                "LOGITECH"
+            ]
+        },
+        "飞利浦": {
+            "company": "飞利浦(中国)投资有限公司",
+            "province": "上海市",
+            "city": "上海市",
+            "district": "静安区",
+            "scale": "大型企业",
+            "aliases": [
+                "Philips",
+                "philips",
+                "PHILIPS"
+            ]
+        },
+        "公牛": {
+            "company": "公牛集团股份有限公司",
+            "province": "浙江省",
+            "city": "宁波市",
+            "district": "慈溪市",
+            "scale": "大型企业",
+            "aliases": [
+                "BULL",
+                "bull",
+                "Bull"
+            ]
+        },
+        "方正": {
+            "company": "北大方正集团有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "海淀区",
+            "scale": "大型企业",
+            "aliases": [
+                "Founder",
+                "founder",
+                "FOUNDER"
+            ]
+        },
+        "清华同方": {
+            "company": "同方股份有限公司",
+            "province": "北京市",
+            "city": "北京市",
+            "district": "海淀区",
+            "scale": "大型企业",
+            "aliases": [
+                "同方",
+                "Tongfang",
+                "TSINGHUA"
+            ]
+        }
+    },
+    "默认企业": {
+        "company": "浙江省办公设备有限公司",
+        "province": "浙江省",
+        "city": "宁波市",
+        "district": "镇海区",
+        "scale": "中型企业"
+    }
+}

@@ -26,18 +26,18 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'License无效' }, { status: 401 });
         }
 
-        // 获取权限
-        const whereClause: any = { licenseId: license.id };
+        // 获取该License的所有类目权限
+        const whereClause: any = { licenseKey };
         if (market) {
             whereClause.market = market;
         }
 
-        const permission = await prisma.userCategoryPermission.findFirst({
+        const permissions = await prisma.userCategoryPermission.findMany({
             where: whereClause,
             orderBy: { updatedAt: 'desc' }
         });
 
-        if (!permission) {
+        if (permissions.length === 0) {
             return NextResponse.json({
                 success: true,
                 data: null,
@@ -45,14 +45,16 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        // 聚合所有一级类目
+        const level1Categories = permissions.map(p => p.level1Category);
+
         return NextResponse.json({
             success: true,
             data: {
-                id: permission.id,
-                market: permission.market,
-                level1Categories: JSON.parse(permission.level1Categories),
-                extractedAt: permission.extractedAt,
-                updatedAt: permission.updatedAt
+                licenseKey,
+                market: permissions[0].market,
+                level1Categories,
+                updatedAt: permissions[0].updatedAt
             }
         });
 
@@ -68,9 +70,9 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { licenseKey, market, level1Categories } = body;
 
-        if (!licenseKey || !market || !level1Categories) {
+        if (!licenseKey || !level1Categories) {
             return NextResponse.json({
-                error: '缺少必要参数: licenseKey, market, level1Categories'
+                error: '缺少必要参数: licenseKey, level1Categories'
             }, { status: 400 });
         }
 
@@ -89,29 +91,32 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'License无效' }, { status: 401 });
         }
 
-        // 使用upsert保存/更新权限
-        const permission = await prisma.userCategoryPermission.upsert({
-            where: { licenseId: license.id },
-            update: {
-                market,
-                level1Categories: JSON.stringify(level1Categories),
-                extractedAt: new Date()
-            },
-            create: {
-                licenseId: license.id,
-                market,
-                level1Categories: JSON.stringify(level1Categories)
-            }
+        // 删除该License的旧权限
+        await prisma.userCategoryPermission.deleteMany({
+            where: { licenseKey }
         });
 
-        console.log(`[类目权限] 保存成功: License=${licenseKey}, 卖场=${market}, 类目数=${level1Categories.length}`);
+        // 批量创建新的类目权限
+        const createData = level1Categories.map((cat: string) => ({
+            licenseKey,
+            market: market || null,
+            level1Category: cat,
+            subCategories: '[]'
+        }));
+
+        await prisma.userCategoryPermission.createMany({
+            data: createData
+        });
+
+        console.log(`[类目权限] 保存成功: License=${licenseKey}, 卖场=${market || '默认'}, 类目数=${level1Categories.length}`);
+        console.log(`[类目权限] 类目列表: ${level1Categories.join(', ')}`);
 
         return NextResponse.json({
             success: true,
             data: {
-                id: permission.id,
-                market: permission.market,
-                level1Categories: JSON.parse(permission.level1Categories),
+                licenseKey,
+                market,
+                level1Categories,
                 categoryCount: level1Categories.length
             },
             message: `已保存${level1Categories.length}个一级类目权限`

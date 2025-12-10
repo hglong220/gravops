@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试类目匹配API</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>测试类目匹配API</h1>
+    <button onclick="testAPI()">点击测试</button>
+    <pre id="result"></pre>
+
+    <script>
+    async function testAPI() {
+        const result = document.getElementById('result');
+        result.textContent = '正在调用...';
+        
+        try {
+            const response = await fetch('http://localhost:3000/api/category-match', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    licenseKey: 'test-license',
+                    productTitle: '得力A4复印纸 70g 500张'
+                })
+            });
+            
+            const data = await response.json();
+            result.textContent = JSON.stringify(data, null, 2);
+            
+            if (response.ok) {
+                result.style.color = 'green';
+            } else {
+                result.style.color = 'red';
+            }
+        } catch (error) {
+            result.textContent = '错误: ' + error.message;
+            result.style.color = 'red';
+        }
+    }
+    </script>
+</body>
+</html>

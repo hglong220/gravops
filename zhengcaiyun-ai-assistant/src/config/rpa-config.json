@@ -1,0 +1,46 @@
+{
+    "version": "1.0.0",
+    "description": "政采云RPA配置 - 青海网超版本",
+    "texts": {
+        "modifyButton": "修改",
+        "confirmButton": "确定",
+        "cancelButton": "取消",
+        "nextButton": "下一步",
+        "marketRowKeyword": "网上超市",
+        "bidItemPrefix": "标项名称"
+    },
+    "selectors": {
+        "dialog": {
+            "wrapper": ".el-dialog, .el-dialog__wrapper, [role=\"dialog\"]",
+            "visible": "[class*=\"dialog\"]:not([style*=\"display: none\"])"
+        },
+        "table": {
+            "row": "tr",
+            "cell": "td",
+            "expandIcon": ".el-table__expand-icon, .el-icon-arrow-right, .el-icon-plus, [class*=\"expand\"], i, svg",
+            "radio": "input[type=\"radio\"], .el-radio, .el-radio__input, .el-radio__inner"
+        },
+        "category": {
+            "item": "li, .el-cascader-node, .category-item, [role=\"treeitem\"], .el-menu-item, .el-tree-node__content, span[class*=\"category\"], div[class*=\"category\"], .tree-node, [class*=\"item\"]:not(input), .el-cascader-menu__item",
+            "scrollContainer": ".el-scrollbar__wrap, .category-list, [style*=\"overflow\"], .el-tree, .el-menu, .el-cascader-panel, .el-cascader-menu"
+        },
+        "form": {
+            "brandSelect": ".doraemon-select-selection, [class*=\"doraemon-select\"], .el-select",
+            "modelInput": "input#specification, input.doraemon-select-search__field, input"
+        }
+    },
+    "timing": {
+        "shortWait": 5000,
+        "mediumWait": 5000,
+        "longWait": 5000,
+        "animationWait": 5000,
+        "maxRetries": 3,
+        "elementTimeout": 15000
+    },
+    "debug": {
+        "highlightColor": "#FF0000",
+        "highlightWidth": "3px",
+        "showHighlight": true,
+        "logLevel": "verbose"
+    }
+}

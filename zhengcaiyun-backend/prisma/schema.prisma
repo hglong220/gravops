@@ -254,3 +254,23 @@ model UserCategoryPermission {
   @@index([level1Category])
 }
 
+/// RPA 学习记录 - 存储成功的操作序列
+model RpaLearningRecord {
+  id            String   @id @default(cuid())
+  /// 类目路径哈希（用于快速查找）
+  pathHash      String   @unique
+  /// 完整类目路径 JSON: ["办公设备", "办公用纸", "打印/复印纸"]
+  categoryPath  String
+  /// 操作序列 JSON: [{ action, target, value }]
+  operations    String
+  /// 成功执行次数
+  successCount  Int      @default(1)
+  /// 最后使用时间
+  lastUsedAt    DateTime @default(now())
+  /// 创建时间
+  createdAt     DateTime @default(now())
+
+  @@index([pathHash])
+  @@index([successCount])
+}
+

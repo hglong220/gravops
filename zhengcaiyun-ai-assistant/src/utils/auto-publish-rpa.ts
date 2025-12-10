@@ -1,6 +1,11 @@
 /**
  * 政采云自动发布RPA - 稳定版
  * 按照 waitForElement + 文字查找 + 分步骤 的方式实现
+ * 
+ * ⭐ 增强功能：JSON数据驱动
+ * - 从后端加载完整类目树
+ * - 支持按ID/Code/名称查询类目路径
+ * - 不需要硬编码类目，更新JSON即可
  */
 
 import { getStoredLicense } from './license'
@@ -8,6 +13,262 @@ import { getStoredLicense } from './license'
 // 开发环境用本地，生产环境用vercel
 const BACKEND_URL = 'http://localhost:3000'
 // const BACKEND_URL = 'https://zhengcaiyun-backend.vercel.app'
+
+// ========== ⭐ 新增：类目树数据驱动 ==========
+
+interface CategoryNode {
+    id: number
+    categoryCode: string
+    name: string
+    level: number
+    parentId: number | null
+    hasChildren: boolean
+    children?: CategoryNode[]
+}
+
+interface CategoryTree {
+    data: CategoryNode[]
+    loadedAt: number
+}
+
+// 缓存类目树
+let categoryTreeCache: CategoryTree | null = null
+
+/**
+ * 加载完整类目树（带缓存）
+ */
+async function loadCategoryTree(): Promise<CategoryNode[]> {
+    // 检查缓存（1小时内有效）
+    if (categoryTreeCache && Date.now() - categoryTreeCache.loadedAt < 3600000) {
+        return categoryTreeCache.data
+    }
+
+    try {
+        const resp = await fetch(`${BACKEND_URL}/api/政采云完整类目.json`)
+        if (!resp.ok) throw new Error('加载类目树失败')
+
+        const json = await resp.json()
+        // ⭐ 正确提取 categories 字段
+        const data = json.categories || json.data || json
+
+        if (!Array.isArray(data)) {
+            throw new Error('类目树格式错误，不是数组')
+        }
+
+        categoryTreeCache = { data, loadedAt: Date.now() }
+        log(`✓ 类目树已加载: ${countCategories(data)} 个类目`)
+        return data
+    } catch (e) {
+        log(`加载类目树失败: ${e}`)
+        return []
+    }
+}
+
+function countCategories(nodes: CategoryNode[]): number {
+    let count = nodes.length
+    for (const node of nodes) {
+        if (node.children) {
+            count += countCategories(node.children)
+        }
+    }
+    return count
+}
+
+/**
+ * 按ID查找类目并返回完整路径
+ */
+async function getCategoryPathById(categoryId: number): Promise<string[] | null> {
+    const tree = await loadCategoryTree()
+    const path: string[] = []
+
+    function findNode(nodes: CategoryNode[], targetId: number): boolean {
+        for (const node of nodes) {
+            if (node.id === targetId) {
+                path.push(node.name)
+                return true
+            }
+            if (node.children && node.children.length > 0) {
+                path.push(node.name)
+                if (findNode(node.children, targetId)) {
+                    return true
+                }
+                path.pop()
+            }
+        }
+        return false
+    }
+
+    if (findNode(tree, categoryId)) {
+        return path
+    }
+    return null
+}
+
+/**
+ * 按categoryCode查找类目并返回完整路径
+ */
+async function getCategoryPathByCode(code: string): Promise<string[] | null> {
+    const tree = await loadCategoryTree()
+    const path: string[] = []
+
+    function findNode(nodes: CategoryNode[], targetCode: string): boolean {
+        for (const node of nodes) {
+            if (node.categoryCode === targetCode) {
+                path.push(node.name)
+                return true
+            }
+            if (node.children && node.children.length > 0) {
+                path.push(node.name)
+                if (findNode(node.children, targetCode)) {
+                    return true
+                }
+                path.pop()
+            }
+        }
+        return false
+    }
+
+    if (findNode(tree, code)) {
+        return path
+    }
+    return null
+}
+
+/**
+ * 按名称查找类目（模糊匹配）
+ */
+async function getCategoryPathByName(name: string): Promise<string[] | null> {
+    const tree = await loadCategoryTree()
+    const path: string[] = []
+
+    function findNode(nodes: CategoryNode[], targetName: string): boolean {
+        for (const node of nodes) {
+            if (node.name === targetName || node.name.includes(targetName)) {
+                path.push(node.name)
+                return true
+            }
+            if (node.children && node.children.length > 0) {
+                path.push(node.name)
+                if (findNode(node.children, targetName)) {
+                    return true
+                }
+                path.pop()
+            }
+        }
+        return false
+    }
+
+    if (findNode(tree, name)) {
+        return path
+    }
+    return null
+}
+
+/**
+ * 获取所有一级类目（用于权限检查）
+ */
+async function getFirstLevelCategories(): Promise<string[]> {
+    const tree = await loadCategoryTree()
+    return tree.map(node => node.name)
+}
+
+// ========== ⭐ 真正先进的类目选择：直接调用Vue内部方法 ==========
+
+/**
+ * 获取类目选择组件的 Vue 实例
+ */
+function getCategoryVM(): any {
+    // 找到挂载在 doraemon-dialog 上的 Vue 实例
+    const dialog = document.querySelector('.doraemon-dialog') as any
+    return dialog && dialog.__vue__
+}
+
+/**
+ * ⭐ 快速选择类目（直接调用内部方法，不点击DOM）
+ * 
+ * 优势：
+ * - 🔥 页面自动展开
+ * - 🔥 自动定位
+ * - 🔥 自动选中
+ * - 🔥 自动触发属性加载
+ * - 🔥 无需逐级点击
+ * - 🔥 永远不会"类目弹窗未出现"
+ * 
+ * @param refId - 类目的refId（如 "ref-5018"）
+ */
+async function selectCategoryFast(refId: string): Promise<boolean> {
+    const vm = getCategoryVM()
+
+    if (!vm) {
+        log('⚠ 找不到类目 Vue 实例，回退到DOM点击方式')
+        return false
+    }
+
+    try {
+        // 检查是否有 selectCategoryById 方法
+        if (typeof vm.selectCategoryById === 'function') {
+            vm.selectCategoryById(refId)
+            log(`✓ 已通过内部方法选中类目: ${refId}`)
+            return true
+        }
+
+        // 备选方法名
+        const methodNames = ['selectCategory', 'handleSelect', 'onSelect', 'select']
+        for (const method of methodNames) {
+            if (typeof vm[method] === 'function') {
+                vm[method](refId)
+                log(`✓ 已通过 ${method} 选中类目: ${refId}`)
+                return true
+            }
+        }
+
+        log('⚠ Vue实例上未找到选择方法')
+        return false
+    } catch (e) {
+        log(`快速选择失败: ${e}`)
+        return false
+    }
+}
+
+/**
+ * 按类目ID快速选择（先从JSON获取refId，再调用内部方法）
+ */
+async function selectCategoryFastById(categoryId: number): Promise<boolean> {
+    const tree = await loadCategoryTree()
+
+    // 查找节点获取 categoryCode 作为 refId
+    function findNode(nodes: CategoryNode[], targetId: number): CategoryNode | null {
+        for (const node of nodes) {
+            if (node.id === targetId) return node
+            if (node.children) {
+                const found = findNode(node.children, targetId)
+                if (found) return found
+            }
+        }
+        return null
+    }
+
+    const node = findNode(tree, categoryId)
+    if (!node) {
+        log(`未找到类目ID: ${categoryId}`)
+        return false
+    }
+
+    // 尝试使用 categoryCode 或 id 作为 refId
+    const refId = node.categoryCode || `ref-${node.id}`
+    return await selectCategoryFast(refId)
+}
+
+// 导出新增的数据驱动函数
+export {
+    loadCategoryTree,
+    getCategoryPathById,
+    getCategoryPathByCode,
+    getCategoryPathByName,
+    getFirstLevelCategories,
+    selectCategoryFast,
+    selectCategoryFastById
+}
 
 // ========== 通用工具函数 ==========
 
@@ -226,59 +487,143 @@ async function step2_selectMarketAndBid(dialog: Element, targetBidName: string):
 
     await sleep(500) // 等待弹窗内容加载
 
-    // 查找"网上超市(青海网超)"行并点击展开
-    const tds = dialog.querySelectorAll('td')
+    // ===== 第一步: 找到"网上超市(青海网超)"行并点击展开 =====
+    log('查找网上超市行...')
+
+    // 在表格中找包含"网上超市"的行
+    const allRows = dialog.querySelectorAll('tr')
     let marketRow: HTMLTableRowElement | null = null
 
-    for (const td of tds) {
-        if (td.textContent?.includes('网上超市')) {
-            marketRow = td.closest('tr')
-            break
-        }
-    }
-
-    if (marketRow) {
-        // 查找展开按钮（+ 号或箭头图标）
-        const expandBtn = marketRow.querySelector('button, .el-icon-plus, .el-table__expand-icon, i, svg') as HTMLElement
-        if (expandBtn) {
-            log('✓ 点击展开网上超市')
-            simulateClick(expandBtn)
-            await sleep(800)
-        }
-    }
-
-    // 在标项表格中找到目标标项并选中
-    await sleep(300)
-    const rows = dialog.querySelectorAll('tbody tr')
-    let foundBid = false
-
-    for (const tr of rows) {
+    for (const tr of allRows) {
         const rowText = tr.textContent || ''
-        // 匹配 "标项名称：办公设备/耗材" 或直接包含类目名
-        if (rowText.includes(targetBidName) || rowText.includes(`标项名称：${targetBidName}`) || rowText.includes(`标项名称:${targetBidName}`)) {
-            const radio = tr.querySelector('input[type="radio"]') as HTMLInputElement
-            const radioLabel = tr.querySelector('.el-radio, .el-radio__input, label') as HTMLElement
-
-            if (radio) {
-                radio.click()
-                log(`✓ 选中标项: ${targetBidName}`)
-                foundBid = true
-            } else if (radioLabel) {
-                simulateClick(radioLabel)
-                log(`✓ 选中标项(label): ${targetBidName}`)
-                foundBid = true
-            }
+        if (rowText.includes('网上超市')) {
+            marketRow = tr as HTMLTableRowElement
+            log(`✓ 找到网上超市行: ${rowText.substring(0, 50)}...`)
             break
         }
     }
 
-    if (!foundBid) {
-        log(`⚠ 未找到标项: ${targetBidName}`)
+    if (!marketRow) {
+        log('✗ 未找到网上超市行')
+        return false
+    }
+
+    // 点击展开按钮（尝试多种选择器）
+    const expandSelectors = [
+        '.el-table__expand-icon',      // ElementUI 展开图标
+        '.el-icon-arrow-right',        // 右箭头
+        '.el-icon-plus',               // 加号
+        '[class*="expand"]',           // 任何包含expand的元素
+        'button',                      // 按钮
+        'i',                           // 图标
+        'svg',                         // SVG图标
+        'span:first-child',            // 第一个span（可能是+号）
+        'td:first-child'               // 第一列（整个单元格）
+    ]
+
+    let expanded = false
+    for (const selector of expandSelectors) {
+        const expandBtn = marketRow.querySelector(selector) as HTMLElement
+        if (expandBtn) {
+            const btnText = expandBtn.textContent?.trim() || ''
+            const btnClass = expandBtn.className || ''
+            log(`  尝试点击展开: ${selector} (text="${btnText}", class="${btnClass.substring(0, 30)}")`)
+
+            simulateClick(expandBtn)
+            await sleep(300)
+
+            // 检查是否展开成功（看是否有新行出现）
+            const rowsAfter = dialog.querySelectorAll('tr')
+            if (rowsAfter.length > allRows.length) {
+                log(`  ✓ 展开成功，行数: ${allRows.length} → ${rowsAfter.length}`)
+                expanded = true
+                break
+            }
+        }
+    }
+
+    if (!expanded) {
+        // 如果仍未展开，尝试点击整行
+        log('  展开按钮未生效，尝试点击整行...')
+        simulateClick(marketRow)
+        await sleep(500)
+    }
+
+    await sleep(800) // 等待展开动画和内容加载
+
+    // ===== 第二步: 在展开的标项列表中找到目标标项并选中 =====
+    log('查找标项行...')
+
+    const expandedRows = dialog.querySelectorAll('tr')
+    log(`  弹窗中共有 ${expandedRows.length} 行`)
+
+    let foundBid = false
+    let bidRow: HTMLElement | null = null
+
+    for (const tr of expandedRows) {
+        const rowText = tr.textContent || ''
+
+        // 跳过网上超市主行
+        if (rowText.includes('网上超市') && rowText.includes('青海')) continue
+
+        // 检查是否是标项行（包含"标项名称"）
+        if (rowText.includes('标项名称')) {
+            log(`  发现标项行: ${rowText.substring(0, 60)}...`)
+
+            // 灵活匹配：检查行文本是否包含目标标项名
+            // 例如 targetBidName="办公设备"，行文本="标项名称: 办公设备"
+            if (rowText.includes(targetBidName)) {
+                log(`  ✓ 匹配到目标标项: ${targetBidName}`)
+                bidRow = tr as HTMLElement
+                break
+            }
+        }
+    }
+
+    if (!bidRow) {
+        log(`✗ 未找到标项: ${targetBidName}`)
+        log('  可能原因: 展开失败、标项名称不匹配、或当前用户没有该标项权限')
+        log('  请手动选择正确的标项后重试')
+        return false  // 不点确定，让用户手动处理
+    }
+
+    // 找到该行的单选按钮并点击
+    const radioSelectors = [
+        'input[type="radio"]',
+        '.el-radio',
+        '.el-radio__input',
+        '.el-radio__inner',
+        'label',
+        'span.el-radio__label'
+    ]
+
+    let clicked = false
+    for (const selector of radioSelectors) {
+        const radio = bidRow.querySelector(selector) as HTMLElement
+        if (radio) {
+            log(`  点击单选按钮: ${selector}`)
+            simulateClick(radio)
+            if (radio instanceof HTMLInputElement) {
+                radio.checked = true
+            }
+            clicked = true
+            break
+        }
+    }
+
+    // 如果没找到单选按钮，尝试点击整行
+    if (!clicked) {
+        log('  未找到单选按钮，点击整行')
+        simulateClick(bidRow)
     }
 
     await sleep(300)
+    foundBid = true
+    log(`✓ 已选中标项: ${targetBidName}`)
 
-    // 点击弹窗的"确定"按钮
+    // ===== 第三步: 点击弹窗的"确定"按钮 =====
+    await sleep(300)
+
     const okBtn = findButtonByText(dialog, '确定')
     if (okBtn) {
         log('✓ 点击确定按钮')
@@ -299,9 +644,115 @@ async function step3_selectCategoryTree(categoryPath: string[]): Promise<boolean
 
     await sleep(1500) // 等待类目树加载
 
-    // 查找类目列表容器（通常有3列）
-    // 根据政采云页面结构，类目通常在 el-scrollbar 或特定的列容器中
+    // 查找所有可见的类目项元素（支持多种选择器）
+    function getAllVisibleCategoryItems(): HTMLElement[] {
+        const items: HTMLElement[] = []
+        // 扩展选择器，兼容政采云各种UI组件
+        const candidates = document.querySelectorAll(
+            'li, .el-cascader-node, .category-item, [role="treeitem"], ' +
+            '.tree-node, .menu-item, [class*="category"] span, ' +
+            '.el-menu-item, .el-tree-node__content'
+        )
 
+        for (const el of candidates) {
+            const rect = (el as HTMLElement).getBoundingClientRect()
+            // 只处理可见元素
+            if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0) {
+                items.push(el as HTMLElement)
+            }
+        }
+
+        return items
+    }
+
+    // 按名称查找类目（支持多种匹配方式）
+    function findCategoryByName(categoryName: string): HTMLElement | null {
+        const items = getAllVisibleCategoryItems()
+        log(`  当前可见类目项: ${items.length} 个`)
+
+        // 打印所有可见项便于调试
+        const visibleTexts = items.slice(0, 10).map(item => {
+            const t = item.textContent?.trim() || ''
+            return t.substring(0, 30)
+        })
+        log(`  前10个可见项: ${visibleTexts.join(', ')}`)
+
+        // 第一轮：精确匹配
+        for (const item of items) {
+            const text = item.textContent?.trim() || ''
+            // 清理文本：去除数字后缀如 (123)、去除"标"后缀
+            const cleanText = text.replace(/\s*[\(（]\d+[\)）]\s*$/, '').replace(/标$/, '').trim()
+
+            if (cleanText === categoryName) {
+                log(`  ✓ 精确匹配: ${cleanText}`)
+                return item
+            }
+        }
+
+        // 第二轮：包含匹配（"办公用纸" 包含在 "办公设备/耗材/办公用纸" 中）
+        for (const item of items) {
+            const text = item.textContent?.trim() || ''
+            const cleanText = text.replace(/\s*[\(（]\d+[\)）]\s*$/, '').replace(/标$/, '').trim()
+
+            if (cleanText.includes(categoryName) || categoryName.includes(cleanText)) {
+                log(`  ✓ 包含匹配: ${cleanText} ~ ${categoryName}`)
+                return item
+            }
+        }
+
+        // 第三轮：开头匹配（"办公" 匹配 "办公设备/耗材"）
+        const shortName = categoryName.substring(0, 2) // 取前两个字
+        for (const item of items) {
+            const text = item.textContent?.trim() || ''
+            const cleanText = text.replace(/\s*[\(（]\d+[\)）]\s*$/, '').replace(/标$/, '').trim()
+
+            if (cleanText.startsWith(shortName)) {
+                log(`  ✓ 开头匹配: ${cleanText} startsWith ${shortName}`)
+                return item
+            }
+        }
+
+        log(`  ✗ 未找到匹配项: ${categoryName}`)
+        return null
+    }
+
+    // 滚动搜索（处理虚拟滚动列表）
+    async function scrollAndSearch(categoryName: string): Promise<HTMLElement | null> {
+        const scrollContainers = document.querySelectorAll(
+            '.el-scrollbar__wrap, .category-list, [style*="overflow"], .el-tree, .el-menu'
+        )
+
+        for (const container of scrollContainers) {
+            const scrollEl = container as HTMLElement
+            if (scrollEl.scrollHeight <= scrollEl.clientHeight + 10) continue // 不需要滚动
+
+            const scrollStep = scrollEl.clientHeight * 0.7
+            const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight
+            let currentScroll = 0
+
+            // 先滚到顶部
+            scrollEl.scrollTop = 0
+            await sleep(200)
+
+            // 分段滚动查找
+            while (currentScroll < maxScroll) {
+                const item = findCategoryByName(categoryName)
+                if (item) return item
+
+                currentScroll += scrollStep
+                scrollEl.scrollTop = currentScroll
+                await sleep(300)
+            }
+
+            // 最后检查一次
+            const item = findCategoryByName(categoryName)
+            if (item) return item
+        }
+
+        return null
+    }
+
+    // ★★★ 支持最多5级类目 ★★★
     for (let i = 0; i < categoryPath.length && i < 5; i++) {
         const categoryName = categoryPath[i]
         const level = i + 1
@@ -315,32 +766,27 @@ async function step3_selectCategoryTree(categoryPath: string[]): Promise<boolean
         while (!found && retries < 5) {
             retries++
 
-            // 查找所有可见的li元素
-            const allItems = document.querySelectorAll('li')
-            for (const item of allItems) {
-                const rect = item.getBoundingClientRect()
-                // 只处理可见元素
-                if (rect.width <= 0 || rect.height <= 0 || rect.top < 0 || rect.top > window.innerHeight) {
-                    continue
+            // 1. 直接查找
+            let item = findCategoryByName(categoryName)
+
+            // 2. 如果没找到，尝试滚动搜索
+            if (!item && retries >= 2) {
+                log(`  尝试滚动搜索...`)
+                item = await scrollAndSearch(categoryName)
+            }
+
+            if (item) {
+                log(`  找到: ${item.textContent?.trim()?.substring(0, 30)}`)
+                simulateClick(item)
+
+                // 同时点击内部的span（有些框架需要）
+                const span = item.querySelector('span')
+                if (span) {
+                    simulateClick(span as HTMLElement)
                 }
 
-                const text = item.textContent?.trim() || ''
-                const cleanText = text.replace(/\s*[\(（]\d+[\)）]\s*$/, '').replace(/标$/, '').trim()
-
-                if (cleanText === categoryName) {
-                    log(`  找到: ${cleanText}`)
-                    simulateClick(item as HTMLElement)
-
-                    // 同时点击内部的span（有些框架需要）
-                    const span = item.querySelector('span')
-                    if (span) {
-                        simulateClick(span as HTMLElement)
-                    }
-
-                    found = true
-                    log(`  ✓ 点击第${level}级: ${categoryName}`)
-                    break
-                }
+                found = true
+                log(`  ✓ 点击第${level}级: ${categoryName}`)
             }
 
             if (!found) {
@@ -349,15 +795,18 @@ async function step3_selectCategoryTree(categoryPath: string[]): Promise<boolean
             }
         }
 
+        // ★★★ 严格执行：找不到立即终止，返回 false ★★★
         if (!found) {
             log(`  ✗ 未找到第${level}级类目: ${categoryName}`)
+            log('  ✗ 类目选择失败，流程终止')
+            return false  // 立即返回失败，不继续
         }
 
         // 等待下一级类目加载
         await sleep(1000)
     }
 
-    log('类目选择完成')
+    // 只有全部成功才返回 true
     return true
 }
 
@@ -857,20 +1306,49 @@ export async function executeAutoPublish(options: AutoPublishOptions): Promise<{
         log(`完整路径: ${pathSegments.join(' > ')}`)
 
         // 2. 点击修改按钮，打开电子卖场弹窗
-        const dialog = await step1_openMarketDialog()
+        log('')
+        let dialog: Element
+        try {
+            dialog = await step1_openMarketDialog()
+        } catch (e) {
+            log('✗ 步骤1失败: 无法打开电子卖场弹窗')
+            return { success: false, error: '无法打开电子卖场弹窗' }
+        }
 
-        // 3. 选择电子卖场和标项
-        await step2_selectMarketAndBid(dialog, rootName)
+        // 3. 选择电子卖场和标项（必须成功才能继续）
+        const step2Success = await step2_selectMarketAndBid(dialog, rootName)
+        if (!step2Success) {
+            log('✗ 步骤2失败: 未能选中正确的标项')
+            log(`  请手动选择标项"${rootName}"后重试`)
+            return {
+                success: false,
+                error: `未能选中标项"${rootName}"，请手动选择后重试`
+            }
+        }
 
-        // 4. 选择类目树
-        await step3_selectCategoryTree(pathSegments)
+        // 4. 选择类目树（必须成功才能继续）
+        // 注意：step3 要选择的是完整路径 [办公设备, 办公用纸, 打印/复印纸]
+        // 但是因为步骤2已经选了"办公设备"作为标项，所以类目树的第一级就是"办公设备"的子类目
+        // 因此这里需要从第二级开始选择
+        const categoryPathForTree = pathSegments.slice(1) // 跳过第一级（标项已选）
+        log(`类目树选择路径（跳过一级）: ${categoryPathForTree.join(' > ')}`)
+
+        const step3Success = await step3_selectCategoryTree(categoryPathForTree)
+        if (!step3Success) {
+            log('✗ 步骤3失败: 类目选择未完成')
+            return { success: false, error: '类目选择失败' }
+        }
 
         // 5. 填写属性（使用提取的品牌和型号）
         await step4_fillAttributes(brand, model)
 
         // 6. 点击下一步
-        await step5_clickNext()
+        const step5Success = await step5_clickNext()
+        if (!step5Success) {
+            log('⚠ 步骤5: 未找到下一步按钮，但流程已基本完成')
+        }
 
+        log('')
         log('═══════════════════════════════════════')
         log('自动发布流程完成')
         log('═══════════════════════════════════════')
