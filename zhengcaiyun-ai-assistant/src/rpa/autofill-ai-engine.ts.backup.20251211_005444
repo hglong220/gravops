@@ -147,9 +147,7 @@ function getBrandCompanyInfo(brand: string): BrandCompanyInfo | null {
 
 // 异步查询品牌企业信息（从后端 API）
 async function fetchBrandCompanyInfo(brand: string): Promise<BrandCompanyInfo | null> {
-    const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
-
-    if (!BACKEND_URL) return null
+    const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/brand-company?brand=${encodeURIComponent(brand)}`, {
@@ -1018,9 +1016,7 @@ export const AutoFillAIEngine = {
 
     // ===================== 4. 调用后端AI获取填写计划 =====================
     async fetchAIPlan(productInfo: ProductInfo, fields: FieldSchema[]): Promise<FillPlan[] | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
-
-        if (!BACKEND_URL) return null
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
         // 只发送必填项给 AI，减少处理量
         const requiredFields = fields.filter(f => f.required)
@@ -1075,9 +1071,7 @@ export const AutoFillAIEngine = {
 
     // ⭐⭐ 增强1: 单字段 AI 推理 ⭐⭐
     async askAIForFieldValue(field: FieldSchema, productInfo: ProductInfo): Promise<string | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
-
-        if (!BACKEND_URL) return null
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
         try {
             const response = await fetch(`${BACKEND_URL}/api/field-ai-decide`, {
@@ -1172,73 +1166,25 @@ export const AutoFillAIEngine = {
 
     // ===================== 6. 图片上传模块（完整版） =====================
 
-    // 缩略图 URL → 原图 URL（京东/天猫/苏宁/政采云）
-    normalizeImageUrl(url: string): string {
-        if (!url) return url;
-
-        let u = url.split('?')[0];
-
-        // ===== 京东 JD =====
-        if (u.includes('360buyimg.com') || u.includes('jdcdn.com')) {
-            u = u.replace(/s\d+x\d+_/g, '')
-                .replace(/!\d{2,}x\d{2,}\w*/g, '')
-                .replace(/n\d+\/jfs/g, 'jfs')
-                .replace(/\/mobile\//g, '/');
-        }
-
-        // ===== 天猫 / 淘宝 =====
-        if (u.includes('alicdn.com')) {
-            u = u.replace(/_(\d+x\d+).*\.jpg$/, '.jpg')
-                .replace(/_(\d+x\d+).*\.png$/, '.png')
-                .replace(/\.(jpg|png)_\d+x\d+q\d+\.jpg$/, '.$1');
-        }
-
-        // ===== 苏宁 =====
-        if (u.includes('suning') || u.includes('suningcdn')) {
-            u = u.replace(/_\d+w_\d+h\.jpg$/, '.jpg')
-                .replace(/@.*$/, '');
-        }
-
-        // ===== 政采云（pcpubliccms 缩略图）=====
-        if (u.includes('pcpubliccms')) {
-            u = u.replace(/s\d+x\d+_/g, '');
-        }
-
-        // ===== doraemon 静态资源 =====
-        if (u.includes('doraemon')) {
-            u = u.replace(/_\d+x\d+/, '');
-        }
-
-        return u;
-    },
-
     // URL 转 File 对象（支持代理下载）
     async urlToFile(url: string, filename = "image.jpg"): Promise<File> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
-        // 先转换为原图 URL
-        const normalizedUrl = this.normalizeImageUrl(url);
-        if (normalizedUrl !== url) {
-            this.log("🔄 缩略图转原图:", url.substring(0, 50), "→", normalizedUrl.substring(0, 50));
-        }
-
-        this.log("📥 下载图片:", normalizedUrl.substring(0, 80) + "...")
+        this.log("📥 下载图片:", url.substring(0, 80) + "...")
 
         try {
             // 方法1：直接下载（适用于无防盗链的图片）
-            let res = await fetch(normalizedUrl, {
+            let res = await fetch(url, {
                 mode: 'cors',
                 headers: {
-                    'Referer': normalizedUrl  // 设置 referer 绕过部分防盗链
+                    'Referer': url  // 设置 referer 绕过部分防盗链
                 }
             })
 
             if (res.ok) {
                 const blob = await res.blob()
                 this.log("✅ 直接下载成功，大小:", blob.size)
-                const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
-                // 确保图片至少 800x800（政采云要求）
-                return await this.resizeImageToMinSize(file)
+                return new File([blob], filename, { type: blob.type || 'image/jpeg' })
             }
         } catch (e) {
             this.log("直接下载失败，尝试代理...")
@@ -1246,12 +1192,11 @@ export const AutoFillAIEngine = {
 
         try {
             // 方法2：通过后端代理下载（使用 POST 返回 base64）
-            if (!BACKEND_URL) throw new Error("无后端代理，跳过")
             const proxyUrl = `${BACKEND_URL}/api/image-proxy`
             const res = await fetch(proxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: normalizedUrl })
+                body: JSON.stringify({ url })
             })
 
             if (res.ok) {
@@ -1260,9 +1205,7 @@ export const AutoFillAIEngine = {
                 if (data.data) {
                     const blob = this.base64ToBlob(data.data)
                     this.log("✅ 代理下载成功，大小:", blob.size)
-                    const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
-                    // 确保图片至少 800x800（政采云要求）
-                    return await this.resizeImageToMinSize(file)
+                    return new File([blob], filename, { type: blob.type || 'image/jpeg' })
                 }
             }
         } catch (e) {
@@ -1298,73 +1241,6 @@ export const AutoFillAIEngine = {
         return new Blob([u8arr], { type: mime })
     },
 
-    // 确保图片至少是 800x800（政采云要求）
-    // 同时强制重新编码为纯 JPEG 格式，解决政采云"无法解析该文件"问题
-    async resizeImageToMinSize(file: File, minWidth = 800, minHeight = 800): Promise<File> {
-        return new Promise((resolve) => {
-            const img = new Image()
-            const url = URL.createObjectURL(file)
-
-            img.onload = () => {
-                URL.revokeObjectURL(url)
-
-                const { width, height } = img
-
-                // 计算需要放大的比例（保持宽高比）
-                let newWidth = width
-                let newHeight = height
-
-                if (width < minWidth || height < minHeight) {
-                    const scaleX = minWidth / width
-                    const scaleY = minHeight / height
-                    const scale = Math.max(scaleX, scaleY)
-                    newWidth = Math.ceil(width * scale)
-                    newHeight = Math.ceil(height * scale)
-                    this.log(`📐 图片放大: ${width}x${height} → ${newWidth}x${newHeight}`)
-                } else {
-                    // 即使尺寸达标，也强制重新编码（解决格式问题）
-                    this.log(`🔄 图片重新编码: ${width}x${height} (强制转换为标准JPEG)`)
-                }
-
-                // 使用 canvas 重新编码图片（关键！）
-                const canvas = document.createElement('canvas')
-                canvas.width = newWidth
-                canvas.height = newHeight
-
-                const ctx = canvas.getContext('2d')!
-                // 使用高质量缩放
-                ctx.imageSmoothingEnabled = true
-                ctx.imageSmoothingQuality = 'high'
-                // 填充白色背景（防止透明PNG问题）
-                ctx.fillStyle = '#FFFFFF'
-                ctx.fillRect(0, 0, newWidth, newHeight)
-                ctx.drawImage(img, 0, 0, newWidth, newHeight)
-
-                // 转换为纯 JPEG（政采云最可靠的格式）
-                canvas.toBlob((blob) => {
-                    if (blob) {
-                        // 确保文件名以 .jpg 结尾
-                        const fileName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
-                        const newFile = new File([blob], fileName, { type: 'image/jpeg' })
-                        this.log(`✅ 转换完成: ${newFile.size} bytes`)
-                        resolve(newFile)
-                    } else {
-                        this.warn('图片转换失败，使用原图')
-                        resolve(file)
-                    }
-                }, 'image/jpeg', 0.92)  // 92% 质量
-            }
-
-            img.onerror = () => {
-                URL.revokeObjectURL(url)
-                this.warn('图片加载失败，使用原图')
-                resolve(file)
-            }
-
-            img.src = url
-        })
-    },
-
     // 上传图片到政采云（万能 uploader）
     async uploadFileToZCY(uploadRow: Element, file: File): Promise<boolean> {
         const input = uploadRow.querySelector("input[type='file']") as HTMLInputElement
@@ -1381,588 +1257,307 @@ export const AutoFillAIEngine = {
         return true
     },
 
-    // ===================== 完整版：图片上传与选择 =====================
-
-    // 记录已上传的图片总数（用于主图/副图分配）
-    _uploadedImageCount: 0,
-
-    // 上传单张图片到素材库（弹窗必须已打开）
-    async uploadSingleImageToMaterial(url: string, index: number): Promise<boolean> {
-        this.log(`[IMG] 上传图片 ${index + 1}:`, url.substring(0, 60));
-
-        try {
-            // 找弹窗
-            const modal = document.querySelector('.doraemon-modal') as HTMLElement | null;
-            if (!modal) {
-                this.warn("[IMG] 弹窗未找到");
-                return false;
-            }
-
-            // 找文件上传 input
-            let inp: HTMLInputElement | null = null;
-            for (let r = 0; r < 30; r++) {
-                inp = modal.querySelector('input[type="file"]') as HTMLInputElement | null;
-                if (inp) break;
-                await sleep(100);
-            }
-            if (!inp) {
-                this.warn("[IMG] 未找到上传 input");
-                return false;
-            }
-
-            // URL → File → 注入
-            const file = await this.urlToFile(url, `img_${index}.jpg`);
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            inp.files = dt.files;
-            inp.dispatchEvent(new Event('change', { bubbles: true }));
-
-            this.log(`[IMG] 已注入文件 ${index + 1}`);
-
-            // 等待上传完成
-            for (let wait = 0; wait < 30; wait++) {
-                await sleep(500);
-                // 检测图片数量是否增加
-                const imgCards = modal.querySelectorAll('.item-img, .image-card, .img-wrapper, .doraemon-image-card');
-                if (imgCards.length > index) {
-                    this.log(`[IMG] 上传成功 ${index + 1}, 当前素材库共 ${imgCards.length} 张`);
-                    return true;
-                }
-                // 检测错误
-                const errorTip = document.querySelector('.ant-message-error, .doraemon-message-error');
-                if (errorTip) {
-                    this.warn(`[IMG] 上传出错 ${index + 1}: ${errorTip.textContent}`);
-                    return false;
-                }
-            }
-
-            this.warn(`[IMG] 上传超时 ${index + 1}`);
-            return false;
-        } catch (e) {
-            this.warn(`[IMG] 上传异常 ${index + 1}:`, e);
-            return false;
-        }
-    },
-
-    // 选择素材库中指定范围的图片（多选）
-    async selectImagesInRange(startIndex: number, endIndex: number, useTail = false): Promise<number> {
-        this.log(`[IMG] 选择图片范围: ${startIndex + 1} ~ ${endIndex}${useTail ? " (尾部优先)" : ""}`);
-
-        const modal = document.querySelector('.doraemon-modal') || document;
-        const items = modal.querySelectorAll(
-            '.img-border .item-img, .material-img-item, .img-wrapper, .doraemon-image-card'
-        );
-
-        this.log("[IMG] 素材库总图片数:", items.length);
-
-        if (!items.length) {
-            this.warn("[IMG] 素材库无图");
-            return 0;
-        }
-
-        let selectedCount = 0;
-        const total = items.length;
-        let from = startIndex;
-        let to = Math.min(endIndex, total);
-
-        if (useTail) {
-            to = total;
-            from = Math.max(total - (endIndex - startIndex), 0);
-        }
-
-        for (let i = from; i < to; i++) {
-            const target = items[i] as HTMLElement;
-            if (!target) continue;
-
-            (target.querySelector('img') as HTMLElement || target).click();
-            this.log(`[IMG] 选中第 ${i + 1} 张`);
-            selectedCount++;
-            await sleep(150);
-        }
-
-        this.log(`[IMG] 共选中 ${selectedCount} 张`);
-        return selectedCount;
-    },
-
-    // 点击确定按钮
-    async clickConfirmButton(): Promise<boolean> {
-        await sleep(300);
-        const okBtn = (
-            document.querySelector('.doraemon-modal-footer .doraemon-btn-primary') ||
-            document.querySelector('.modal-footer .btn-primary') ||
-            document.querySelector('button.doraemon-btn-primary')
-        ) as HTMLElement;
-
-        if (!okBtn) {
-            this.warn("[IMG] 未找到确定按钮");
-            return false;
-        }
-
-        okBtn.click();
-        this.log("[IMG] 点击确定");
-        await sleep(500);
-        return true;
-    },
-
-    // 关闭弹窗
-    async closeModal(): Promise<void> {
-        const closeBtn = document.querySelector('.doraemon-modal-close, .modal-close') as HTMLElement;
-        if (closeBtn) {
-            closeBtn.click();
-            await sleep(300);
-        }
-    },
-
-    // 打开素材库弹窗（通过任意上传入口）
-    async openMaterialModal(): Promise<boolean> {
-        // 只用主图入口（第一个上传格）
-        const mainSlot = document.querySelector('.upload-contain .image-upload .image-box') as HTMLElement;
-        if (!mainSlot) {
-            this.warn("[IMG] 找不到主图上传入口");
-            return false;
-        }
-
-        mainSlot.click();
-        this.log("[IMG] 点击主图上传入口，等待弹窗...");
-
-        // 等待弹窗出现
-        for (let i = 0; i < 50; i++) {
-            const modal = document.querySelector('.doraemon-modal');
-            if (modal) {
-                this.log("[IMG] 弹窗已打开");
-                await sleep(300);
-                // 点击第一个文件夹（素材库列表里的第一个卡片或标题）
-                const folderCard = modal.querySelector('.item-img, .folder-title') as HTMLElement;
-                folderCard?.click();
-                await sleep(300);
-                return true;
-            }
-            await sleep(100);
-        }
-
-        this.warn("[IMG] 弹窗打开超时");
-        return false;
-    },
-
-    // ========== 核心：一次性上传所有图片到素材库 ==========
-    async uploadAllImagesToMaterial(imageUrls: string[]): Promise<number> {
-        const MAX_TOTAL = 14;  // 最多上传14张（5主图+9副图）
-        const urls = imageUrls.slice(0, MAX_TOTAL);
-
-        this.log("[IMG] ========== 开始上传图片到素材库 ==========");
-        this.log("[IMG] 待上传数量:", urls.length);
-
-        // 打开弹窗
-        if (!await this.openMaterialModal()) {
-            return 0;
-        }
-
-        // 逐张上传
-        let uploadedCount = 0;
-        for (let i = 0; i < urls.length; i++) {
-            const success = await this.uploadSingleImageToMaterial(urls[i], i);
-            if (success) {
-                uploadedCount++;
-            }
-            await sleep(300);
-        }
-
-        this.log(`[IMG] 上传完成: ${uploadedCount}/${urls.length} 张`);
-
-        // 关闭弹窗（不选择图片，只是上传）
-        await this.closeModal();
-
-        // 记录已上传数量
-        this._uploadedImageCount = uploadedCount;
-
-        return uploadedCount;
-    },
-
-    // ========== 主图上传：使用主图入口一次性上传并选择全部 ==========
-    async uploadMainImages(imageUrls: string[]): Promise<number> {
-        this.log("[IMG] === 主图上传开始 ===");
-        this.log("[IMG] 收到图片:", imageUrls?.length || 0, "张");
-
+    // 上传主图（限定 9 宫格主图区）
+    async uploadMainImages(imageUrls: string[]): Promise<void> {
         if (!imageUrls || imageUrls.length === 0) {
-            this.log("[IMG] 无主图需要上传");
-            return 0;
+            this.log("[IMG] no main images to upload")
+            return
         }
 
-        // 取前 8 张（按需上传，不再区分主/副）
-        const MAX_TOTAL = 8;
-        const urls = imageUrls.slice(0, MAX_TOTAL);
+        const imgs = imageUrls.slice(0, 9)
+        this.log("[IMG] upload main images count =", imgs.length)
 
-        // 打开素材库弹窗（主图入口）
-        if (!await this.openMaterialModal()) {
-            this.warn("[IMG] 无法打开素材库");
-            return 0;
+        const container = document.querySelector('.upload-contain') as HTMLElement | null
+        if (!container) {
+            this.warn("[IMG] upload container (.upload-contain) not found")
+            return
         }
 
-        // 逐张上传图片到素材库
-        let uploadedCount = 0;
-        for (let i = 0; i < urls.length; i++) {
-            const success = await this.uploadSingleImageToMaterial(urls[i], i);
-            if (success) uploadedCount++;
-            await sleep(300);
+        const slots = Array.from(container.querySelectorAll('.image-upload')).slice(0, imgs.length)
+        if (!slots.length) {
+            this.warn("[IMG] upload slots (.image-upload) not found")
+            return
         }
 
-        this.log(`[IMG] 主图上传完成: ${uploadedCount}/${urls.length} 张`);
-
-        if (uploadedCount === 0) {
-            await this.closeModal();
-            return 0;
+        const pickVisibleInput = (): HTMLInputElement | null => {
+            const pick = (nodes: NodeListOf<Element>) =>
+                Array.from(nodes).find(el => (el as HTMLElement).offsetParent !== null) as HTMLInputElement | undefined
+            return pick(container.querySelectorAll('input[type=\"file\"]')) ||
+                pick(document.querySelectorAll('input[type=\"file\"]')) ||
+                null
         }
 
-        // 选择第一页前 8 张（新上传默认在前面）
-        const selectCount = Math.min(uploadedCount, 8);
-        const selected = await this.selectImagesInRange(0, selectCount, false);
-        await this.clickConfirmButton();
+        for (let i = 0; i < slots.length; i++) {
+            const url = imgs[i]
+            if (!url) continue
 
-        // 记录数量
-        this._uploadedImageCount = uploadedCount;
-        this.log(`[IMG] === 主图上传结束: ${selected} 张已选 ===`);
-        return selected;
-    },
+            try {
+                const box = slots[i].querySelector('.image-box') as HTMLElement | null
+                box?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                box?.click()
+                await sleep(300)
 
-    // 打开富文本详情图上传弹窗（UEditor 的单图上传）
-    async openDetailUploadModal(): Promise<HTMLElement | null> {
-        const btns: HTMLElement[] = [
-            document.querySelector(".edui-for-simpleuploadgoodsdetail .edui-button-body") as HTMLElement,
-            document.querySelector("#edui154_body") as HTMLElement,
-            document.querySelector(".edui-for-simpleuploadgoodsdetail") as HTMLElement,
-        ].filter(Boolean) as HTMLElement[];
+                let uploadInput: HTMLInputElement | null = null
+                for (let retry = 0; retry < 6; retry++) {
+                    uploadInput = pickVisibleInput()
+                    if (uploadInput) break
+                    await sleep(200)
+                }
+                if (!uploadInput) {
+                    this.warn(`[IMG] upload input not found for index ${i + 1}`)
+                    continue
+                }
 
-        if (!btns.length) {
-            this.warn("[DETAIL_IMG] 未找到富文本上传按钮");
-            return null;
-        }
+                this.log(`[IMG] uploading main image ${i + 1} ...`)
+                const file = await this.urlToFile(url, `zcy_main_${Date.now()}_${i}.jpg`)
+                const dt = new DataTransfer()
+                dt.items.add(file)
+                uploadInput.files = dt.files
+                uploadInput.dispatchEvent(new Event('change', { bubbles: true }))
 
-        btns[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        this.log("[DETAIL_IMG] 已点击富文本上传按钮，等待弹窗...");
-
-        for (let i = 0; i < 50; i++) {
-            const modal = document.querySelector(".doraemon-modal") as HTMLElement | null;
-            if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
-                await sleep(300);
-                return modal;
+                await sleep(i === 0 ? 1500 : 800)
+                this.log(`[IMG] main image ${i + 1} done`)
+            } catch (e) {
+                this.warn(`[IMG] main image upload failed (${i + 1})`, e)
             }
-            await sleep(100);
         }
 
-        this.warn("[DETAIL_IMG] 弹窗等待超时");
-        return null;
-    },
+        this.log("[IMG] main images upload finished")
+    }
 
-    // ========== 详情图上传到富文本（上传剩余 7 张）==========
-    async uploadDetailImages(imageUrls: string[], skipCount = 0): Promise<number> {
-        this.log("[DETAIL_IMG] 开始上传详情图...");
-
-        const detailUrls = imageUrls.slice(skipCount, skipCount + 7);
-        if (!detailUrls.length) {
-            this.log("[DETAIL_IMG] 无详情图需要上传");
-            return 0;
+    // 上传详情图（若页面无独立详情图位，可由调用方填充富文本）
+        // 上传详情图（若页面无独立详情图位，可由调用方填充富文本）
+    async uploadDetailImages(imageUrls: string[]): Promise<void> {
+        if (!imageUrls || imageUrls.length === 0) {
+            this.log("[IMG] 无详情图需要上传")
+            return
         }
 
-        const modal = await this.openDetailUploadModal();
-        if (!modal) return 0;
+        const maxImages = 15
+        const urls = imageUrls.slice(0, maxImages)
+        this.log(`[IMG] 开始上传详情图... ${urls.length} 张（最多${maxImages} 张）`)
 
-        // 文件 input
-        let input: HTMLInputElement | null = null;
-        for (let r = 0; r < 30; r++) {
-            input = modal.querySelector("#goodsDetail-picture, input[type='file']") as HTMLInputElement | null;
-            if (input) break;
-            await sleep(100);
-        }
-        if (!input) {
-            this.warn("[DETAIL_IMG] 未找到上传 input");
-            return 0;
-        }
+        const selectors = [
+            '.detail-image-upload .el-upload',
+            '.goods-detail-upload .el-upload',
+            '[class*=\"detail-image\"] .el-upload',
+            '[class*=\"detailImage\"] .el-upload',
+            '.product-detail-images .el-upload'
+        ]
 
-        // 上传前的图片数量
-        const beforeCount = modal.querySelectorAll(
-            ".img-border .item-img, .material-img-item, .img-wrapper, .doraemon-image-card"
-        ).length;
-
-        // 逐张上传
-        for (let i = 0; i < detailUrls.length; i++) {
-            const file = await this.urlToFile(detailUrls[i], `detail_${i + 1}.jpg`);
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            input.files = dt.files;
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-            this.log(`[DETAIL_IMG] 已注入第 ${i + 1} 张`);
-            await sleep(500);
+        let uploadArea: Element | null = null
+        for (const sel of selectors) {
+            uploadArea = document.querySelector(sel)
+            if (uploadArea) break
         }
 
-        // 等待素材库数量增长
-        for (let w = 0; w < 20; w++) {
-            const count = modal.querySelectorAll(
-                ".img-border .item-img, .material-img-item, .img-wrapper, .doraemon-image-card"
-            ).length;
-            if (count >= beforeCount + detailUrls.length) break;
-            await sleep(300);
+        if (!uploadArea) {
+            this.warn("未找到详情图上传区域")
+            return
         }
 
-        // 选择最新上传的 7 张（尾部优先）
-        const selected = await this.selectImagesInRange(0, detailUrls.length, true);
-        await this.clickConfirmButton();
+        for (let i = 0; i < urls.length; i++) {
+            try {
+                const file = await this.urlToFile(urls[i], `detail_${i}.jpg`)
+                await this.uploadFileToZCY(uploadArea.closest('.el-upload') || uploadArea, file)
+                await sleep(800)
+                this.log(`[IMG] 详情图上传 ${i + 1}`)
+            } catch (e) {
+                this.warn("详情图上传失败", i, e)
+            }
+        }
 
-        this.log(`[DETAIL_IMG] 详情图上传并选择完成: ${selected}/${detailUrls.length}`);
-        return selected;
-    },
+        this.log("[IMG] 详情图上传完成")
+    }
 
-    // ========== 一键上传+选择（统一入口）==========
-    async uploadAllImages(allImageUrls: string[]): Promise<{ mainCount: number; detailCount: number }> {
-        this.log("[IMG] ==========================================");
-        this.log("[IMG]   开始一键上传图片（全部经主图入口，最多8张）");
-        this.log("[IMG] ==========================================");
-        this.log("[IMG] 总图片数:", allImageUrls.length);
 
-        const mainCount = await this.uploadMainImages(allImageUrls);
-        const detailCount = await this.uploadDetailImages(allImageUrls, mainCount);
-
-        this.log("[IMG] ==========================================");
-        this.log(`[IMG]   完成! 主图入口上传并选择: ${mainCount}`);
-        this.log("[IMG] ==========================================");
-
-        return { mainCount, detailCount };
-    },
-
-    // ===================== 7. SKU 填写模块（完整版） =====================
+    // ===================== 7. SKU 填写模块// ===================== 7. SKU 填写模块（完整版） =====================
 
     // 填写 SKU 规格组
-    async fillSkuSpecs(specGroups: Array<{ name: string; values: string[] }>): Promise<void> {
-        this.log("[SKU] 开始填写 SKU 规格...", specGroups.length, "组")
-        for (const group of specGroups) {
-            const groupBtn = document.querySelector('.add-sku-group-btn, [class*="add-spec"], button:contains("添加规格")') as HTMLElement
-            if (groupBtn) {
-                groupBtn.click()
-                await sleep(500)
-            }
-            const groupInput = document.querySelector('.sku-group-name input, .spec-name input') as HTMLInputElement
-            if (groupInput) {
-                groupInput.value = group.name
-                groupInput.dispatchEvent(new Event("input", { bubbles: true }))
-            }
-            for (const val of group.values) {
-                const valBtn = document.querySelector('.add-sku-value-btn, [class*="add-value"]') as HTMLElement
-                if (valBtn) {
-                    valBtn.click()
-                    await sleep(300)
-                }
-                const inputs = document.querySelectorAll('.sku-value-row input, .spec-value input')
-                const input = inputs[inputs.length - 1] as HTMLInputElement
-                if (input) {
-                    input.value = val
-                    input.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-            }
-            await sleep(300)
+    async fillSkuSpecs(specGroups: Array<{ name: string; values: string[] }>): Promise < void> {
+    this.log("🧩 开始填写 SKU 规格...", specGroups.length, "组")
+
+        for(const group of specGroups) {
+        // 点击添加规格组按钮
+        const groupBtn = document.querySelector('.add-sku-group-btn, [class*="add-spec"], button:contains("添加规格")') as HTMLElement
+        if (groupBtn) {
+            groupBtn.click()
+            await sleep(500)
         }
-        this.log("[SKU] 规格填写完成")
-    },
+
+        // 填写规格名称
+        const groupInput = document.querySelector('.sku-group-name input, .spec-name input') as HTMLInputElement
+        if (groupInput) {
+            groupInput.value = group.name
+            groupInput.dispatchEvent(new Event("input", { bubbles: true }))
+        }
+
+        // 添加规格值
+        for (const val of group.values) {
+            const valBtn = document.querySelector('.add-sku-value-btn, [class*="add-value"]') as HTMLElement
+            if (valBtn) {
+                valBtn.click()
+                await sleep(300)
+            }
+
+            const inputs = document.querySelectorAll('.sku-value-row input, .spec-value input')
+            const input = inputs[inputs.length - 1] as HTMLInputElement
+            if (input) {
+                input.value = val
+                input.dispatchEvent(new Event("input", { bubbles: true }))
+            }
+        }
+
+        await sleep(300)
+    }
+
+        this.log("✅ SKU 规格填写完成")
+},
 
     // 填写 SKU 价格/库存/编码
-    async fillSKUData(skuList: Array<{ code?: string; stock?: number; price?: number }>): Promise<void> {
+    async fillSKUData(skuList: Array<{ code?: string; stock?: number; price?: number }>): Promise < void> {
         this.log("🧩 开始填写 SKU 数据...", skuList.length, "个")
 
         const table = await this.waitForAppear(".sku-table, .el-table, [class*='sku']")
-        if (!table) {
+        if(!table) {
             this.warn("未找到 SKU 表格")
             return
         }
 
         const rows = [...table.querySelectorAll(".el-table__row, tr, .sku-row")]
 
-        for (let i = 0; i < rows.length && i < skuList.length; i++) {
-            const rowEl = rows[i]
-            const sku = skuList[i]
-            if (!sku) continue
+        for(let i = 0; i <rows.length && i < skuList.length; i++) {
+    const rowEl = rows[i]
+    const sku = skuList[i]
+    if (!sku) continue
 
-            const inputs = rowEl.querySelectorAll("input")
+    const inputs = rowEl.querySelectorAll("input")
 
-            // 根据 placeholder 或位置填写
-            inputs.forEach((inp: HTMLInputElement) => {
-                const placeholder = inp.placeholder?.toLowerCase() || ''
+    // 根据 placeholder 或位置填写
+    inputs.forEach((inp: HTMLInputElement) => {
+        const placeholder = inp.placeholder?.toLowerCase() || ''
 
-                if ((placeholder.includes('价格') || placeholder.includes('price')) && sku.price !== undefined) {
-                    inp.value = String(sku.price)
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-                else if ((placeholder.includes('库存') || placeholder.includes('stock')) && sku.stock !== undefined) {
-                    inp.value = String(sku.stock)
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-                else if ((placeholder.includes('sku') || placeholder.includes('编码') || placeholder.includes('code')) && sku.code) {
-                    inp.value = sku.code
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-            })
-
-            await sleep(200)
+        if ((placeholder.includes('价格') || placeholder.includes('price')) && sku.price !== undefined) {
+            inp.value = String(sku.price)
+            inp.dispatchEvent(new Event("input", { bubbles: true }))
         }
+        else if ((placeholder.includes('库存') || placeholder.includes('stock')) && sku.stock !== undefined) {
+            inp.value = String(sku.stock)
+            inp.dispatchEvent(new Event("input", { bubbles: true }))
+        }
+        else if ((placeholder.includes('sku') || placeholder.includes('编码') || placeholder.includes('code')) && sku.code) {
+            inp.value = sku.code
+            inp.dispatchEvent(new Event("input", { bubbles: true }))
+        }
+    })
 
-        this.log("✅ SKU 数据填写完成")
+    await sleep(200)
+}
+
+this.log("✅ SKU 数据填写完成")
     },
+// ===================== 8. 智能产地选择器 v3.0 =====================
 
-    // 上传 SKU 规格图
-    async uploadSKUImages(skuImages: Record<string, string>): Promise<void> {
-        if (!skuImages || Object.keys(skuImages).length === 0) {
-            this.log("[SKU-IMG] 无 SKU 图片需要上传");
-            return;
-        }
+// 获取目标产地信息（使用统一的品牌企业库）
+getOrigin(scraped: any): { province: string; city: string; district: string } {
+    // 1. 优先：采集数据含产地字段
+    if (scraped.origin && typeof scraped.origin === 'object') return scraped.origin;
 
-        this.log("[SKU-IMG] 开始上传 SKU 图片...", Object.keys(skuImages).length);
+    // 2. 从统一的品牌企业库获取地址
+    const brand = scraped.brand || "";
+    const brandInfo = getBrandCompanyInfo(brand);
+    if (brandInfo) {
+        this.log(`🌍 使用品牌库产地：${brand} -> ${brandInfo.province}/${brandInfo.city}/${brandInfo.district}`)
+        return {
+            province: brandInfo.province,
+            city: brandInfo.city,
+            district: brandInfo.district
+        };
+    }
 
-        const skuRows = document.querySelectorAll(
-            '.sku-spec-row, .spec-option-row, [class*="sku-item"], [class*="spec-item"]'
-        );
+    // 3. 标题推断
+    const title = scraped.title || "";
+    if (title.includes("深圳")) return { province: "广东省", city: "深圳市", district: "宝安区" };
+    if (title.includes("杭州")) return { province: "浙江省", city: "杭州市", district: "滨江区" };
+    if (title.includes("上海")) return { province: "上海市", city: "上海市", district: "浦东新区" };
+    if (title.includes("北京")) return { province: "北京市", city: "北京市", district: "海淀区" };
+    if (title.includes("广州")) return { province: "广东省", city: "广州市", district: "天河区" };
 
-        for (const [specValue, imageUrl] of Object.entries(skuImages)) {
-            if (!imageUrl) continue;
-
-            try {
-                let targetRow: Element | null = null;
-                for (const row of skuRows) {
-                    const rowText = (row as HTMLElement).innerText || "";
-                    if (rowText.includes(specValue)) {
-                        targetRow = row;
-                        break;
-                    }
-                }
-
-                if (!targetRow) {
-                    this.log(`[SKU-IMG] 未找到规格 "${specValue}" 的行，跳过`);
-                    continue;
-                }
-
-                const input = targetRow.querySelector(
-                    'input[type="file"], .el-upload input[type="file"], [class*="upload"] input[type="file"]'
-                ) as HTMLInputElement | null;
-
-                if (!input) {
-                    this.log(`[SKU-IMG] 规格 "${specValue}" 无 input 上传区域，跳过`);
-                    continue;
-                }
-
-                const file = await this.urlToFile(imageUrl, `sku_${specValue}_${Date.now()}.jpg`);
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                input.files = dt.files;
-                input.dispatchEvent(new Event("change", { bubbles: true }));
-
-                this.log(`[SKU-IMG] 规格 "${specValue}" 上传完成`);
-
-                await sleep(600);
-            } catch (e) {
-                this.warn(`[SKU-IMG] 规格 "${specValue}" 上传失败`, e);
-            }
-        }
-
-        this.log("[SKU-IMG] SKU 图片上传完成");
-    },
-
-    // ===================== 8. 智能产地选择器 v3.0 =====================
-
-    // 获取目标产地信息（使用统一的品牌企业库）
-    getOrigin(scraped: any): { province: string; city: string; district: string } {
-        // 1. 优先：采集数据含产地字段
-        if (scraped.origin && typeof scraped.origin === 'object') return scraped.origin;
-
-        // 2. 从统一的品牌企业库获取地址
-        const brand = scraped.brand || "";
-        const brandInfo = getBrandCompanyInfo(brand);
-        if (brandInfo) {
-            this.log(`🌍 使用品牌库产地：${brand} -> ${brandInfo.province}/${brandInfo.city}/${brandInfo.district}`)
-            return {
-                province: brandInfo.province,
-                city: brandInfo.city,
-                district: brandInfo.district
-            };
-        }
-
-        // 3. 标题推断
-        const title = scraped.title || "";
-        if (title.includes("深圳")) return { province: "广东省", city: "深圳市", district: "宝安区" };
-        if (title.includes("杭州")) return { province: "浙江省", city: "杭州市", district: "滨江区" };
-        if (title.includes("上海")) return { province: "上海市", city: "上海市", district: "浦东新区" };
-        if (title.includes("北京")) return { province: "北京市", city: "北京市", district: "海淀区" };
-        if (title.includes("广州")) return { province: "广东省", city: "广州市", district: "天河区" };
-
-        // 4. 最终兜底（安全地址）
-        this.log(`🌍 使用兜底产地：浙江省/宁波市/镇海区`)
-        return { province: "浙江省", city: "宁波市", district: "镇海区" };
-    },
+    // 4. 最终兜底（安全地址）
+    this.log(`🌍 使用兜底产地：浙江省/宁波市/镇海区`)
+    return { province: "浙江省", city: "宁波市", district: "镇海区" };
+},
 
     // 查找并点击级联菜单节点
-    async clickCascaderNode(text: string): Promise<boolean> {
-        // 使用 XPath 查找包含文本的菜单项，政采云的级联菜单项通常在 li 中
-        const xpath = `//li[contains(@class,'doraemon-cascader-menu-item') and contains(., '${text}')]`;
+    async clickCascaderNode(text: string): Promise < boolean > {
+    // 使用 XPath 查找包含文本的菜单项，政采云的级联菜单项通常在 li 中
+    const xpath = `//li[contains(@class,'doraemon-cascader-menu-item') and contains(., '${text}')]`;
 
-        // 尝试多次查找，因为菜单加载有动画延迟
-        for (let i = 0; i < 10; i++) {
-            const el = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
-            if (el && el.offsetParent !== null) { // 确保可见
-                el.click();
-                this.log(`🖱️ 点击级联菜单: ${text}`);
-                await sleep(200);
-                return true;
-            }
-            await sleep(100);
-        }
+    // 尝试多次查找，因为菜单加载有动画延迟
+    for(let i = 0; i < 10; i++) {
+    const el = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
+    if (el && el.offsetParent !== null) { // 确保可见
+        el.click();
+        this.log(`🖱️ 点击级联菜单: ${text}`);
+        await sleep(200);
+        return true;
+    }
+    await sleep(100);
+}
 
-        this.warn(`[Origin Selector] 未找到或无法点击节点: ${text}`);
-        return false;
+this.warn(`[Origin Selector] 未找到或无法点击节点: ${text}`);
+return false;
     },
 
     // 执行产地选择
-    async fillOrigin(scraped: any): Promise<void> {
-        this.log("🌍 开始智能填写产地/制造商区域...");
+    async fillOrigin(scraped: any): Promise < void> {
+    this.log("🌍 开始智能填写产地/制造商区域...");
 
-        // 1. 找到输入框：通常在 "制造商所在区域" 行
-        // 我们查找 class 包含 cascader 的输入框，或者根据 label 查找
-        let triggerInput: HTMLElement | null = null;
+    // 1. 找到输入框：通常在 "制造商所在区域" 行
+    // 我们查找 class 包含 cascader 的输入框，或者根据 label 查找
+    let triggerInput: HTMLElement | null = null;
 
-        const rows = document.querySelectorAll('.el-form-item, .doraemon-form-item, .sku-row');
-        for (const row of rows) {
-            const label = (row as HTMLElement).innerText;
-            if (label.includes("制造商所在区域") || (label.includes("产地") && row.querySelector('.doraemon-cascader-picker'))) {
-                triggerInput = row.querySelector('.doraemon-cascader-picker input, .el-cascader input') as HTMLElement;
-                if (triggerInput) break;
-            }
+    const rows = document.querySelectorAll('.el-form-item, .doraemon-form-item, .sku-row');
+    for(const row of rows) {
+        const label = (row as HTMLElement).innerText;
+        if (label.includes("制造商所在区域") || (label.includes("产地") && row.querySelector('.doraemon-cascader-picker'))) {
+            triggerInput = row.querySelector('.doraemon-cascader-picker input, .el-cascader input') as HTMLElement;
+            if (triggerInput) break;
         }
+    }
 
-        if (!triggerInput) {
-            triggerInput = document.querySelector('.doraemon-cascader-picker input') as HTMLElement; // 尝试盲找第一个
-        }
+        if(!triggerInput) {
+        triggerInput = document.querySelector('.doraemon-cascader-picker input') as HTMLElement; // 尝试盲找第一个
+    }
 
-        if (!triggerInput) {
-            this.warn("未找到产地选择器输入框");
-            return;
-        }
+        if(!triggerInput) {
+        this.warn("未找到产地选择器输入框");
+        return;
+    }
 
         // 2. 获取目标地址
         const origin = this.getOrigin(scraped);
-        this.log(`🎯 目标产地: ${origin.province} / ${origin.city} / ${origin.district}`);
+    this.log(`🎯 目标产地: ${origin.province} / ${origin.city} / ${origin.district}`);
 
-        // 3. 点击输入框打开下拉
-        triggerInput.click();
-        await sleep(500);
+    // 3. 点击输入框打开下拉
+    triggerInput.click();
+    await sleep(500);
 
         // 4. 依次点击 省 -> 市 -> 区
-        if (await this.clickCascaderNode(origin.province)) {
-            await sleep(300); // 等待下一级加载
-            if (await this.clickCascaderNode(origin.city)) {
-                await sleep(300);
-                await this.clickCascaderNode(origin.district);
-            }
-        }
-
-        // 点击页面空白处收起菜单（如果没自动收起）
-        document.body.click();
-        this.log("✅ 智能产地填写完成");
+        if(await this.clickCascaderNode(origin.province)) {
+    await sleep(300); // 等待下一级加载
+    if (await this.clickCascaderNode(origin.city)) {
+        await sleep(300);
+        await this.clickCascaderNode(origin.district);
     }
 }
 
-    // 暴露到 window
-    ; (window as any).AutoFillAIEngine = AutoFillAIEngine
+// 点击页面空白处收起菜单（如果没自动收起）
+document.body.click();
+this.log("✅ 智能产地填写完成");
+    }
+}
+
+// 暴露到 window
+; (window as any).AutoFillAIEngine = AutoFillAIEngine
+
