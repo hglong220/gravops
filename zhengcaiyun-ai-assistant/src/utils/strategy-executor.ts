@@ -8,7 +8,7 @@ import CryptoJS from 'crypto-js';
 
 // 策略解密密钥
 const STRATEGY_SECRET = 'gravops-strategy-secret-key-2024';
-const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
 
 // 缓存
 let cachedStrategies: any = null;

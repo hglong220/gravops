@@ -11,7 +11,7 @@ import {
     clickExpandAndWait, rpaConfig as config
 } from './rpa-framework'
 
-const BACKEND_URL = 'http://localhost:3000'
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || ''
 
 // ========== 步骤1: 打开电子卖场弹窗 ==========
 

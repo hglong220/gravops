@@ -1,6 +1,7 @@
 import CryptoJS from 'crypto-js';
 
-const API_BASE_URL = 'http://localhost:3000'; // 本地开发服务器
+// 开发环境使用 localhost，生产环境从环境变量获取
+const API_BASE_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 
 export interface LicenseVerifyResult {
     valid: boolean;
