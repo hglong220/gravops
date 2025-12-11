@@ -1,4 +1,4 @@
-// ===================== AutoFill AI Engine =====================
+﻿// ===================== AutoFill AI Engine =====================
 // 扫描字段 → 生成schema → 调AI/规则引擎 → 按plan自动填写
 
 // 工具函数
@@ -147,7 +147,9 @@ function getBrandCompanyInfo(brand: string): BrandCompanyInfo | null {
 
 // 异步查询品牌企业信息（从后端 API）
 async function fetchBrandCompanyInfo(brand: string): Promise<BrandCompanyInfo | null> {
-    const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
+    const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+
+    if (!BACKEND_URL) return null
 
     try {
         const response = await fetch(`${BACKEND_URL}/api/brand-company?brand=${encodeURIComponent(brand)}`, {
@@ -1016,7 +1018,9 @@ export const AutoFillAIEngine = {
 
     // ===================== 4. 调用后端AI获取填写计划 =====================
     async fetchAIPlan(productInfo: ProductInfo, fields: FieldSchema[]): Promise<FillPlan[] | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+
+        if (!BACKEND_URL) return null
 
         // 只发送必填项给 AI，减少处理量
         const requiredFields = fields.filter(f => f.required)
@@ -1071,7 +1075,9 @@ export const AutoFillAIEngine = {
 
     // ⭐⭐ 增强1: 单字段 AI 推理 ⭐⭐
     async askAIForFieldValue(field: FieldSchema, productInfo: ProductInfo): Promise<string | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+
+        if (!BACKEND_URL) return null
 
         try {
             const response = await fetch(`${BACKEND_URL}/api/field-ai-decide`, {
@@ -1166,25 +1172,73 @@ export const AutoFillAIEngine = {
 
     // ===================== 6. 图片上传模块（完整版） =====================
 
+    // 缩略图 URL → 原图 URL（京东/天猫/苏宁/政采云）
+    normalizeImageUrl(url: string): string {
+        if (!url) return url;
+
+        let u = url.split('?')[0];
+
+        // ===== 京东 JD =====
+        if (u.includes('360buyimg.com') || u.includes('jdcdn.com')) {
+            u = u.replace(/s\d+x\d+_/g, '')
+                .replace(/!\d{2,}x\d{2,}\w*/g, '')
+                .replace(/n\d+\/jfs/g, 'jfs')
+                .replace(/\/mobile\//g, '/');
+        }
+
+        // ===== 天猫 / 淘宝 =====
+        if (u.includes('alicdn.com')) {
+            u = u.replace(/_(\d+x\d+).*\.jpg$/, '.jpg')
+                .replace(/_(\d+x\d+).*\.png$/, '.png')
+                .replace(/\.(jpg|png)_\d+x\d+q\d+\.jpg$/, '.$1');
+        }
+
+        // ===== 苏宁 =====
+        if (u.includes('suning') || u.includes('suningcdn')) {
+            u = u.replace(/_\d+w_\d+h\.jpg$/, '.jpg')
+                .replace(/@.*$/, '');
+        }
+
+        // ===== 政采云（pcpubliccms 缩略图）=====
+        if (u.includes('pcpubliccms')) {
+            u = u.replace(/s\d+x\d+_/g, '');
+        }
+
+        // ===== doraemon 静态资源 =====
+        if (u.includes('doraemon')) {
+            u = u.replace(/_\d+x\d+/, '');
+        }
+
+        return u;
+    },
+
     // URL 转 File 对象（支持代理下载）
     async urlToFile(url: string, filename = "image.jpg"): Promise<File> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
 
-        this.log("📥 下载图片:", url.substring(0, 80) + "...")
+        // 先转换为原图 URL
+        const normalizedUrl = this.normalizeImageUrl(url);
+        if (normalizedUrl !== url) {
+            this.log("🔄 缩略图转原图:", url.substring(0, 50), "→", normalizedUrl.substring(0, 50));
+        }
+
+        this.log("📥 下载图片:", normalizedUrl.substring(0, 80) + "...")
 
         try {
             // 方法1：直接下载（适用于无防盗链的图片）
-            let res = await fetch(url, {
+            let res = await fetch(normalizedUrl, {
                 mode: 'cors',
                 headers: {
-                    'Referer': url  // 设置 referer 绕过部分防盗链
+                    'Referer': normalizedUrl  // 设置 referer 绕过部分防盗链
                 }
             })
 
             if (res.ok) {
                 const blob = await res.blob()
                 this.log("✅ 直接下载成功，大小:", blob.size)
-                return new File([blob], filename, { type: blob.type || 'image/jpeg' })
+                const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+                // 确保图片至少 800x800（政采云要求）
+                return await this.resizeImageToMinSize(file)
             }
         } catch (e) {
             this.log("直接下载失败，尝试代理...")
@@ -1192,11 +1246,12 @@ export const AutoFillAIEngine = {
 
         try {
             // 方法2：通过后端代理下载（使用 POST 返回 base64）
+            if (!BACKEND_URL) throw new Error("无后端代理，跳过")
             const proxyUrl = `${BACKEND_URL}/api/image-proxy`
             const res = await fetch(proxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url })
+                body: JSON.stringify({ url: normalizedUrl })
             })
 
             if (res.ok) {
@@ -1205,7 +1260,9 @@ export const AutoFillAIEngine = {
                 if (data.data) {
                     const blob = this.base64ToBlob(data.data)
                     this.log("✅ 代理下载成功，大小:", blob.size)
-                    return new File([blob], filename, { type: blob.type || 'image/jpeg' })
+                    const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+                    // 确保图片至少 800x800（政采云要求）
+                    return await this.resizeImageToMinSize(file)
                 }
             }
         } catch (e) {
@@ -1241,6 +1298,73 @@ export const AutoFillAIEngine = {
         return new Blob([u8arr], { type: mime })
     },
 
+    // 确保图片至少是 800x800（政采云要求）
+    // 同时强制重新编码为纯 JPEG 格式，解决政采云"无法解析该文件"问题
+    async resizeImageToMinSize(file: File, minWidth = 800, minHeight = 800): Promise<File> {
+        return new Promise((resolve) => {
+            const img = new Image()
+            const url = URL.createObjectURL(file)
+
+            img.onload = () => {
+                URL.revokeObjectURL(url)
+
+                const { width, height } = img
+
+                // 计算需要放大的比例（保持宽高比）
+                let newWidth = width
+                let newHeight = height
+
+                if (width < minWidth || height < minHeight) {
+                    const scaleX = minWidth / width
+                    const scaleY = minHeight / height
+                    const scale = Math.max(scaleX, scaleY)
+                    newWidth = Math.ceil(width * scale)
+                    newHeight = Math.ceil(height * scale)
+                    this.log(`📐 图片放大: ${width}x${height} → ${newWidth}x${newHeight}`)
+                } else {
+                    // 即使尺寸达标，也强制重新编码（解决格式问题）
+                    this.log(`🔄 图片重新编码: ${width}x${height} (强制转换为标准JPEG)`)
+                }
+
+                // 使用 canvas 重新编码图片（关键！）
+                const canvas = document.createElement('canvas')
+                canvas.width = newWidth
+                canvas.height = newHeight
+
+                const ctx = canvas.getContext('2d')!
+                // 使用高质量缩放
+                ctx.imageSmoothingEnabled = true
+                ctx.imageSmoothingQuality = 'high'
+                // 填充白色背景（防止透明PNG问题）
+                ctx.fillStyle = '#FFFFFF'
+                ctx.fillRect(0, 0, newWidth, newHeight)
+                ctx.drawImage(img, 0, 0, newWidth, newHeight)
+
+                // 转换为纯 JPEG（政采云最可靠的格式）
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        // 确保文件名以 .jpg 结尾
+                        const fileName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+                        const newFile = new File([blob], fileName, { type: 'image/jpeg' })
+                        this.log(`✅ 转换完成: ${newFile.size} bytes`)
+                        resolve(newFile)
+                    } else {
+                        this.warn('图片转换失败，使用原图')
+                        resolve(file)
+                    }
+                }, 'image/jpeg', 0.92)  // 92% 质量
+            }
+
+            img.onerror = () => {
+                URL.revokeObjectURL(url)
+                this.warn('图片加载失败，使用原图')
+                resolve(file)
+            }
+
+            img.src = url
+        })
+    },
+
     // 上传图片到政采云（万能 uploader）
     async uploadFileToZCY(uploadRow: Element, file: File): Promise<boolean> {
         const input = uploadRow.querySelector("input[type='file']") as HTMLInputElement
@@ -1257,155 +1381,210 @@ export const AutoFillAIEngine = {
         return true
     },
 
-    // 上传主图（支持 URL 数组）- 简化版
+    // 上传主图（政采云新版：+ → 文件夹 → 上传文件 → 确定）
     async uploadMainImages(imageUrls: string[]): Promise<void> {
-        if (!imageUrls || imageUrls.length === 0) {
-            this.log("📸 无主图需要上传")
-            return
+        if (!imageUrls || imageUrls.length === 0) return;
+
+        const imgs = imageUrls.slice(0, 9);
+        this.log("[IMG] main images =", imgs.length);
+
+        // 等 upload-contain 出现
+        let container: HTMLElement | null = null;
+        for (let t = 0; t < 75; t++) {
+            container = document.querySelector('.upload-contain') as HTMLElement | null;
+            if (container && container.querySelectorAll('.image-upload').length > 0) break;
+            await sleep(200);
         }
+        if (!container) return;
 
-        this.log("📸 开始上传主图...", imageUrls.length, "张")
+        const slots = Array.from(container.querySelectorAll('.image-upload'));
 
-        // 等待上传区域出现
-        let uploadInput: HTMLInputElement | null = null
+        for (let i = 0; i < Math.min(imgs.length, slots.length); i++) {
+            const url = imgs[i];
+            const slot = slots[i] as HTMLElement;
+            if (!url) continue;
 
-        for (let retry = 0; retry < 10; retry++) {
-            // 直接找所有 file input
-            const allInputs = document.querySelectorAll('input[type="file"]')
-            this.log(`找到 ${allInputs.length} 个 file input`)
+            try {
+                // STEP 1: 点 +
+                const plus = slot.querySelector('.image-plus') as HTMLElement | null;
+                if (!plus) continue;
 
-            for (const input of allInputs) {
-                if ((input as HTMLInputElement).offsetParent !== null) {
-                    uploadInput = input as HTMLInputElement
-                    break
+                plus.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                await sleep(80);
+                plus.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                this.log(`[IMG] click + (${i + 1})`);
+
+                // STEP 2: 等弹窗
+                let modal: HTMLElement | null = null;
+                for (let r = 0; r < 50; r++) {
+                    modal = document.querySelector('.doraemon-modal') as HTMLElement | null;
+                    if (modal) break;
+                    await sleep(100);
                 }
-            }
+                if (!modal) continue;
 
-            if (uploadInput) break
-            await sleep(500)
-        }
+                // STEP 3: 进入第一个文件夹（必须）
+                await sleep(300);
+                const folder = modal.querySelector('.folder-title') as HTMLElement | null;
+                if (folder) {
+                    folder.click();
+                    await sleep(300);
+                }
 
-        if (!uploadInput) {
-            this.warn("❌ 未找到图片上传区域")
-            return
-        }
+                // STEP 4: 找真正可用的 input[type=file]
+                let inp: HTMLInputElement | null = null;
+                for (let r = 0; r < 50; r++) {
+                    inp = modal.querySelector('input[type="file"]') as HTMLInputElement | null;
+                    if (inp) break;
+                    await sleep(100);
+                }
+                if (!inp) {
+                    this.warn("[IMG] no file input");
+                    // 关闭弹窗
+                    modal.querySelector('.doraemon-modal-close')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    continue;
+                }
 
-        this.log("✅ 找到上传区域，开始上传...")
+                // STEP 5: URL → Blob → File → 注入输入框
+                const file = await this.urlToFile(url, `main_${i}.jpg`);
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                inp.files = dt.files;
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
 
-        // 逐张上传（政采云通常每次只能上传一张）
-        for (let i = 0; i < imageUrls.length; i++) {
-            try {
-                const url = imageUrls[i]
-                if (!url) continue
+                this.log(`[IMG] upload file ${i + 1}`);
 
-                this.log(`📤 下载并上传第 ${i + 1} 张图片...`)
-                const file = await this.urlToFile(url, `zcy_main_${Date.now()}_${i}.jpg`)
+                // STEP 6: 等待政采云处理上传（增加等待时间，检测上传完成）
+                // 政采云需要时间处理图片，太快会导致"无法解析该文件"错误
+                let uploadSuccess = false;
+                for (let wait = 0; wait < 30; wait++) {
+                    await sleep(500);
+                    // 检查是否有图片卡片出现（表示上传成功）
+                    const imgCard = modal.querySelector('.item-img, .image-card, .upload-item-img, [class*="uploaded"]') as HTMLElement | null;
+                    // 检查是否有错误提示
+                    const errorTip = document.querySelector('.ant-message-error, .doraemon-message-error') as HTMLElement | null;
 
-                const dt = new DataTransfer()
-                dt.items.add(file)
-                uploadInput.files = dt.files
-                uploadInput.dispatchEvent(new Event('change', { bubbles: true }))
-
-                // 等待上传完成
-                await sleep(1500)
-                this.log(`✅ 第 ${i + 1} 张主图上传完成`)
-            } catch (e) {
-                this.warn(`主图上传失败 (${i + 1}):`, e)
-            }
-        }
-
-        this.log("✅ 主图上传全部完成")
-    },
-
-    // 上传详情图
-    async uploadDetailImages(imageUrls: string[]): Promise<void> {
-        this.log("📝 开始上传详情图...", imageUrls.length, "张")
-
-        const area = document.querySelector('.detail-image-upload .el-upload, .goods-detail-upload .el-upload')
-        if (!area) {
-            this.warn("未找到详情图上传区域")
-            return
-        }
-
-        for (let i = 0; i < imageUrls.length; i++) {
-            try {
-                const file = await this.urlToFile(imageUrls[i], `detail_${i}.jpg`)
-                await this.uploadFileToZCY(area, file)
-                await sleep(800)
-                this.log("✅ 详情图上传:", i + 1)
-            } catch (e) {
-                this.warn("详情图上传失败:", i, e)
-            }
-        }
-
-        this.log("✅ 详情图上传完成")
-    },
-
-    // 上传 SKU 图片（根据 SKU 名称匹配）
-    async uploadSKUImages(skuImagesMap: Record<string, string>): Promise<void> {
-        this.log("🏷 上传 SKU 图片...", Object.keys(skuImagesMap).length, "个")
-
-        const skuRows = [...document.querySelectorAll('.sku-row, .sku-item-row, [class*="sku-item"]')]
-        if (!skuRows.length) {
-            this.warn("找不到 SKU 区域")
-            return
-        }
-
-        for (const row of skuRows) {
-            // 获取 SKU 名称
-            const skuText = (row as HTMLElement).innerText
-
-            // 查找匹配的 SKU 图片
-            for (const [skuName, imageUrl] of Object.entries(skuImagesMap)) {
-                if (skuText.includes(skuName)) {
-                    const uploadArea = row.querySelector('.el-upload, input[type="file"]')
-                    if (!uploadArea) continue
-
-                    try {
-                        const file = await this.urlToFile(imageUrl, `${skuName}.jpg`)
-                        await this.uploadFileToZCY(uploadArea.closest('.el-upload') || row, file)
-                        await sleep(500)
-                        this.log("✅ SKU图片上传:", skuName)
-                    } catch (e) {
-                        this.warn("SKU图片上传失败:", skuName, e)
+                    if (errorTip) {
+                        this.warn(`[IMG] 上传出错 (${i + 1}): ${errorTip.textContent}`);
+                        break;
                     }
-                    break
+
+                    if (imgCard) {
+                        uploadSuccess = true;
+                        this.log(`[IMG] 上传完成确认 (${i + 1})`);
+                        break;
+                    }
                 }
+
+                if (!uploadSuccess) {
+                    this.warn(`[IMG] 上传超时 (${i + 1})`);
+                    // 关闭弹窗，尝试下一张
+                    modal.querySelector('.doraemon-modal-close')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                    await sleep(500);
+                    continue;
+                }
+
+                // STEP 7: 选中刚上传的图片（自动选第一张）
+                await sleep(500);  // 增加等待
+                const imgTile = modal.querySelector('.item-img, .image-card') as HTMLElement | null;
+                if (imgTile) {
+                    imgTile.click();
+                    await sleep(300);
+                }
+
+                // STEP 8: 点击"确定"
+                const btns = modal.querySelectorAll('button, .doraemon-btn');
+                for (const b of btns) {
+                    const t = (b as HTMLElement).innerText || "";
+                    if (t.includes("确定") || t.includes("确认")) {
+                        (b as HTMLElement).click();
+                        break;
+                    }
+                }
+
+                // 等待弹窗关闭
+                await sleep(1000);
+                this.log(`[IMG] finish ${i + 1}`);
+
+            } catch (e) {
+                this.warn(`[IMG] upload error (${i + 1})`, e);
             }
         }
 
-        this.log("✅ SKU 图片上传完成")
+        this.log("[IMG] main done");
+    },
+
+    // 上传详情图（直接 input 上传，无素材库）
+    async uploadDetailImages(imageUrls: string[]): Promise<void> {
+        if (!imageUrls || imageUrls.length === 0) {
+            this.log("[IMG] 无详情图需要上传");
+            return;
+        }
+
+        const maxImages = 15;
+        const urls = imageUrls.slice(0, maxImages);
+        this.log(`[IMG] 上传详情图 ${urls.length} 张`);
+
+        // 找详情图上传区域
+        const selectors = [
+            '.detail-image-upload input[type="file"]',
+            '.goods-detail-upload input[type="file"]',
+            '[class*="detail-image"] input[type="file"]',
+            '[class*="detailImage"] input[type="file"]',
+            '.product-detail-images input[type="file"]'
+        ];
+
+        let input: HTMLInputElement | null = null;
+        for (const sel of selectors) {
+            input = document.querySelector(sel) as HTMLInputElement | null;
+            if (input) break;
+        }
+
+        if (!input) {
+            this.warn("[IMG] 未找到详情图上传 input");
+            return;
+        }
+
+        for (let i = 0; i < urls.length; i++) {
+            try {
+                const file = await this.urlToFile(urls[i], `detail_${i}.jpg`);
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+
+                this.log(`[IMG] 详情图上传 ${i + 1}`);
+                await sleep(800);
+            } catch (e) {
+                this.warn("[IMG] 详情图上传失败", i, e);
+            }
+        }
+
+        this.log("[IMG] 详情图上传完成");
     },
 
     // ===================== 7. SKU 填写模块（完整版） =====================
 
     // 填写 SKU 规格组
     async fillSkuSpecs(specGroups: Array<{ name: string; values: string[] }>): Promise<void> {
-        this.log("🧩 开始填写 SKU 规格...", specGroups.length, "组")
-
+        this.log("[SKU] 开始填写 SKU 规格...", specGroups.length, "组")
         for (const group of specGroups) {
-            // 点击添加规格组按钮
             const groupBtn = document.querySelector('.add-sku-group-btn, [class*="add-spec"], button:contains("添加规格")') as HTMLElement
             if (groupBtn) {
                 groupBtn.click()
                 await sleep(500)
             }
-
-            // 填写规格名称
             const groupInput = document.querySelector('.sku-group-name input, .spec-name input') as HTMLInputElement
             if (groupInput) {
                 groupInput.value = group.name
                 groupInput.dispatchEvent(new Event("input", { bubbles: true }))
             }
-
-            // 添加规格值
             for (const val of group.values) {
                 const valBtn = document.querySelector('.add-sku-value-btn, [class*="add-value"]') as HTMLElement
                 if (valBtn) {
                     valBtn.click()
                     await sleep(300)
                 }
-
                 const inputs = document.querySelectorAll('.sku-value-row input, .spec-value input')
                 const input = inputs[inputs.length - 1] as HTMLInputElement
                 if (input) {
@@ -1413,11 +1592,9 @@ export const AutoFillAIEngine = {
                     input.dispatchEvent(new Event("input", { bubbles: true }))
                 }
             }
-
             await sleep(300)
         }
-
-        this.log("✅ SKU 规格填写完成")
+        this.log("[SKU] 规格填写完成")
     },
 
     // 填写 SKU 价格/库存/编码
@@ -1462,6 +1639,64 @@ export const AutoFillAIEngine = {
 
         this.log("✅ SKU 数据填写完成")
     },
+
+    // 上传 SKU 规格图
+    async uploadSKUImages(skuImages: Record<string, string>): Promise<void> {
+        if (!skuImages || Object.keys(skuImages).length === 0) {
+            this.log("[SKU-IMG] 无 SKU 图片需要上传");
+            return;
+        }
+
+        this.log("[SKU-IMG] 开始上传 SKU 图片...", Object.keys(skuImages).length);
+
+        const skuRows = document.querySelectorAll(
+            '.sku-spec-row, .spec-option-row, [class*="sku-item"], [class*="spec-item"]'
+        );
+
+        for (const [specValue, imageUrl] of Object.entries(skuImages)) {
+            if (!imageUrl) continue;
+
+            try {
+                let targetRow: Element | null = null;
+                for (const row of skuRows) {
+                    const rowText = (row as HTMLElement).innerText || "";
+                    if (rowText.includes(specValue)) {
+                        targetRow = row;
+                        break;
+                    }
+                }
+
+                if (!targetRow) {
+                    this.log(`[SKU-IMG] 未找到规格 "${specValue}" 的行，跳过`);
+                    continue;
+                }
+
+                const input = targetRow.querySelector(
+                    'input[type="file"], .el-upload input[type="file"], [class*="upload"] input[type="file"]'
+                ) as HTMLInputElement | null;
+
+                if (!input) {
+                    this.log(`[SKU-IMG] 规格 "${specValue}" 无 input 上传区域，跳过`);
+                    continue;
+                }
+
+                const file = await this.urlToFile(imageUrl, `sku_${specValue}_${Date.now()}.jpg`);
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+
+                this.log(`[SKU-IMG] 规格 "${specValue}" 上传完成`);
+
+                await sleep(600);
+            } catch (e) {
+                this.warn(`[SKU-IMG] 规格 "${specValue}" 上传失败`, e);
+            }
+        }
+
+        this.log("[SKU-IMG] SKU 图片上传完成");
+    },
+
     // ===================== 8. 智能产地选择器 v3.0 =====================
 
     // 获取目标产地信息（使用统一的品牌企业库）

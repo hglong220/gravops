@@ -863,7 +863,11 @@ async function extractAndCallback(callback: DataReadyCallback) {
 }
 
 export async function pushToBackend(data: ExtractedData): Promise<boolean> {
-    const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
+    const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || ''
+    if (!BACKEND_URL) {
+        console.warn('[ZCY Pro V2] 未配置 BACKEND_URL，跳过推送')
+        return false
+    }
 
     console.log('[ZCY Pro V2] ========== 开始推送 ==========')
 

@@ -49,6 +49,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         handleSyncPermissions(message.permissions);
         sendResponse({ received: true });
         return true;
+    } else if (message.type === 'API_PROXY') {
+        // 代理 API 请求到后端，绕过 Mixed Content 限制
+        // Content Script (HTTPS页面) 无法直接访问 HTTP localhost
+        // 但 Background Script (Service Worker) 可以
+        (async () => {
+            try {
+                const { url, method, headers, body } = message;
+                console.log('[Background] API_PROXY:', method, url);
+
+                const response = await fetch(url, {
+                    method: method || 'GET',
+                    headers: headers || {},
+                    body: body ? JSON.stringify(body) : undefined
+                });
+
+                const contentType = response.headers.get('content-type');
+                let data;
+                if (contentType?.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
+                }
+
+                sendResponse({
+                    ok: response.ok,
+                    status: response.status,
+                    data
+                });
+            } catch (error: any) {
+                console.error('[Background] API_PROXY error:', error);
+                sendResponse({
+                    ok: false,
+                    status: 0,
+                    error: error.message || 'Network error'
+                });
+            }
+        })();
+        return true; // Keep channel open for async response
     }
 });
 
@@ -65,7 +103,8 @@ async function handleSaveProduct(data: any): Promise<any> {
     }
 
     // Call Backend Save API
-    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+    if (!backendUrl) throw new Error('未配置后端地址');
     const apiUrl = `${backendUrl}/api/copy/save`;
 
     const response = await fetch(apiUrl, {
@@ -229,7 +268,8 @@ async function handleSyncPermissions(permissions: any[]) {
     console.log('[Background] Syncing permissions:', permissions.length);
 
     try {
-        const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+        const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+        if (!backendUrl) return;
         await fetch(`${backendUrl}/api/user/permissions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -267,7 +307,8 @@ setInterval(async () => {
 
 async function checkAndRunTask() {
     // 1. Get next task from backend
-    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+    if (!backendUrl) return;
     // Use test user for now as background script auth is tricky
     // In production, we should pass the token
     const response = await fetch(`${backendUrl}/api/copy/tasks/next-batch`);

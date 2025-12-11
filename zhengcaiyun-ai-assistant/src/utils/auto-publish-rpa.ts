@@ -10,9 +10,8 @@
 
 import { getStoredLicense } from './license'
 
-// 开发环境用本地，生产环境用vercel
-const BACKEND_URL = 'http://localhost:3000'
-// const BACKEND_URL = 'https://zhengcaiyun-backend.vercel.app'
+// 从环境变量获取后端地址
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || ''
 
 // ========== ⭐ 新增：类目树数据驱动 ==========
 

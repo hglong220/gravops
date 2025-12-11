@@ -93,7 +93,10 @@ export async function solveCaptcha(params: {
         throw new Error('未找到License Key');
     }
 
-    const response = await fetch('http://localhost:3000/api/captcha/solve', {
+    const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+    if (!BACKEND_URL) throw new Error('未配置后端地址');
+
+    const response = await fetch(`${BACKEND_URL}/api/captcha/solve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

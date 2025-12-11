@@ -1,31 +1,28 @@
 /**
  * Backend Content Script
- * 运行在 localhost:3000 (任务中心页面)
- * 负责监听页面消息并转发给 Background Script
+ * Runs only on the local task center page to bridge messages to background.
  */
 
 import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
+    // Keep a non-empty match to satisfy manifest validation; scoped to local dev server.
     matches: ["http://localhost:3000/*"],
     run_at: "document_end"
 }
 
-// 监听来自任务中心页面的发布触发消息
+// Listen for publish trigger messages from the task center page.
 window.addEventListener('message', (event) => {
-    // 只接受来自同源的消息
     if (event.origin !== window.location.origin) return
 
     if (event.data.type === 'TRIGGER_ZCY_PUBLISH') {
         console.log('[Backend CS] Received publish trigger from page:', event.data.data)
 
-        // 检查 Chrome Extension API 是否可用
         if (typeof chrome === 'undefined' || !chrome.runtime) {
             console.error('[Backend CS] Chrome extension API not available!')
             return
         }
 
-        // 转发给 background script
         chrome.runtime.sendMessage({
             type: 'TRIGGER_PUBLISH',
             productData: event.data.data

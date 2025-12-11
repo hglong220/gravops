@@ -44,13 +44,16 @@ export async function searchProductImages(
     return [];
 }
 
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+
 /**
  * 京东图片搜索（需要后端API支持）
  */
 async function searchJDImages(productName: string): Promise<ProductImage[]> {
     try {
         // 调用后端API
-        const response = await fetch('http://localhost:3000/api/search-images', {
+        if (!BACKEND_URL) return getMockImages('京东', productName);
+        const response = await fetch(`${BACKEND_URL}/api/search-images`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -77,7 +80,8 @@ async function searchJDImages(productName: string): Promise<ProductImage[]> {
  */
 async function searchTaobaoImages(productName: string): Promise<ProductImage[]> {
     try {
-        const response = await fetch('http://localhost:3000/api/search-images', {
+        if (!BACKEND_URL) return getMockImages('淘宝', productName);
+        const response = await fetch(`${BACKEND_URL}/api/search-images`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -103,7 +107,8 @@ async function searchTaobaoImages(productName: string): Promise<ProductImage[]> 
  */
 async function searchTmallImages(productName: string): Promise<ProductImage[]> {
     try {
-        const response = await fetch('http://localhost:3000/api/search-images', {
+        if (!BACKEND_URL) return getMockImages('天猫', productName);
+        const response = await fetch(`${BACKEND_URL}/api/search-images`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -129,7 +134,8 @@ async function searchTmallImages(productName: string): Promise<ProductImage[]> {
  */
 async function searchBaiduImages(productName: string): Promise<ProductImage[]> {
     try {
-        const response = await fetch('http://localhost:3000/api/search-images', {
+        if (!BACKEND_URL) return getMockImages('百度', productName);
+        const response = await fetch(`${BACKEND_URL}/api/search-images`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

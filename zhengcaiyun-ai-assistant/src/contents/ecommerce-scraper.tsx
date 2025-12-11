@@ -151,7 +151,9 @@ const EcommerceScraperWidget = () => {
             }
 
             // 推送到本地 dashboard/tasks
-            await fetch("http://localhost:3000/api/push-tasks", {
+            const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+            if (!BACKEND_URL) throw new Error('未配置后端地址');
+            await fetch(`${BACKEND_URL}/api/push-tasks`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

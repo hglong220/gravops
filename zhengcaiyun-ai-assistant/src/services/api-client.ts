@@ -3,7 +3,7 @@
  * 负责与 Next.js 后端服务通信
  */
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
 
 interface AIAnalysisResult {
     category: string;

@@ -24,7 +24,7 @@ export const config: PlasmoCSConfig = {
 
 const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
 
-console.log("🚀 [ZCY Publisher 旗舰MAX] 已加载")
+console.log("🚀 [ZCY Publisher 旗舰MAX] 已加载, BACKEND_URL =", BACKEND_URL)
 
 // ========== 页面类型检测 ==========
 
@@ -54,13 +54,36 @@ function showError(message: string) {
 
 async function fetchDraft(draftId: string): Promise<any> {
   try {
-    // 正确的 API 路径：/api/copy/drafts/[id]
-    const resp = await fetch(`${BACKEND_URL}/api/copy/drafts/${draftId}`)
-    if (!resp.ok) {
-      console.error('[旗舰MAX] 草稿API返回:', resp.status, resp.statusText)
+    // 通过 Background Script 代理请求，绕过 Mixed Content 限制
+    // 因为 Content Script 运行在 HTTPS 页面，无法直接访问 HTTP localhost
+    const url = `${BACKEND_URL}/api/copy/drafts/${draftId}`
+    console.log('[旗舰MAX] 获取草稿:', url)
+
+    // 使用 chrome.runtime.sendMessage 通过 Background Script 代理请求
+    const response = await new Promise<any>((resolve) => {
+      chrome.runtime.sendMessage(
+        {
+          type: 'API_PROXY',
+          url,
+          method: 'GET',
+          headers: {}
+        },
+        (resp) => {
+          if (chrome.runtime.lastError) {
+            console.error('[旗舰MAX] 代理请求失败:', chrome.runtime.lastError)
+            resolve({ ok: false, error: chrome.runtime.lastError.message })
+          } else {
+            resolve(resp)
+          }
+        }
+      )
+    })
+
+    if (!response.ok) {
+      console.error('[旗舰MAX] 草稿API返回:', response.status, response.error)
       return null
     }
-    return await resp.json()
+    return response.data
   } catch (e) {
     console.error('[旗舰MAX] 获取草稿失败:', e)
     return null

@@ -9,7 +9,7 @@
  * 5. 清理缓存
  */
 
-const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
 
 // ========== 日志工具 ==========
 function log(...args: any[]) {
