@@ -18,6 +18,21 @@ async function sleep(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms))
 }
 
+// UI 状态检测
+function isModalOpen(): boolean {
+    return !!document.querySelector('.doraemon-modal');
+}
+
+async function waitForUIIdle(timeout = 5000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        const detailLock = (window as any)._detailUploading;
+        if (!isModalOpen() && !detailLock) return true;
+        await sleep(120);
+    }
+    return false;
+}
+
 // ===================== 类型定义 =====================
 
 interface FieldSchema {
@@ -147,7 +162,10 @@ function getBrandCompanyInfo(brand: string): BrandCompanyInfo | null {
 
 // 异步查询品牌企业信息（从后端 API）
 async function fetchBrandCompanyInfo(brand: string): Promise<BrandCompanyInfo | null> {
-    const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+    const BACKEND_URL =
+        (window as any).PLASMO_PUBLIC_BACKEND_URL ||
+        localStorage.getItem('BACKEND_URL') ||
+        'http://localhost:3000'
 
     if (!BACKEND_URL) return null
 
@@ -451,8 +469,14 @@ export const AutoFillAIEngine = {
         const brand = productInfo.brand || specs['品牌'] || ''
         const model = productInfo.model || specs['型号'] || specs['商品型号'] || ''
 
-        // 价格计算：市场价 = 采集价格，销售价 = 市场价 × 0.92（下浮8%）
-        const marketPrice = productInfo.price || parseFloat(specs['价格'] || '0')
+        // 价格计算：市场价 = 采集价（或 SKU 价），销售价 = 市场价 × 0.92（下浮 8%）
+        let basePrice =
+            productInfo.price ||
+            parseFloat(specs['价格'] || specs['市场价'] || specs['销售价'] || '0') ||
+            (productInfo as any).skuData?.[0]?.price ||
+            0
+        if (Number.isNaN(basePrice)) basePrice = 0
+        const marketPrice = basePrice > 0 ? Math.round(basePrice * 100) / 100 : 0
         const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.92 * 100) / 100 : 0
 
         return fields.map(f => {
@@ -1111,9 +1135,10 @@ export const AutoFillAIEngine = {
         return null
     },
 
-    // ===================== 5. 主入口 =====================
+    // ===================== 5. 主入口（混合模式） =====================
     async run(productInfo: ProductInfo): Promise<{ success: number; fail: number }> {
         this.log("🚀 AutoFill AI Engine 启动，商品：", productInfo.title)
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
 
         // 1. 扫描字段（使用最终版三轮扫描）
         let fields = await this.scanFields()
@@ -1129,19 +1154,141 @@ export const AutoFillAIEngine = {
             fields = fields.map(f => ({ ...f, required: true }))
         }
 
-        // ⚠️ AI 调用已禁用（太慢），直接使用规则引擎
-        // 如需恢复 AI，取消下面的注释
-        // let plans = await this.fetchAIPlan(productInfo, fields)
-        // if (!plans) plans = this.generatePlan(productInfo, fields)
+        // ========== 混合模式：先查询规则库 ==========
+        let plans: FillPlan[] = []
+        let unmatchedFields: FieldSchema[] = []
 
-        const plans = this.generatePlan(productInfo, fields)
-        this.log("📋 规则引擎生成计划：", plans.filter(p => p.action !== 'skip').length, "个")
+        if (BACKEND_URL) {
+            try {
+                this.log("📚 查询规则库...")
+                const matchResult = await this.matchFieldRules(fields.filter(f => f.required))
+
+                if (matchResult) {
+                    // 从规则库匹配到的字段
+                    for (const result of matchResult.results) {
+                        if (result.matched && result.rule) {
+                            plans.push({
+                                id: result.fieldId,
+                                action: result.rule.action,
+                                value: result.rule.value
+                            })
+                        }
+                    }
+
+                    // 未匹配的字段
+                    unmatchedFields = fields.filter(f =>
+                        matchResult.unmatchedFields.some((u: { id: string }) => u.id === f.id)
+                    )
+
+                    this.log(`📚 规则库匹配: ${matchResult.matched} 个已知, ${matchResult.unmatched} 个未知`)
+                }
+            } catch (e) {
+                this.warn("规则库查询失败，使用本地规则引擎:", e)
+            }
+        }
+
+        // ========== 处理未匹配的字段 ==========
+        if (unmatchedFields.length > 0 && BACKEND_URL) {
+            this.log(`🤖 调用 AI 处理 ${unmatchedFields.length} 个未知字段...`)
+
+            try {
+                // 调用 AI 获取填写计划
+                const aiPlans = await this.fetchAIPlan(productInfo, unmatchedFields)
+
+                if (aiPlans && aiPlans.length > 0) {
+                    // 合并 AI 计划
+                    plans = [...plans, ...aiPlans]
+
+                    // ⭐ 将 AI 生成的规则收录到规则库
+                    await this.saveAIRulesToLibrary(unmatchedFields, aiPlans)
+                }
+            } catch (e) {
+                this.warn("AI 调用失败，使用本地规则引擎:", e)
+            }
+        }
+
+        // ========== 兜底：使用本地规则引擎处理剩余字段 ==========
+        const coveredIds = new Set(plans.map(p => p.id))
+        const remainingFields = fields.filter(f => f.required && !coveredIds.has(f.id))
+
+        if (remainingFields.length > 0) {
+            this.log(`📋 本地规则引擎处理 ${remainingFields.length} 个剩余字段`)
+            const localPlans = this.generatePlan(productInfo, remainingFields)
+            plans = [...plans, ...localPlans]
+        }
+
+        this.log("📋 最终计划：", plans.filter(p => p.action !== 'skip').length, "个")
 
         // 3. 执行计划（传递 productInfo 用于规则引擎兜底）
         const result = await this.applyPlan(fields, plans, productInfo)
         this.log("🎉 AutoFill AI Engine 完成：", result)
         return result
     },
+
+    // ===================== 5.1 查询规则库 =====================
+    async matchFieldRules(fields: FieldSchema[]): Promise<any | null> {
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        if (!BACKEND_URL) return null
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/field-rules/match`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fields: fields.map(f => ({
+                        id: f.id,
+                        label: f.label,
+                        controlType: f.controlType,
+                        required: f.required,
+                        optionsPreview: f.optionsPreview
+                    }))
+                })
+            })
+
+            if (!response.ok) {
+                this.warn("规则库 API 返回错误:", response.status)
+                return null
+            }
+
+            return await response.json()
+        } catch (error) {
+            this.warn("规则库 API 调用失败:", error)
+            return null
+        }
+    },
+
+    // ===================== 5.2 将 AI 规则收录到规则库 =====================
+    async saveAIRulesToLibrary(fields: FieldSchema[], plans: FillPlan[]): Promise<void> {
+        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        if (!BACKEND_URL) return
+
+        for (const plan of plans) {
+            if (plan.action === 'skip' || !plan.value) continue
+
+            const field = fields.find(f => f.id === plan.id)
+            if (!field) continue
+
+            try {
+                await fetch(`${BACKEND_URL}/api/field-rules`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        label: field.label.replace(/^[*＊\s]+/, '').replace(/[:：\s]+$/, '').trim(),
+                        controlType: field.controlType,
+                        action: plan.action,
+                        value: plan.value,
+                        priority: 50, // AI 生成的规则优先级较低
+                        source: 'ai',
+                        category: '自动收录'
+                    })
+                })
+                this.log(`📥 规则已收录: ${field.label} = ${plan.value}`)
+            } catch (e) {
+                this.warn(`规则收录失败: ${field.label}`, e)
+            }
+        }
+    },
+
 
     // ===================== 6. 图片上传模块 =====================
 
@@ -1663,8 +1810,14 @@ export const AutoFillAIEngine = {
             return 0;
         }
 
+        // 加锁，防止并发点击表单其他区域
+        (this as any)._detailUploading = true;
+
         const modal = await this.openDetailUploadModal();
-        if (!modal) return 0;
+        if (!modal) {
+            (this as any)._detailUploading = false;
+            return 0;
+        }
 
         // 文件 input
         let input: HTMLInputElement | null = null;
@@ -1678,37 +1831,55 @@ export const AutoFillAIEngine = {
             return 0;
         }
 
-        // 上传前的图片数量
-        const beforeCount = modal.querySelectorAll(
-            ".img-border .item-img, .material-img-item, .img-wrapper, .doraemon-image-card"
-        ).length;
+        // 上传前的图片数量（使用上传列表中的缩略图）
+        const countThumbs = () =>
+            modal.querySelectorAll(
+                ".doraemon-upload-list-item, .ant-upload-list-item, .img-border .item-img, .upload img"
+            ).length;
+        const beforeCount = countThumbs();
 
-        // 逐张上传
+        // 一次性注入 7 张（避免点击位移）
+        const dt = new DataTransfer();
         for (let i = 0; i < detailUrls.length; i++) {
             const file = await this.urlToFile(detailUrls[i], `detail_${i + 1}.jpg`);
-            const dt = new DataTransfer();
             dt.items.add(file);
-            input.files = dt.files;
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-            this.log(`[DETAIL_IMG] 已注入第 ${i + 1} 张`);
-            await sleep(500);
         }
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        this.log(`[DETAIL_IMG] 已一次性注入 ${detailUrls.length} 张`);
 
-        // 等待素材库数量增长
-        for (let w = 0; w < 20; w++) {
-            const count = modal.querySelectorAll(
-                ".img-border .item-img, .material-img-item, .img-wrapper, .doraemon-image-card"
-            ).length;
-            if (count >= beforeCount + detailUrls.length) break;
+        // 等待上传完成（缩略图数量增加）
+        for (let w = 0; w < 40; w++) {
+            if (countThumbs() >= beforeCount + detailUrls.length) break;
             await sleep(300);
         }
 
-        // 选择最新上传的 7 张（尾部优先）
-        const selected = await this.selectImagesInRange(0, detailUrls.length, true);
-        await this.clickConfirmButton();
+        // 直接点击确定（列表中新增的都会插入富文本）
+        const okBtn = modal.querySelector(".doraemon-btn-primary, button[type='button'].doraemon-btn-primary") as HTMLElement | null;
+        if (okBtn) {
+            okBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+            await sleep(200);
+            okBtn.click();
+            this.log("[DETAIL_IMG] 点击确定");
+            // 等待弹窗关闭
+            for (let i = 0; i < 30; i++) {
+                const stillThere = document.contains(modal);
+                if (!stillThere || modal.style.display === "none") break;
+                await sleep(300);
+            }
+            // 若未关闭，重试一次点击
+            if (document.contains(modal)) {
+                okBtn.click();
+                this.log("[DETAIL_IMG] 弹窗未关闭，重试点击确定");
+                await sleep(500);
+            }
+        } else {
+            this.warn("[DETAIL_IMG] 未找到确定按钮");
+        }
 
-        this.log(`[DETAIL_IMG] 详情图上传并选择完成: ${selected}/${detailUrls.length}`);
-        return selected;
+        this.log(`[DETAIL_IMG] 详情图上传完成: ${detailUrls.length} 张`);
+        (this as any)._detailUploading = false;
+        return detailUrls.length;
     },
 
     // ========== 一键上传+选择（统一入口）==========
@@ -1865,6 +2036,7 @@ export const AutoFillAIEngine = {
     // ===================== 8. 智能产地选择器 v3.0 =====================
 
     // 获取目标产地信息（使用统一的品牌企业库）
+    // ⭐ 注意：直辖市在级联菜单中显示为"北京"而非"北京市"，需要特殊处理
     getOrigin(scraped: any): { province: string; city: string; district: string } {
         // 1. 优先：采集数据含产地字段
         if (scraped.origin && typeof scraped.origin === 'object') return scraped.origin;
@@ -1885,8 +2057,10 @@ export const AutoFillAIEngine = {
         const title = scraped.title || "";
         if (title.includes("深圳")) return { province: "广东省", city: "深圳市", district: "宝安区" };
         if (title.includes("杭州")) return { province: "浙江省", city: "杭州市", district: "滨江区" };
-        if (title.includes("上海")) return { province: "上海市", city: "上海市", district: "浦东新区" };
-        if (title.includes("北京")) return { province: "北京市", city: "北京市", district: "海淀区" };
+        if (title.includes("上海")) return { province: "上海", city: "上海市", district: "浦东新区" };  // 直辖市
+        if (title.includes("北京")) return { province: "北京", city: "北京市", district: "海淀区" };    // 直辖市
+        if (title.includes("天津")) return { province: "天津", city: "天津市", district: "和平区" };    // 直辖市
+        if (title.includes("重庆")) return { province: "重庆", city: "重庆市", district: "渝中区" };    // 直辖市
         if (title.includes("广州")) return { province: "广东省", city: "广州市", district: "天河区" };
 
         // 4. 最终兜底（安全地址）
@@ -1895,19 +2069,55 @@ export const AutoFillAIEngine = {
     },
 
     // 查找并点击级联菜单节点
+    // ⭐ 支持模糊匹配："北京市" 可以匹配 "北京"，"浙江省" 可以匹配 "浙江"
     async clickCascaderNode(text: string): Promise<boolean> {
-        // 使用 XPath 查找包含文本的菜单项，政采云的级联菜单项通常在 li 中
-        const xpath = `//li[contains(@class,'doraemon-cascader-menu-item') and contains(., '${text}')]`;
+        // 生成多个可能的匹配文本（去掉省/市/区后缀）
+        const textVariants = [
+            text,
+            text.replace(/省$/, ''),
+            text.replace(/市$/, ''),
+            text.replace(/区$/, ''),
+            text.replace(/(省|市|区)$/, '')
+        ];
+        // 去重
+        const uniqueVariants = [...new Set(textVariants)];
 
         // 尝试多次查找，因为菜单加载有动画延迟
-        for (let i = 0; i < 10; i++) {
-            const el = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
-            if (el && el.offsetParent !== null) { // 确保可见
-                el.click();
-                this.log(`🖱️ 点击级联菜单: ${text}`);
-                await sleep(200);
-                return true;
+        for (let i = 0; i < 15; i++) {
+            // 遍历所有可能的文本变体
+            for (const variant of uniqueVariants) {
+                // 使用 XPath 查找包含文本的菜单项
+                const xpath = `//li[contains(@class,'doraemon-cascader-menu-item') and contains(., '${variant}')]`;
+                const el = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
+
+                if (el && el.offsetParent !== null) { // 确保可见
+                    el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    await sleep(80);
+                    el.click();
+                    this.log(`🖱️ 点击级联菜单: ${variant} (原始: ${text})`);
+                    await sleep(180);
+                    return true;
+                }
             }
+
+            // 如果 XPath 找不到，尝试用 querySelectorAll 遍历查找
+            const allItems = document.querySelectorAll('.doraemon-cascader-menu-item, .el-cascader-node');
+            for (const item of allItems) {
+                const itemText = (item as HTMLElement).innerText?.trim() || '';
+                for (const variant of uniqueVariants) {
+                    if (itemText === variant || itemText.includes(variant) || variant.includes(itemText)) {
+                        if ((item as HTMLElement).offsetParent !== null) {
+                            (item as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+                            await sleep(80);
+                            (item as HTMLElement).click();
+                            this.log(`🖱️ 点击级联菜单(备选): ${itemText} (原始: ${text})`);
+                            await sleep(180);
+                            return true;
+                        }
+                    }
+                }
+            }
+
             await sleep(100);
         }
 
@@ -1918,6 +2128,9 @@ export const AutoFillAIEngine = {
     // 执行产地选择
     async fillOrigin(scraped: any): Promise<void> {
         this.log("🌍 开始智能填写产地/制造商区域...");
+
+        // 等待 UI 空闲，避免与上传/其他弹窗抢焦点
+        await waitForUIIdle();
 
         // 1. 找到输入框：通常在 "制造商所在区域" 行
         // 我们查找 class 包含 cascader 的输入框，或者根据 label 查找
@@ -1941,27 +2154,172 @@ export const AutoFillAIEngine = {
             return;
         }
 
+        // 先点击"境内"单选，确保级联可用
+        // ⭐ 支持多种 radio 组件结构：el-radio, doraemon-radio, 原生 radio, ant-radio 等
+        let jingneiClicked = false;
+
+        // 方式1: 查找所有包含"境内"文字的元素
+        const allRadioElements = document.querySelectorAll('label, span, .el-radio, .doraemon-radio, .ant-radio-wrapper, [class*="radio"]');
+        for (const el of allRadioElements) {
+            const text = (el as HTMLElement).innerText?.trim() || '';
+            if (text === '境内' || text.includes('境内')) {
+                const radioParent = (el as HTMLElement).closest('.el-radio, .doraemon-radio, .ant-radio-wrapper, [class*="radio"], label');
+                const clickTarget = radioParent || el;
+                (clickTarget as HTMLElement).click();
+                this.log('🔘 点击境内单选');
+                jingneiClicked = true;
+                await sleep(200);
+                break;
+            }
+        }
+
+        // 方式2: 如果方式1失败，尝试查找 input[type=radio] + label 结构
+        if (!jingneiClicked) {
+            const radios = document.querySelectorAll('input[type="radio"]');
+            for (const radio of radios) {
+                const label = radio.parentElement;
+                const text = label?.innerText?.trim() || '';
+                if (text === '境内' || text.includes('境内')) {
+                    (radio as HTMLInputElement).click();
+                    this.log('🔘 点击境内单选(原生radio)');
+                    jingneiClicked = true;
+                    await sleep(200);
+                    break;
+                }
+            }
+        }
+
+        // 方式3: 直接通过 XPath 查找
+        if (!jingneiClicked) {
+            const xpath = "//*[contains(text(), '境内') and (ancestor::*[contains(@class, 'radio')] or self::label)]";
+            const result = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const node = result.singleNodeValue;
+            if (node) {
+                (node as HTMLElement).click();
+                this.log('🔘 点击境内单选(XPath)');
+                await sleep(200);
+            }
+        }
+
+        // 确保可见且居中
+        triggerInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        await sleep(200);
+
         // 2. 获取目标地址
         const origin = this.getOrigin(scraped);
         this.log(`🎯 目标产地: ${origin.province} / ${origin.city} / ${origin.district}`);
 
         // 3. 点击输入框打开下拉
-        triggerInput.click();
-        await sleep(500);
+        const selectOnce = async () => {
+            triggerInput.click();
+            await sleep(200);
+            if (!(await this.clickCascaderNode(origin.province))) return false;
+            await sleep(180);
+            if (!(await this.clickCascaderNode(origin.city))) return false;
+            await sleep(180);
+            await this.clickCascaderNode(origin.district);
+            return true;
+        }
 
-        // 4. 依次点击 省 -> 市 -> 区
-        if (await this.clickCascaderNode(origin.province)) {
-            await sleep(300); // 等待下一级加载
-            if (await this.clickCascaderNode(origin.city)) {
-                await sleep(300);
-                await this.clickCascaderNode(origin.district);
-            }
+        let selected = await selectOnce();
+        if (!selected) {
+            // 重试一次：关闭再打开
+            document.body.click();
+            await sleep(200);
+            selected = await selectOnce();
         }
 
         // 点击页面空白处收起菜单（如果没自动收起）
         document.body.click();
         this.log("✅ 智能产地填写完成");
+    },
+
+    // 价格/库存兜底填写（价格按下浮8%）
+    // ⭐ 增强版 v2：支持按 id 属性、label 关联、DOM 结构多种方式查找
+    async fillPriceAndStock(scraped: any): Promise<void> {
+        this.log("💰 开始填写价格/库存...");
+
+        // 等待 UI 空闲
+        await waitForUIIdle();
+
+        const specs = scraped?.specs || {};
+        let basePrice =
+            scraped?.price ||
+            parseFloat(specs['价格'] || specs['市场价'] || specs['销售价'] || '0') ||
+            scraped?.skuData?.[0]?.price ||
+            0;
+        if (Number.isNaN(basePrice)) basePrice = 0;
+
+        const marketPrice = basePrice > 0 ? Math.round(basePrice * 100) / 100 : 0;
+        // 销售价 = 市场价 × 0.92（下浮8%，在5-10%范围内）
+        const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.92 * 100) / 100 : 0;
+        // 库存默认 999
+        const stockVal = scraped?.stock || parseInt(specs['库存'] || specs['数量'] || '999', 10) || 999;
+
+        this.log(`💰 价格计算: 采集价格=${scraped?.price}, 基础价=${basePrice}, 市场价=${marketPrice}, 销售价=${salePrice}, 库存=${stockVal}`);
+
+        const setVal = (input: HTMLInputElement, val: string, fieldName: string) => {
+            this.log(`🎯 尝试填写 [${fieldName}]: 目标input.id=${input.id}, 当前值=${input.value}`);
+            input.scrollIntoView({ behavior: "smooth", block: "center" });
+            input.focus();
+            input.click();
+
+            // 使用原生 setter
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (setter) {
+                setter.call(input, val);
+            } else {
+                input.value = val;
+            }
+
+            // 触发各种事件确保框架能感知到变化
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.dispatchEvent(new Event('blur', { bubbles: true }));
+            // 针对 doraemon 组件可能需要的事件
+            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+
+            this.log(`✅ [${fieldName}] 填写成功 = ${val}`);
+        };
+
+        let filledCount = { market: 0, sale: 0, stock: 0 };
+
+        // ========== 策略: 遍历所有 input，按 id 填写所有匹配的输入框 ==========
+        // 这样可以同时填写上面的价格区域和 SKU 表格内的每一行
+        this.log("📍 遍历所有 input，填写所有匹配的字段...");
+
+        const allInputs = Array.from(document.querySelectorAll<HTMLInputElement>("input:not([type=hidden])"));
+        this.log(`📍 共找到 ${allInputs.length} 个 input 元素`);
+
+        for (const input of allInputs) {
+            if (input.disabled || input.readOnly) continue;
+            // 跳过已有值的输入框
+            if (input.value && input.value !== '' && input.value !== '0') continue;
+
+            const inputId = (input.id || '').toLowerCase();
+
+            // 市场价（填写所有匹配的）
+            if (marketPrice > 0 && inputId.includes('marketprice')) {
+                setVal(input, String(marketPrice), `市场价(${input.id})`);
+                filledCount.market++;
+            }
+            // 销售价（填写所有匹配的）
+            else if (salePrice > 0 && inputId.includes('saleprice')) {
+                setVal(input, String(salePrice), `销售价(${input.id})`);
+                filledCount.sale++;
+            }
+            // 库存（填写所有匹配的）
+            else if (stockVal > 0 && (inputId.includes('stock') || inputId.includes('quantity'))) {
+                setVal(input, String(stockVal), `库存(${input.id})`);
+                filledCount.stock++;
+            }
+        }
+
+        this.log(`📍 按id填写结果: 市场价=${filledCount.market}个, 销售价=${filledCount.sale}个, 库存=${filledCount.stock}个`);
+        this.log(`💰 价格/库存填写完成: 市场价=${filledCount.market}个, 销售价=${filledCount.sale}个, 库存=${filledCount.stock}个`);
     }
+
+
 }
 
     // 暴露到 window

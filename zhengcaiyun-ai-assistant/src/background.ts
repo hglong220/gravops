@@ -103,7 +103,8 @@ async function handleSaveProduct(data: any): Promise<any> {
     }
 
     // Call Backend Save API
-    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
+    const stored = await chrome.storage.local.get('backendUrl');
+    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || stored.backendUrl || 'http://localhost:3000';
     if (!backendUrl) throw new Error('未配置后端地址');
     const apiUrl = `${backendUrl}/api/copy/save`;
 

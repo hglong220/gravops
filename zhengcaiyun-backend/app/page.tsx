@@ -102,9 +102,23 @@ export default function Home() {
 
 
 
-            <div className="relative z-10 py-6 text-center animate-fade-in delay-300 bg-gray-50 mt-auto w-full">
-                <p className="text-xs text-gray-400">© 2025 www.gravops.com · 让技术驱动效率</p>
-            </div>
+            <footer className="relative z-10 py-5 text-center animate-fade-in delay-300 bg-gray-50 mt-auto w-full">
+                <div className="text-sm text-gray-500 flex items-center justify-center gap-4">
+                    <a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener noreferrer" className="hover:text-gray-700 transition-colors">青ICP备2025005773号-3</a>
+                    <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=63010402000985" target="_blank" rel="nofollow noopener noreferrer" className="hover:text-gray-700 transition-colors inline-flex items-center gap-1">
+                        <img src="https://www.beian.gov.cn/img/new/gongan.png" width="16" height="16" alt="公安备案" />
+                        青公网安备 63010402000985号
+                    </a>
+                    <span>© 2025 青海立乐科技有限公司 版权所有</span>
+                    <a href="/terms" className="hover:text-gray-700 transition-colors">《用户协议》</a>
+                    <a href="/privacy" className="hover:text-gray-700 transition-colors">《隐私政策》</a>
+                    <a href="/contact" className="hover:text-gray-700 transition-colors">联系我们</a>
+                </div>
+
+
+            </footer>
+
+
 
             {/* Auth Modal */}
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)}>

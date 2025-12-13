@@ -499,20 +499,13 @@ async function stepAutoFillAttributes(state: OrchestratorState): Promise<void> {
 async function stepUploadImages(state: OrchestratorState): Promise<void> {
     logRPA("开始上传图片...")
 
-    // 主图
-    let images = state.images || []
-    if (images.length > 0) {
-        if (images.length > 15) images = images.slice(0, 15)
-        logRPA(`上传主图 ${images.length} 张...`)
-        await AutoFillAIEngine.uploadMainImages(images)
-    }
-
-    // 详情图
-    let detailImages = state.detailImages || []
-    if (detailImages.length > 0) {
-        if (detailImages.length > 15) detailImages = detailImages.slice(0, 15)
-        logRPA(`上传详情图 ${detailImages.length} 张...`)
-        await AutoFillAIEngine.uploadDetailImages(detailImages)
+    // 一键上传全部图片（主图+详情图）
+    const allImages = [...(state.images || []), ...(state.detailImages || [])]
+    if (allImages.length > 0) {
+        const limitedImages = allImages.slice(0, 15)  // 最多15张
+        logRPA(`一键上传图片 ${limitedImages.length} 张（主图+详情图）...`)
+        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(limitedImages)
+        logRPA(`图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
     }
 
     // SKU 图片
@@ -539,6 +532,13 @@ async function stepUploadImages(state: OrchestratorState): Promise<void> {
             await AutoFillAIEngine.fillOrigin(state.productData)
         } catch (e) {
             logRPA("产地填写失败，忽略:", e)
+        }
+
+        // 价格/库存兜底填写
+        try {
+            await AutoFillAIEngine.fillPriceAndStock(state.productData)
+        } catch (e) {
+            logRPA("价格/库存填写失败，忽略:", e)
         }
     }
 

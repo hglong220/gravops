@@ -973,19 +973,12 @@ export const FlagshipMax = {
         await AutoFillAIEngine.run(productInfo)
         Logger.log("✅ 表单填写完成")
 
-        // 2️⃣ 再上传主图
-        Logger.log("📸 步骤2: 开始上传主图...")
-        await AutoFillAIEngine.uploadMainImages(imgs)
-        Logger.log("✅ 主图上传完成")
-
-        // 3️⃣ 上传详情图
-        if (ctx.scraped.detailImages?.length) {
-            let dimgs = ctx.scraped.detailImages
-            if (dimgs.length > 15) dimgs = dimgs.slice(0, 15)
-            Logger.log("📝 步骤3: 开始上传详情图...")
-            await AutoFillAIEngine.uploadDetailImages(dimgs)
-            Logger.log("✅ 详情图上传完成")
-        }
+        // 2️⃣ 一键上传全部图片（主图+详情图）
+        // uploadAllImages 会自动处理：前8张作为主图，之后7张作为详情图
+        const allImages = [...imgs, ...(ctx.scraped.detailImages || [])]
+        Logger.log("📸 步骤2: 开始一键上传全部图片...", allImages.length, "张")
+        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(allImages)
+        Logger.log(`✅ 图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
 
         // 4️⃣ 上传 SKU 图片
         if (ctx.scraped.skuImages && Object.keys(ctx.scraped.skuImages).length) {
@@ -1011,6 +1004,14 @@ export const FlagshipMax = {
             Logger.log("🌍 步骤7: 填写产地...")
             await AutoFillAIEngine.fillOrigin(ctx.scraped)
         } catch { }
+
+        // 8️⃣ 填写价格/库存
+        try {
+            Logger.log("💰 步骤8: 填写价格/库存...")
+            await AutoFillAIEngine.fillPriceAndStock(ctx.scraped)
+        } catch (e) {
+            Logger.warn("价格/库存填写失败:", e)
+        }
 
         // ⚠️ 自动提交已禁用（调试中）
         // 填表完成后请手动检查并点击提交

@@ -25,6 +25,7 @@ export default function AdminLayout({
                     <NavLink href="/admin/ai" icon="🤖">AI 配置</NavLink>
                     <NavLink href="/admin/tasks" icon="📋">任务监控</NavLink>
                     <NavLink href="/admin/system" icon="🖥️">系统监控</NavLink>
+                    <NavLink href="/admin/field-rules" icon="📝">字段规则</NavLink>
                 </nav>
 
                 {/* Admin Profile */}
