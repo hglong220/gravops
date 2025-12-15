@@ -146,7 +146,7 @@ export default function TermsPage() {
                             </p>
                         </section>
 
-                        <div className="border-t border-gray-200 pt-3 mt-6">
+                        <div className="border-t border-gray-200 pt-5 mt-6">
                             <p className="text-gray-400 text-xs text-center">
                                 © 2025 青海立乐科技有限公司 版权所有
                             </p>
