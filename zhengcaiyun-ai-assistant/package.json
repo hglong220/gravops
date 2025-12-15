@@ -42,11 +42,15 @@
       "https://*.tmall.com/*",
       "https://*.suning.com/*"
     ],
+    "optional_host_permissions": [
+      "https://*/*"
+    ],
     "permissions": [
       "tabs",
       "scripting",
       "storage",
-      "activeTab"
+      "activeTab",
+      "permissions"
     ],
     "background": {
       "service_worker": "src/background.ts"

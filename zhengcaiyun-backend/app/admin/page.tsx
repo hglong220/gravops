@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDashboard() {
+    const router = useRouter();
     const [stats, setStats] = useState({
         totalUsers: 0,
         activeLicenses: 0,
@@ -17,7 +19,23 @@ export default function AdminDashboard() {
 
     async function fetchStats() {
         try {
-            const res = await fetch('/api/admin/stats');
+            const token = localStorage.getItem('token');
+            if (!token) {
+                router.push('/login');
+                return;
+            }
+
+            const res = await fetch('/api/admin/stats', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (res.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                router.push('/login');
+                return;
+            }
+
             if (res.ok) {
                 const data = await res.json();
                 setStats(data);

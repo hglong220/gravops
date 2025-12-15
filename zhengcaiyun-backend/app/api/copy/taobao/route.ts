@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getActorFromRequest } from '@/lib/request-actor';
 import { scrapeTaobaoProduct } from '@/lib/scrapers/taobao-scraper';
 
 export async function POST(request: NextRequest) {
     try {
         // 临时禁用授权验证
-        const user = { userId: 'test-user-001', licenseKey: 'TEST-2024' };
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
+        }
 
         const body = await request.json();
         const { url } = body;
@@ -18,11 +26,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log(`[API /copy/taobao] User ${user.userId} copying: ${url}`);
+        console.log(`[API /copy/taobao] User ${userId} copying: ${url}`);
 
         const existing = await prisma.productDraft.findFirst({
             where: {
-                userId: user.userId,
+                userId,
                 originalUrl: url
             }
         });
@@ -55,7 +63,7 @@ export async function POST(request: NextRequest) {
         } else {
             draft = await prisma.productDraft.create({
                 data: {
-                    userId: user.userId,
+                    userId,
                     originalUrl: url,
                     title: productData.title,
                     images: JSON.stringify(productData.images),

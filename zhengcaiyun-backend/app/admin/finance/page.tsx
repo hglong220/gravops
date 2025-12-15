@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function FinancePage() {
+    const router = useRouter();
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -26,12 +28,31 @@ export default function FinancePage() {
         if (dateRange.start) params.append('startDate', dateRange.start);
         if (dateRange.end) params.append('endDate', dateRange.end);
 
-        fetch(`/api/admin/orders?${params.toString()}`)
-            .then(res => res.json())
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch(`/api/admin/orders?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
             .then(data => {
+                if (!data) return;
                 setOrders(data);
                 setLoading(false);
-            });
+            })
+            .catch(() => setLoading(false));
     }
 
     // Calculate Stats from current view

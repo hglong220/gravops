@@ -1,49 +1,62 @@
-import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+
+import { prisma } from '@/lib/prisma'
+import { getJwtSecret } from '@/lib/jwt'
+import { isValidChinaPhone, normalizeChinaPhone } from '@/lib/phone'
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
-        const { email, password } = body;
+        const body = await request.json().catch(() => ({}))
+        const identifierRaw =
+            typeof body?.identifier === 'string' ? body.identifier : body?.email
+        const identifier = typeof identifierRaw === 'string' ? identifierRaw.trim() : ''
+        const password = typeof body?.password === 'string' ? body.password : ''
 
-        if (!email || !password) {
-            return NextResponse.json({ error: '邮箱和密码必填' }, { status: 400 });
+        if (!identifier || !password) {
+            return NextResponse.json({ error: '用户名/手机号和密码必填' }, { status: 400 })
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email }
-        });
+        const normalizedPhone = normalizeChinaPhone(identifier)
+        const isPhone = isValidChinaPhone(normalizedPhone)
+        let user = await prisma.user.findFirst({
+            where: isPhone ? { phone: normalizedPhone } : { email: identifier }
+        })
+        if (!user && isPhone) {
+            user = await prisma.user.findFirst({ where: { email: identifier } })
+        }
 
         if (!user) {
-            return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+            return NextResponse.json({ error: '用户不存在' }, { status: 404 })
         }
 
-        const validPassword = await bcrypt.compare(password, user.password);
+        const validPassword = await bcrypt.compare(password, user.password)
 
         if (!validPassword) {
-            return NextResponse.json({ error: '密码错误' }, { status: 401 });
+            return NextResponse.json({ error: '密码错误' }, { status: 401 })
         }
 
         const token = jwt.sign(
-            { userId: user.id, email: user.email },
-            process.env.JWT_SECRET || 'your-secret-key',
+            { typ: 'user', userId: user.id, email: user.email },
+            getJwtSecret(),
             { expiresIn: '7d' }
-        );
+        )
 
         return NextResponse.json({
             message: '登录成功',
             token,
             user: {
                 id: user.id,
+                username: user.email,
+                phone: user.phone,
                 email: user.email,
                 name: user.name,
                 companyName: user.companyName
             }
-        });
+        })
     } catch (error) {
-        console.error('登录错误:', error);
-        return NextResponse.json({ error: '登录失败' }, { status: 500 });
+        console.error('登录错误:', error)
+        return NextResponse.json({ error: '登录失败' }, { status: 500 })
     }
 }

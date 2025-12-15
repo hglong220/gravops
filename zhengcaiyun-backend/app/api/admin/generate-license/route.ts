@@ -10,20 +10,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateLicenseKey } from '@/lib/license-utils';
-import crypto from 'crypto';
+import { getAdminFromRequest } from '@/lib/admin-auth';
 
 export async function POST(request: NextRequest) {
     try {
         // 1. ✅ 验证管理员权限
-        const adminToken = request.headers.get('x-admin-token');
-        const expectedToken = process.env.ADMIN_SECRET_TOKEN;
-
-        if (!adminToken || adminToken !== expectedToken) {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
             console.warn('[Admin] Unauthorized license generation attempt');
-
-            return NextResponse.json({
-                error: '需要管理员权限'
-            }, { status: 403 });
+            return NextResponse.json({ error: '需要管理员权限' }, { status: 403 });
         }
 
         const body = await request.json();
@@ -83,14 +78,13 @@ export async function POST(request: NextRequest) {
             data: {
                 key: licenseKey,
                 orderId: orderId,
+                userId: order.userId,
                 companyName: companyName,
                 plan: plan,
                 expiresAt: expiresAt,
                 status: 'active',
                 maxDevices: getMaxDevicesByPlan(plan),
-                maxUsage: getMaxUsageByPlan(plan),
-                boundDevices: [],
-                usageCount: 0
+                monthlyQuota: getMonthlyQuotaByPlan(plan)
             }
         });
 
@@ -104,17 +98,25 @@ export async function POST(request: NextRequest) {
         });
 
         // 9. ✅ 记录操作日志
-        await prisma.adminLog.create({
+        const ip =
+            request.headers.get('x-forwarded-for') ||
+            request.headers.get('x-real-ip') ||
+            'unknown';
+
+        await prisma.systemLog.create({
             data: {
-                action: 'generate_license',
-                detail: {
+                level: 'info',
+                module: 'admin',
+                message: 'generate_license',
+                meta: JSON.stringify({
                     licenseKey,
                     orderId,
                     companyName,
-                    plan
-                },
-                ip: request.ip || 'unknown',
-                adminToken: adminToken.substring(0, 10) + '...'
+                    plan,
+                    ip,
+                    adminVia: admin.via,
+                    adminEmail: admin.email
+                })
             }
         });
 
@@ -127,7 +129,8 @@ export async function POST(request: NextRequest) {
             expiresAt: license.expiresAt.getTime(),
             plan: license.plan,
             maxDevices: license.maxDevices,
-            maxUsage: license.maxUsage,
+            monthlyQuota: license.monthlyQuota,
+            maxUsage: license.monthlyQuota,
             message: '授权码生成成功'
         });
 
@@ -168,9 +171,9 @@ function getMaxDevicesByPlan(plan: string): number {
 }
 
 /**
- * 获取最大使用次数
+ * 获取月度额度（usage / month）
  */
-function getMaxUsageByPlan(plan: string): number {
+function getMonthlyQuotaByPlan(plan: string): number {
     const limits: Record<string, number> = {
         'basic': 1000,
         'standard': 5000,

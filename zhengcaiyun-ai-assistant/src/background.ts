@@ -3,6 +3,7 @@
 // + Auto-Publish functionality for ZCY
 
 import { storage, type PublishConfig } from "~src/utils/storage"
+import { fetchWithAuth } from "~src/utils/api"
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'capturePage') {
@@ -94,41 +95,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleSaveProduct(data: any): Promise<any> {
     console.log('[Background] Saving scraped product:', data.title);
 
-    // Get License
-    const storage = await chrome.storage.local.get('license');
-    const license = storage.license;
-
-    if (!license || !license.licenseKey) {
-        throw new Error('未激活授权码,请先激活插件');
-    }
-
-    // Call Backend Save API
-    const stored = await chrome.storage.local.get('backendUrl');
-    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || stored.backendUrl || 'http://localhost:3000';
-    if (!backendUrl) throw new Error('未配置后端地址');
-    const apiUrl = `${backendUrl}/api/copy/save`;
-
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithAuth('/api/copy/save', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${license.licenseKey}`
-        },
         body: JSON.stringify(data)
     });
 
+    const result = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-        const errorData = await response.json();
-        // If backend returns 401/403, it means license is invalid/expired
-        if (response.status === 401 || response.status === 403) {
-            throw new Error('授权验证失败: ' + (errorData.error || '请检查授权码'));
-        }
-        throw new Error(errorData.error || '保存失败');
+        throw new Error(
+            (result as any)?.error ||
+            (result as any)?.message ||
+            `保存失败 (${response.status})`
+        );
     }
 
-    const result = await response.json();
     console.log('[Background] Save successful:', result);
-    return { success: true, draft: result.draft };
+    return { success: true, draft: (result as any).draft };
 }
 
 console.log('[Background] Service worker initialized');
@@ -308,18 +291,20 @@ setInterval(async () => {
 
 async function checkAndRunTask() {
     // 1. Get next task from backend
-    const backendUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || '';
-    if (!backendUrl) return;
-    // Use test user for now as background script auth is tricky
-    // In production, we should pass the token
-    const response = await fetch(`${backendUrl}/api/copy/tasks/next-batch`);
-
-    if (!response.ok) {
-        console.warn('[Task Runner] Failed to fetch tasks');
+    let response: Response;
+    try {
+        response = await fetchWithAuth('/api/copy/tasks/next-batch');
+    } catch (error) {
+        console.warn('[Task Runner] Failed to fetch tasks:', error);
         return;
     }
 
-    const data = await response.json();
+    if (!response.ok) {
+        console.warn('[Task Runner] Failed to fetch tasks:', response.status);
+        return;
+    }
+
+    const data = await response.json().catch(() => ({} as any));
     if (!data.task) {
         // No tasks pending
         return;

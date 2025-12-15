@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 /**
  * DELETE /api/copy/tasks/[id]
@@ -14,11 +13,29 @@ export async function DELETE(
     try {
         const { id } = params;
 
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ success: false, error: 'License is not linked to a user' }, { status: 401 });
+        }
+
+        const existingTask = await prisma.copyTask.findFirst({
+            where: { id, userId }
+        });
+
+        if (!existingTask) {
+            return NextResponse.json({ success: false, error: 'Task not found' }, { status: 404 });
+        }
+
         // Transaction to ensure both task and drafts are deleted
         await prisma.$transaction(async (tx) => {
             // 1. Delete associated drafts
             await tx.productDraft.deleteMany({
-                where: { copyTaskId: id }
+                where: { copyTaskId: id, userId }
             });
 
             // 2. Delete the task

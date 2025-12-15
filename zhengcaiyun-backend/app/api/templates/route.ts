@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getActorFromRequest } from "@/lib/request-actor"
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -34,8 +35,20 @@ export interface ZcyPublishTemplateData {
 
 export async function GET(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request)
+        if (!actor) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders })
+        }
+
+        const userId = actor.kind === "user" ? actor.userId : actor.userId
+        if (!userId) {
+            return NextResponse.json(
+                { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+                { status: 403, headers: corsHeaders }
+            )
+        }
+
         const { searchParams } = new URL(request.url)
-        const userId = searchParams.get('userId') || 'test-user-001'
         const market = searchParams.get('market')
 
         const where: any = { userId }
@@ -72,8 +85,20 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json() as ZcyPublishTemplateData & { userId?: string }
-        const userId = body.userId || 'test-user-001'
+        const actor = await getActorFromRequest(request)
+        if (!actor) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders })
+        }
+
+        const userId = actor.kind === "user" ? actor.userId : actor.userId
+        if (!userId) {
+            return NextResponse.json(
+                { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+                { status: 403, headers: corsHeaders }
+            )
+        }
+
+        const body = await request.json() as ZcyPublishTemplateData
 
         // 验证必填字段
         if (!body.name || !body.market || !body.categoryPath) {
@@ -105,6 +130,14 @@ export async function POST(request: NextRequest) {
         // 如果有id则更新，否则创建
         let template
         if (body.id) {
+            const existing = await prisma.zcyPublishTemplate.findFirst({
+                where: { id: body.id, userId },
+                select: { id: true }
+            })
+            if (!existing) {
+                return NextResponse.json({ error: "Template not found" }, { status: 404, headers: corsHeaders })
+            }
+
             template = await prisma.zcyPublishTemplate.update({
                 where: { id: body.id },
                 data
@@ -141,6 +174,19 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request)
+        if (!actor) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders })
+        }
+
+        const userId = actor.kind === "user" ? actor.userId : actor.userId
+        if (!userId) {
+            return NextResponse.json(
+                { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+                { status: 403, headers: corsHeaders }
+            )
+        }
+
         const { searchParams } = new URL(request.url)
         const id = searchParams.get('id')
 
@@ -151,9 +197,15 @@ export async function DELETE(request: NextRequest) {
             )
         }
 
-        await prisma.zcyPublishTemplate.delete({
-            where: { id }
+        const existing = await prisma.zcyPublishTemplate.findFirst({
+            where: { id, userId },
+            select: { id: true }
         })
+        if (!existing) {
+            return NextResponse.json({ error: "Template not found" }, { status: 404, headers: corsHeaders })
+        }
+
+        await prisma.zcyPublishTemplate.delete({ where: { id } })
 
         return NextResponse.json({ success: true }, { headers: corsHeaders })
     } catch (error) {

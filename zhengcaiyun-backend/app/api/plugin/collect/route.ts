@@ -3,28 +3,35 @@
  * POST /api/plugin/collect
  */
 
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getPluginLicenseFromRequest } from '@/lib/plugin-auth';
+
+export const dynamic = 'force-dynamic';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
 
-// 处理 OPTIONS 预检请求
 export async function OPTIONS() {
-    return NextResponse.json({}, { headers: corsHeaders })
+    return NextResponse.json({}, { headers: corsHeaders });
 }
 
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json()
+        const auth = await getPluginLicenseFromRequest(request);
 
-        // 插件发送的格式是 { product: {...} }
-        const product = body.product || body
+        if (!auth) {
+            return NextResponse.json(
+                { success: false, message: 'Unauthorized' },
+                { status: 401, headers: corsHeaders }
+            );
+        }
 
-        console.log('[Plugin Collect] 收到推送:', product.title)
+        const body = await request.json();
+        const product = body.product || body;
 
         const {
             title,
@@ -35,16 +42,23 @@ export async function POST(request: NextRequest) {
             specs,
             detailHtml,
             sourceUrl,
-            originalUrl,  // 采集引擎发送的是这个字段名
+            originalUrl,
             zcyItemUrl,
             price,
             stock
-        } = product
+        } = product || {};
 
-        // 保存到数据库
+        const userId = auth.license.userId;
+        if (!userId) {
+            return NextResponse.json(
+                { success: false, message: 'License is not linked to a user', code: 'LICENSE_NOT_LINKED' },
+                { status: 403, headers: corsHeaders }
+            );
+        }
+
         const draft = await prisma.productDraft.create({
             data: {
-                userId: 'test-user-001',
+                userId,
                 originalUrl: originalUrl || sourceUrl || zcyItemUrl || 'plugin-upload',
                 title: title || '未知商品',
                 brand: brand || null,
@@ -53,39 +67,38 @@ export async function POST(request: NextRequest) {
                 detailHtml: detailHtml || JSON.stringify(detailImages || []),
                 attributes: JSON.stringify(specs || {}),
                 skuData: JSON.stringify({ price: price || 0, stock: stock || 99 }),
-                status: 'collected',
+                status: 'collected'
             }
-        })
+        });
 
-        console.log('[Plugin Collect] 保存成功, ID:', draft.id, '标题:', title)
-
-        return NextResponse.json({
-            success: true,
-            message: '推送成功',
-            data: {
-                id: draft.id,
-                title: draft.title
-            }
-        }, { headers: corsHeaders })
-
+        return NextResponse.json(
+            {
+                success: true,
+                message: '推送成功',
+                data: {
+                    id: draft.id,
+                    title: draft.title
+                }
+            },
+            { headers: corsHeaders }
+        );
     } catch (error) {
-        console.error('[Plugin Collect] 错误:', error)
+        console.error('[Plugin Collect] Error:', error);
 
-        return NextResponse.json({
-            success: false,
-            message: '推送后台失败',
-            error: error instanceof Error ? error.message : '未知错误'
-        }, {
-            status: 500,
-            headers: corsHeaders
-        })
+        return NextResponse.json(
+            {
+                success: false,
+                message: '推送后端失败',
+                error: error instanceof Error ? error.message : '未知错误'
+            },
+            { status: 500, headers: corsHeaders }
+        );
     }
 }
 
-// GET 用于测试
 export async function GET() {
-    return NextResponse.json({
-        success: true,
-        message: 'Plugin Collect API is working'
-    }, { headers: corsHeaders })
+    return NextResponse.json(
+        { success: true, message: 'Plugin Collect API is working' },
+        { headers: corsHeaders }
+    );
 }

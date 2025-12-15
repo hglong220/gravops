@@ -22,9 +22,24 @@ interface CategoryMatchResult {
 export class CategoryMatchService {
 
     private categories: Category[] = [];
+    private categoriesLoadPromise: Promise<void> | null = null;
 
-    constructor() {
-        this.loadCategories();
+    private getFallbackCategory(): Category {
+        return {
+            id: 0,
+            categoryCode: '',
+            name: '未知类目',
+            level: 0,
+            parentId: null
+        };
+    }
+
+    private async ensureCategoriesLoaded() {
+        if (!this.categoriesLoadPromise) {
+            this.categoriesLoadPromise = this.loadCategories();
+        }
+
+        await this.categoriesLoadPromise;
     }
 
     /**
@@ -32,8 +47,14 @@ export class CategoryMatchService {
      */
     private async loadCategories() {
         try {
-            const response = await fetch('/api/categories.json');
-            const data = await response.json();
+            const fs = require('fs');
+            const path = require('path');
+
+            const jsonText = fs.readFileSync(
+                path.join(process.cwd(), 'public/api/categories.json'),
+                'utf8'
+            );
+            const data = JSON.parse(jsonText);
 
             // 扁平化类目树
             this.categories = this.flattenCategories(data.categories);
@@ -71,6 +92,7 @@ export class CategoryMatchService {
      * 智能匹配类目
      */
     async matchCategory(product: any): Promise<CategoryMatchResult> {
+        await this.ensureCategoriesLoaded();
         console.log('🤖 开始AI类目匹配...');
 
         // 多维度信号分析
@@ -261,7 +283,7 @@ export class CategoryMatchService {
 
         // 完全找不到，返回默认
         return {
-            category: this.categories[0],
+            category: this.getFallbackCategory(),
             confidence: 0.1,
             reasoning: '无法匹配，需要人工选择',
             needManualReview: true
@@ -315,7 +337,7 @@ export class CategoryMatchService {
      */
     private findCategory(categoryCode: string): Category {
         const found = this.categories.find(c => c.categoryCode === categoryCode);
-        return found || this.categories[0];
+        return found || this.getFallbackCategory();
     }
 
     /**

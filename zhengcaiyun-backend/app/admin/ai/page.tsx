@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface AIProviderConfig {
     id: string;
@@ -23,25 +24,54 @@ interface AIConfig {
 }
 
 export default function AIConfigPage() {
+    const router = useRouter();
     const [config, setConfig] = useState<AIConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        fetch('/api/admin/ai/config')
-            .then(res => res.json())
-            .then(data => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch('/api/admin/ai/config', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
+            .then((data) => {
+                if (!data) return;
                 setConfig(data);
                 setLoading(false);
-            });
-    }, []);
+            })
+            .catch(() => setLoading(false));
+    }, [router]);
 
     const handleSave = async () => {
         setSaving(true);
         try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                router.push('/login');
+                return;
+            }
+
             await fetch('/api/admin/ai/config', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(config)
             });
             alert('配置保存成功');

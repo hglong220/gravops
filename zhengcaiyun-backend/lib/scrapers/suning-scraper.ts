@@ -1,4 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
+import { buildPuppeteerArgs, resolvePuppeteerExecutablePath } from '@/lib/puppeteer-launch';
 
 export interface SuningProductData {
     title: string;
@@ -35,7 +36,7 @@ export async function scrapeSuningProduct(productUrl: string): Promise<SuningPro
             timeout: 30000
         });
 
-        await page.waitForTimeout(2000);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         const productData = await page.evaluate(() => {
             // 标题
@@ -158,22 +159,13 @@ export async function scrapeSuningProduct(productUrl: string): Promise<SuningPro
 }
 
 async function launchBrowser(): Promise<Browser> {
-    const fs = require('fs');
-    const chromePaths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-    ];
-
-    const executablePath = chromePaths.find((path: string) => fs.existsSync(path));
-
+    const executablePath = resolvePuppeteerExecutablePath();
     return await puppeteer.launch({
         headless: true,
         executablePath: executablePath,
+        timeout: 60000,
         args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled'
+            ...buildPuppeteerArgs()
         ]
     });
 }

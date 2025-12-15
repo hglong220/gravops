@@ -1,7 +1,8 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
-const prisma = new PrismaClient();
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/copy/get?id=xxx
@@ -9,14 +10,24 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
+        }
+
         const id = request.nextUrl.searchParams.get('id');
 
         if (!id) {
             return NextResponse.json({ error: '缺少ID' }, { status: 400 });
         }
 
-        const draft = await prisma.productDraft.findUnique({
-            where: { id }
+        const draft = await prisma.productDraft.findFirst({
+            where: { id, userId }
         });
 
         if (!draft) {

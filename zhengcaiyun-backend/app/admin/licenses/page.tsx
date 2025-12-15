@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function LicensesPage() {
+    const router = useRouter();
     const [licenses, setLicenses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -17,21 +19,50 @@ export default function LicensesPage() {
 
     function fetchLicenses() {
         setLoading(true);
-        fetch(`/api/admin/licenses?search=${encodeURIComponent(searchTerm)}`)
-            .then(res => res.json())
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch(`/api/admin/licenses?search=${encodeURIComponent(searchTerm)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
             .then(data => {
+                if (!data) return;
                 setLicenses(data);
                 setLoading(false);
-            });
+            })
+            .catch(() => setLoading(false));
     }
 
     const [showGenerateModal, setShowGenerateModal] = useState(false);
     const [genForm, setGenForm] = useState({ companyName: '', duration: 30 });
 
     async function handleGenerate() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
         const res = await fetch('/api/admin/licenses', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
                 plan: 'pro',
                 durationDays: Number(genForm.duration),
@@ -48,14 +79,80 @@ export default function LicensesPage() {
     async function updateLicense(id: string, action: 'extend' | 'revoke') {
         if (!confirm(action === 'extend' ? '确认延期30天？' : '确认吊销此授权？')) return;
 
-        const res = await fetch(`/api/admin/licenses/${id}`, {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        const res = await fetch(`/api/admin/licenses`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action })
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ licenseId: id, action })
         });
 
         if (res.ok) {
             fetchLicenses();
+        }
+    }
+
+    async function resetDevices(id: string) {
+        if (!confirm('确认重置设备？重置后需要用户重新激活插件。')) return;
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        const res = await fetch(`/api/admin/licenses`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ licenseId: id, action: 'reset_devices' })
+        });
+
+        if (res.ok) {
+            fetchLicenses();
+        } else {
+            alert('重置失败');
+        }
+    }
+
+    async function setMaxDevices(id: string, currentMaxDevices?: number) {
+        const next = prompt('请输入新的最大设备数（正整数）', String(currentMaxDevices || 1));
+        if (!next) return;
+
+        const maxDevices = Number(next);
+        if (!Number.isFinite(maxDevices) || maxDevices <= 0) {
+            alert('maxDevices 必须是正整数');
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        const res = await fetch(`/api/admin/licenses`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ licenseId: id, action: 'set_max_devices', maxDevices })
+        });
+
+        if (res.ok) {
+            fetchLicenses();
+        } else {
+            alert('修改失败');
         }
     }
 
@@ -165,6 +262,9 @@ export default function LicensesPage() {
                                     <code className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-700 select-all">
                                         {license.key}
                                     </code>
+                                    <div className="mt-2 text-xs text-gray-500">
+                                        {`${license.currentDevices ?? (license.devices?.length ?? 0)}/${license.maxDevices ?? '-'}`}
+                                    </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="text-sm font-bold text-gray-900">
@@ -183,6 +283,18 @@ export default function LicensesPage() {
                                     {new Date(license.expiresAt).toLocaleDateString()}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                                    <button
+                                        onClick={() => resetDevices(license.id)}
+                                        className="text-gray-700 hover:text-gray-900 bg-gray-100 px-3 py-1 rounded-lg hover:bg-gray-200 transition-colors"
+                                    >
+                                        重置设备
+                                    </button>
+                                    <button
+                                        onClick={() => setMaxDevices(license.id, license.maxDevices)}
+                                        className="text-gray-700 hover:text-gray-900 bg-gray-100 px-3 py-1 rounded-lg hover:bg-gray-200 transition-colors"
+                                    >
+                                        修改上限
+                                    </button>
                                     <button
                                         onClick={() => updateLicense(license.id, 'extend')}
                                         className="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded-lg hover:bg-blue-100 transition-colors"

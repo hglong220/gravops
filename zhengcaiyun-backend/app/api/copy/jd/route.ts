@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getActorFromRequest } from '@/lib/request-actor';
 import { scrapeJDProduct } from '@/lib/scrapers/jd-product-scraper';
 
 /**
@@ -16,7 +16,15 @@ export async function POST(request: NextRequest) {
         // }
 
         // 使用测试用户
-        const user = { userId: 'test-user-001', licenseKey: 'TEST-2024' };
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
+        }
 
         const body = await request.json();
         const { url } = body;
@@ -28,12 +36,12 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log(`[API /copy/jd] User ${user.userId} copying: ${url}`);
+        console.log(`[API /copy/jd] User ${userId} copying: ${url}`);
 
         // 检查是否已存在
         const existing = await prisma.productDraft.findFirst({
             where: {
-                userId: user.userId,
+                userId,
                 originalUrl: url
             }
         });
@@ -68,7 +76,7 @@ export async function POST(request: NextRequest) {
         } else {
             draft = await prisma.productDraft.create({
                 data: {
-                    userId: user.userId,
+                    userId,
                     originalUrl: url,
                     title: productData.title,
                     images: JSON.stringify(productData.images),

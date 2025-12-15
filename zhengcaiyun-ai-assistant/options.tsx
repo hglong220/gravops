@@ -24,11 +24,57 @@ export default function Options() {
         })
     }, [])
 
-    const handleSaveApiUrl = () => {
-        chrome.storage.local.set({ apiUrl }, () => {
-            setStatus("API地址已保存")
-            setTimeout(() => setStatus(""), 2000)
+    const normalizeApiUrl = (input: string) => input.trim().replace(/\/+$/, "")
+
+    const isLocalHostname = (hostname: string) =>
+        hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+
+    const ensureHostPermission = async (baseUrl: string) => {
+        const normalized = normalizeApiUrl(baseUrl)
+        const origin = new URL(normalized).origin
+        const pattern = `${origin}/*`
+
+        const alreadyGranted = await new Promise<boolean>((resolve) => {
+            chrome.permissions.contains({ origins: [pattern] }, resolve)
         })
+
+        if (alreadyGranted) return true
+
+        return new Promise<boolean>((resolve) => {
+            chrome.permissions.request({ origins: [pattern] }, (granted) => resolve(!!granted))
+        })
+    }
+
+    const handleSaveApiUrl = async () => {
+        try {
+            const normalized = normalizeApiUrl(apiUrl)
+            const url = new URL(normalized)
+
+            if (url.protocol !== "https:" && !isLocalHostname(url.hostname)) {
+                setStatus("❌ 生产环境必须使用 HTTPS（本地 localhost 可用 http）")
+                setTimeout(() => setStatus(""), 5000)
+                return
+            }
+
+            // 非本地域名需要用户授权 host 权限（否则插件无法访问你的服务器）
+            if (!isLocalHostname(url.hostname)) {
+                const granted = await ensureHostPermission(normalized)
+                if (!granted) {
+                    setStatus("❌ 未授权访问该后端域名，请在弹窗中点击允许")
+                    setTimeout(() => setStatus(""), 5000)
+                    return
+                }
+            }
+
+            chrome.storage.local.set({ apiUrl: normalized }, () => {
+                setApiUrl(normalized)
+                setStatus("✅ API地址已保存")
+                setTimeout(() => setStatus(""), 2000)
+            })
+        } catch (error) {
+            setStatus("❌ API地址格式不正确，请输入完整 URL（如 https://example.com）")
+            setTimeout(() => setStatus(""), 5000)
+        }
     }
 
     const handleActivate = async () => {
@@ -40,10 +86,27 @@ export default function Options() {
         try {
             setStatus("正在验证授权码...")
 
+            const normalizedApiUrl = normalizeApiUrl(apiUrl)
+            const url = new URL(normalizedApiUrl)
+            if (url.protocol !== "https:" && !isLocalHostname(url.hostname)) {
+                setStatus("❌ 生产环境必须使用 HTTPS（本地 localhost 可用 http）")
+                setTimeout(() => setStatus(""), 5000)
+                return
+            }
+
+            if (!isLocalHostname(url.hostname)) {
+                const granted = await ensureHostPermission(normalizedApiUrl)
+                if (!granted) {
+                    setStatus("❌ 未授权访问该后端域名，请在弹窗中点击允许")
+                    setTimeout(() => setStatus(""), 5000)
+                    return
+                }
+            }
+
             // 生成设备ID（唯一标识这个浏览器）
             const deviceId = await getDeviceId()
 
-            const res = await fetch(`${apiUrl}/api/verify-license`, {
+            const res = await fetch(`${normalizedApiUrl}/api/plugin/session`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -62,14 +125,15 @@ export default function Options() {
                     companyName: data.companyName,
                     plan: data.plan,
                     expiresAt: data.expiresAt,
-                    user: data.user,
+                    userId: data.userId,
                     activatedAt: Date.now()
                 }
 
                 chrome.storage.local.set({
                     licenseKey,
                     licenseInfo: licenseData,
-                    deviceId
+                    deviceId,
+                    token: data.token
                 }, () => {
                     setIsActivated(true)
                     setLicenseInfo(licenseData)
@@ -88,7 +152,7 @@ export default function Options() {
     }
 
     const handleDeactivate = () => {
-        chrome.storage.local.remove(["licenseKey", "licenseInfo", "deviceId"], () => {
+        chrome.storage.local.remove(["licenseKey", "licenseInfo", "deviceId", "token"], () => {
             setIsActivated(false)
             setLicenseInfo(null)
             setLicenseKey("")

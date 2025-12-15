@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 /**
  * GET /api/copy/drafts/[id]
@@ -14,8 +13,28 @@ export async function GET(
     try {
         const { id } = params;
 
-        const draft = await prisma.productDraft.findUnique({
-            where: { id }
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json(
+                { success: false, error: 'Unauthorized' },
+                { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: 'License is not linked to a user',
+                    code: 'LICENSE_NOT_LINKED'
+                },
+                { status: 403, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const draft = await prisma.productDraft.findFirst({
+            where: { id, userId }
         });
 
         if (!draft) {
@@ -50,7 +69,7 @@ export async function GET(
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
             }
         });
 
@@ -76,24 +95,106 @@ export async function PUT(
 ) {
     try {
         const { id } = params;
+
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json(
+                { success: false, error: 'Unauthorized' },
+                { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: 'License is not linked to a user',
+                    code: 'LICENSE_NOT_LINKED'
+                },
+                { status: 403, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const existingDraft = await prisma.productDraft.findFirst({
+            where: { id, userId }
+        });
+
+        if (!existingDraft) {
+            return NextResponse.json(
+                { success: false, error: '草稿不存在' },
+                { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
         const body = await request.json();
-        const { title, price, stock, detailHtml, attributes } = body;
+        const {
+            title,
+            price,
+            stock,
+            detailHtml,
+            attributes,
+            images,
+            detailImages,
+            categoryPath,
+            brand,
+            model,
+            originalUrl
+        } = body;
 
         // Construct update data
         const updateData: any = {};
         if (title !== undefined) updateData.title = title;
         if (detailHtml !== undefined) updateData.detailHtml = detailHtml;
-        if (attributes !== undefined) updateData.attributes = JSON.stringify(attributes);
+        if (categoryPath !== undefined) updateData.categoryPath = categoryPath;
+        if (brand !== undefined) updateData.brand = brand;
+        if (model !== undefined) updateData.model = model;
+        if (originalUrl !== undefined) updateData.originalUrl = originalUrl;
+
+        if (attributes !== undefined) {
+            updateData.attributes =
+                typeof attributes === 'string' ? attributes : JSON.stringify(attributes);
+        }
+
+        if (images !== undefined) {
+            updateData.images =
+                typeof images === 'string' ? images : JSON.stringify(images || []);
+        }
+
+        if (detailImages !== undefined) {
+            updateData.detailImages =
+                typeof detailImages === 'string'
+                    ? detailImages
+                    : JSON.stringify(detailImages || []);
+        }
 
         // Update SKU data if price or stock provided
         if (price !== undefined || stock !== undefined) {
-            const draft = await prisma.productDraft.findUnique({ where: { id } });
-            if (draft) {
-                const skuData = JSON.parse(draft.skuData || '{}');
-                if (price !== undefined) skuData.price = price;
-                if (stock !== undefined) skuData.stock = stock;
-                updateData.skuData = JSON.stringify(skuData);
+            const skuData = JSON.parse(existingDraft.skuData || '{}');
+
+            if (price !== undefined) {
+                const parsedPrice =
+                    typeof price === 'number'
+                        ? price
+                        : Number.parseFloat(String(price).replace(/[^0-9.]/g, ''));
+                if (Number.isFinite(parsedPrice)) {
+                    skuData.price = parsedPrice;
+                    updateData.price = parsedPrice;
+                }
             }
+
+            if (stock !== undefined) {
+                const parsedStock =
+                    typeof stock === 'number'
+                        ? stock
+                        : Number.parseInt(String(stock).replace(/[^0-9]/g, ''), 10);
+                if (Number.isFinite(parsedStock)) {
+                    skuData.stock = parsedStock;
+                    updateData.stock = parsedStock;
+                }
+            }
+
+            updateData.skuData = JSON.stringify(skuData);
         }
 
         const updatedDraft = await prisma.productDraft.update({
@@ -105,7 +206,7 @@ export async function PUT(
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'PUT, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
             }
         });
 
@@ -134,6 +235,37 @@ export async function DELETE(
     try {
         const { id } = params;
 
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json(
+                { success: false, error: 'Unauthorized' },
+                { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: 'License is not linked to a user',
+                    code: 'LICENSE_NOT_LINKED'
+                },
+                { status: 403, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
+        const existingDraft = await prisma.productDraft.findFirst({
+            where: { id, userId }
+        });
+
+        if (!existingDraft) {
+            return NextResponse.json(
+                { success: false, error: '草稿不存在' },
+                { status: 404, headers: { 'Access-Control-Allow-Origin': '*' } }
+            );
+        }
+
         await prisma.productDraft.delete({
             where: { id }
         });
@@ -142,7 +274,7 @@ export async function DELETE(
             headers: {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
             }
         });
 
@@ -166,7 +298,7 @@ export async function OPTIONS(request: NextRequest) {
         headers: {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         },
     });
 }

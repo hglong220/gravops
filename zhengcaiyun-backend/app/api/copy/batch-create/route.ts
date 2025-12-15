@@ -73,6 +73,10 @@ export async function POST(request: NextRequest) {
                         userId: user.userId,
                         originalUrl: url,
                         title: initialTitle,
+                        images: '[]',
+                        attributes: '{}',
+                        skuData: '{}',
+                        detailHtml: '',
                         status: initialStatus,
                         copyTaskId: task.id,
                         shopName: initialShopName

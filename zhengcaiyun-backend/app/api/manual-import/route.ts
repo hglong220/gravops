@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "../../../lib/prisma";
+
+import { prisma } from "@/lib/prisma";
+import { getActorFromRequest } from "@/lib/request-actor";
 
 type ManualPayload = {
   originalUrl: string;
@@ -15,6 +17,19 @@ type ManualPayload = {
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await getActorFromRequest(req);
+    if (!actor) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = actor.kind === "user" ? actor.userId : actor.userId;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+        { status: 403 }
+      );
+    }
+
     const body = (await req.json()) as ManualPayload;
     const {
       originalUrl,
@@ -34,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     const draft = await prisma.productDraft.create({
       data: {
-        userId: "manual-import",
+        userId,
         originalUrl,
         originalId: null,
         shopName: "Unknown",

@@ -1,8 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getAIConfig, saveAIConfig } from '@/lib/ai-config';
+import { getAdminFromRequest } from '@/lib/admin-auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const config = getAIConfig();
         return NextResponse.json(config);
     } catch (error) {
@@ -10,8 +16,13 @@ export async function GET() {
     }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await request.json();
         saveAIConfig(body);
         return NextResponse.json({ success: true, data: body });

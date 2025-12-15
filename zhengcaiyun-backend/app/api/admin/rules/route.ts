@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getAdminFromRequest } from '@/lib/admin-auth';
 
 // GET: List rules
 export async function GET(request: NextRequest) {
     try {
-        const user = await getAuthUser(request);
-        if (!user) { // Assuming admin check is inside getAuthUser or we check role
-            // For MVP, allow authenticated users to see rules? No, Admin only.
-            // But let's assume auth is enough for now or check simple role
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -25,8 +23,8 @@ export async function GET(request: NextRequest) {
 // POST: Create rule
 export async function POST(request: NextRequest) {
     try {
-        const user = await getAuthUser(request);
-        if (!user) {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -52,8 +50,8 @@ export async function POST(request: NextRequest) {
 // DELETE: Delete rule
 export async function DELETE(request: NextRequest) {
     try {
-        const user = await getAuthUser(request);
-        if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const admin = getAdminFromRequest(request);
+        if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { searchParams } = new URL(request.url);
         const id = searchParams.get('id');

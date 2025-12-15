@@ -13,6 +13,7 @@
 
 // 导入SKU多规格采集模块（增强版）
 import { extractZcySkuData, type ZcySkuData } from './sku.zcy'
+import { fetchWithAuth } from "~src/utils/api"
 
 // ========== 类型定义 ==========
 
@@ -864,7 +865,7 @@ async function extractAndCallback(callback: DataReadyCallback) {
 
 export async function pushToBackend(data: ExtractedData): Promise<boolean> {
     const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || ''
-    if (!BACKEND_URL) {
+    if (false && !BACKEND_URL) {
         console.warn('[ZCY Pro V2] 未配置 BACKEND_URL，跳过推送')
         return false
     }
@@ -896,7 +897,7 @@ export async function pushToBackend(data: ExtractedData): Promise<boolean> {
             specs: Object.keys(payload.specs).length
         })
 
-        const response = await fetch(`${BACKEND_URL}/api/plugin/collect`, {
+        const response = await fetchWithAuth(`/api/plugin/collect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ product: payload })

@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getActorFromRequest } from '@/lib/request-actor';
 import { analyzeProduct } from '@/lib/ai-service';
 
 export async function POST(request: NextRequest) {
     try {
-        const user = await getAuthUser(request);
-        if (!user) {
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json(
+                { error: 'License is not linked to a user', code: 'LICENSE_NOT_LINKED' },
+                { status: 403 }
+            );
         }
 
         const body = await request.json();
@@ -32,7 +40,7 @@ export async function POST(request: NextRequest) {
             // But background worker might use a different token or same user token.
             // Let's assume user token is passed.
 
-            const existing = await prisma.productDraft.findUnique({ where: { id } });
+            const existing = await prisma.productDraft.findFirst({ where: { id, userId } });
             if (!existing) {
                 return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
             }
@@ -89,7 +97,7 @@ export async function POST(request: NextRequest) {
         // Mode 2: Create or update by originalUrl (used by manual copy)
         const existingDraft = await prisma.productDraft.findFirst({
             where: {
-                userId: user.userId,
+                userId,
                 originalUrl
             }
         });
@@ -151,7 +159,7 @@ export async function POST(request: NextRequest) {
         } else {
             draft = await prisma.productDraft.create({
                 data: {
-                    userId: user.userId,
+                    userId,
                     originalUrl,
                     title: title || '未命名商品',
                     images: typeof images === 'string' ? images : JSON.stringify(images || []),

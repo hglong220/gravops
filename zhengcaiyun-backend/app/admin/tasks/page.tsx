@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminTasksPage() {
+    const router = useRouter();
     const [companies, setCompanies] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -17,19 +19,47 @@ export default function AdminTasksPage() {
 
     const fetchCompanies = () => {
         setLoading(true);
-        fetch('/api/admin/tasks?mode=grouped')
-            .then(res => res.json())
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch('/api/admin/tasks?mode=grouped', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
             .then(data => {
+                if (!data) return;
                 setCompanies(data.companies || []);
                 setLoading(false);
-            });
+            })
+            .catch(() => setLoading(false));
     };
 
     const handleShowDetails = async (company: any) => {
         setSelectedCompany(company);
         setLoadingDetails(true);
         try {
-            const res = await fetch(`/api/admin/tasks?mode=details&userId=${company.userId}`);
+            const token = localStorage.getItem('token');
+            if (!token) {
+                router.push('/login');
+                return;
+            }
+
+            const res = await fetch(`/api/admin/tasks?mode=details&userId=${company.userId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             setDetails(data.drafts || []);
         } catch (e) {
@@ -164,4 +194,3 @@ export default function AdminTasksPage() {
         </div>
     );
 }
-

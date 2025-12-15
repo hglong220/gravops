@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function UsersPage() {
+    const router = useRouter();
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -32,20 +34,49 @@ export default function UsersPage() {
 
     const fetchUsers = () => {
         setLoading(true);
-        fetch(`/api/admin/users?search=${encodeURIComponent(searchTerm)}`)
-            .then(res => res.json())
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch(`/api/admin/users?search=${encodeURIComponent(searchTerm)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
             .then(data => {
+                if (!data) return;
                 setUsers(data);
                 setLoading(false);
-            });
+            })
+            .catch(() => setLoading(false));
     };
 
     async function toggleBan(userId: string, currentStatus: boolean) {
         if (!confirm(`确定要${currentStatus ? '解封' : '封禁'}该用户吗？`)) return;
 
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
         const res = await fetch('/api/admin/users', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ userId, action: currentStatus ? 'unban' : 'ban' })
         });
 
@@ -58,9 +89,18 @@ export default function UsersPage() {
     }
 
     async function handleSaveProfile() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
         const res = await fetch('/api/admin/users', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
                 userId: selectedUser.id,
                 action: 'update',

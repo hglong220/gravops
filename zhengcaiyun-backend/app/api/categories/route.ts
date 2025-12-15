@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next.server';
+import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * 政采云类目API
@@ -10,6 +10,9 @@ import { NextRequest, NextResponse } from 'next.server';
 // 类目数据（实际应该从数据库读取）
 import categoriesData from '@/public/api/categories.json';
 
+const categoryTree = categoriesData.categories as any[];
+const flatCategories = flattenCategories(categoryTree);
+
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const level = searchParams.get('level');
@@ -19,7 +22,7 @@ export async function GET(request: NextRequest) {
     try {
         // 查询指定ID的类目
         if (id) {
-            const category = findCategoryById(categoriesData.tree, id);
+            const category = findCategoryById(categoryTree, id);
             if (!category) {
                 return NextResponse.json(
                     { error: '类目不存在' },
@@ -35,7 +38,7 @@ export async function GET(request: NextRequest) {
 
         // 按层级筛选
         if (level) {
-            const filtered = categoriesData.categories.filter(
+            const filtered = flatCategories.filter(
                 (c: any) => c.level === parseInt(level)
             );
 
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
 
         // 按父级ID筛选
         if (parentId) {
-            const filtered = categoriesData.categories.filter(
+            const filtered = flatCategories.filter(
                 (c: any) => c.parentId?.toString() === parentId
             );
 
@@ -62,7 +65,7 @@ export async function GET(request: NextRequest) {
         // 返回完整数据
         return NextResponse.json({
             success: true,
-            data: categoriesData.tree,
+            data: categoryTree,
             meta: categoriesData.meta
         });
 
@@ -73,6 +76,22 @@ export async function GET(request: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+function flattenCategories(categories: any[]): any[] {
+    const result: any[] = [];
+
+    const walk = (nodes: any[]) => {
+        for (const node of nodes) {
+            result.push(node);
+            if (Array.isArray(node.children) && node.children.length > 0) {
+                walk(node.children);
+            }
+        }
+    };
+
+    walk(categories);
+    return result;
 }
 
 // 辅助函数：查找类目

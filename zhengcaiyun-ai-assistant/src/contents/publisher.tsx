@@ -7,6 +7,8 @@
 
 import type { PlasmoCSConfig } from "plasmo"
 import { getStoredLicense } from "~src/utils/license"
+import { getApiConfig } from "~src/utils/api"
+import { apiProxy } from "~src/utils/api-proxy"
 
 // ⭐⭐⭐ 旗舰 MAX 引擎（唯一入口）⭐⭐⭐
 import { FlagshipMax, type TaskContext, type ScrapedData } from "~src/rpa/flagship-max"
@@ -22,9 +24,7 @@ export const config: PlasmoCSConfig = {
   run_at: "document_end"
 }
 
-const BACKEND_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000'
-
-console.log("🚀 [ZCY Publisher 旗舰MAX] 已加载, BACKEND_URL =", BACKEND_URL)
+type PluginSessionResponse = { valid: boolean; token?: string }
 
 // ========== 页面类型检测 ==========
 
@@ -52,37 +52,80 @@ function showError(message: string) {
 
 // ========== 获取草稿 ==========
 
+async function getOrCreateDeviceId(): Promise<string> {
+  const result = await chrome.storage.local.get(["deviceId"])
+  if (result.deviceId) return result.deviceId as string
+
+  const newDeviceId = `device-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2)}`
+  await chrome.storage.local.set({ deviceId: newDeviceId })
+  return newDeviceId
+}
+
+async function refreshPluginToken(baseUrl: string): Promise<string | null> {
+  const stored = await getStoredLicense()
+  if (!stored) return null
+
+  const deviceId = await getOrCreateDeviceId()
+
+  const resp = await apiProxy<PluginSessionResponse>(`${baseUrl}/api/plugin/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: {
+      licenseKey: stored.licenseKey,
+      companyName: stored.companyName,
+      deviceId
+    }
+  })
+
+  if (!resp.ok) return null
+  const token = resp.data?.token
+  if (!resp.data?.valid || !token) return null
+
+  await chrome.storage.local.set({ token })
+  return token
+}
+
 async function fetchDraft(draftId: string): Promise<any> {
   try {
-    // 通过 Background Script 代理请求，绕过 Mixed Content 限制
-    // 因为 Content Script 运行在 HTTPS 页面，无法直接访问 HTTP localhost
-    const url = `${BACKEND_URL}/api/copy/drafts/${draftId}`
-    console.log('[旗舰MAX] 获取草稿:', url)
+    const { baseUrl, token: existingToken } = await getApiConfig()
+    let token = existingToken || undefined
 
-    // 使用 chrome.runtime.sendMessage 通过 Background Script 代理请求
-    const response = await new Promise<any>((resolve) => {
-      chrome.runtime.sendMessage(
-        {
-          type: 'API_PROXY',
-          url,
-          method: 'GET',
-          headers: {}
-        },
-        (resp) => {
-          if (chrome.runtime.lastError) {
-            console.error('[旗舰MAX] 代理请求失败:', chrome.runtime.lastError)
-            resolve({ ok: false, error: chrome.runtime.lastError.message })
-          } else {
-            resolve(resp)
-          }
-        }
-      )
-    })
+    if (!token) {
+      token = (await refreshPluginToken(baseUrl)) || undefined
+    }
 
-    if (!response.ok) {
-      console.error('[旗舰MAX] 草稿API返回:', response.status, response.error)
+    if (!token) {
+      console.error("[旗舰MAX] Missing plugin token, please activate license first")
       return null
     }
+
+    // 通过 Background Script 代理请求，绕过 Mixed Content 限制
+    // 因为 Content Script 运行在 HTTPS 页面，无法直接访问 HTTP localhost
+    const url = `${baseUrl}/api/copy/drafts/${draftId}`
+    console.log("[旗舰MAX] 获取草稿:", url)
+
+    let response = await apiProxy<any>(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` }
+    })
+
+    if (response.status === 401) {
+      const refreshed = await refreshPluginToken(baseUrl)
+      if (refreshed) {
+        response = await apiProxy<any>(url, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${refreshed}` }
+        })
+      }
+    }
+
+    if (!response.ok) {
+      console.error("[旗舰MAX] 草稿API返回:", response.status, response.error)
+      return null
+    }
+
     return response.data
   } catch (e) {
     console.error('[旗舰MAX] 获取草稿失败:', e)
@@ -121,16 +164,26 @@ async function handleCategoryPage(draftId: string) {
   // 3. 调用 AI 分析
   let aiResult
   try {
-    const resp = await fetch(`${BACKEND_URL}/api/category-match`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const { baseUrl, token } = await getApiConfig()
+    const resp = await apiProxy<any>(`${baseUrl}/api/category-match`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: {
         licenseKey,
         productTitle: draft.title,
-        mode: 'full'
-      })
+        mode: "full"
+      }
     })
-    aiResult = await resp.json()
+
+    aiResult = resp.data
+
+    if (!resp.ok) {
+      showError((aiResult as any)?.error || resp.error || `AI 匹配失败 (${resp.status})`)
+      return
+    }
   } catch (e) {
     showError('AI 服务连接失败')
     return

@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 /**
  * POST /api/copy/tasks/[id]/resume
@@ -13,6 +12,23 @@ export async function POST(
 ) {
     try {
         const { id } = params;
+
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ success: false, error: 'License is not linked to a user' }, { status: 401 });
+        }
+
+        const existingTask = await prisma.copyTask.findFirst({
+            where: { id, userId }
+        });
+        if (!existingTask) {
+            return NextResponse.json({ success: false, error: 'Task not found' }, { status: 404 });
+        }
 
         const task = await prisma.copyTask.update({
             where: { id },

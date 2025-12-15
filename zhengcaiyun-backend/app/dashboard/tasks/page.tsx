@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 type ProductDraft = {
   id: string
@@ -20,6 +21,7 @@ type ProductDraft = {
   brand?: string
   categoryPath?: string
   price?: number | string
+  stock?: number | string
 }
 
 type TaskGroup = {
@@ -106,6 +108,7 @@ const parseAttributes = (val: any): Record<string, string> => {
 }
 
 export default function TaskPage() {
+  const router = useRouter()
   const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([])
   const [products, setProducts] = useState<ProductDraft[]>([])
   const [selectedTask, setSelectedTask] = useState<string>('single')
@@ -121,9 +124,34 @@ export default function TaskPage() {
   const [catL3, setCatL3] = useState('')
   const [missingNotice, setMissingNotice] = useState('')
 
+  const authedFetch = async (path: string, init: RequestInit = {}) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/login')
+      throw new Error('Unauthorized')
+    }
+
+    const headers = new Headers(init.headers)
+    headers.set('Authorization', `Bearer ${token}`)
+    if (init.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+
+    const res = await fetch(path, { ...init, headers })
+
+    if (res.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      router.push('/login')
+      throw new Error('Unauthorized')
+    }
+
+    return res
+  }
+
   const fetchData = async () => {
     try {
-      const draftsRes = await fetch('http://localhost:3000/api/copy/drafts')
+      const draftsRes = await authedFetch('/api/copy/drafts')
       const draftsJson = await draftsRes.json()
       const drafts: ProductDraft[] = draftsJson.drafts || []
 
@@ -157,7 +185,7 @@ export default function TaskPage() {
 
   const fetchProductsForTask = async (taskId: string) => {
     try {
-      const res = await fetch('http://localhost:3000/api/copy/drafts')
+      const res = await authedFetch('/api/copy/drafts')
       const data = await res.json()
       const drafts: ProductDraft[] = data.drafts || []
       if (taskId === 'single') setProducts(drafts.filter((d) => !d.copyTaskId))
@@ -173,9 +201,8 @@ export default function TaskPage() {
     if (!selectedIds.size) return alert('请先选择商品')
     if (!confirm(`确定删除选中的 ${selectedIds.size} 个商品吗？`)) return
     try {
-      const res = await fetch('http://localhost:3000/api/copy/drafts/batch-delete', {
+      const res = await authedFetch('/api/copy/drafts/batch-delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds) })
       })
       if (!res.ok) throw new Error('batch delete failed')
@@ -236,19 +263,34 @@ export default function TaskPage() {
       return acc
     }, {})
     const categoryPath = [catL1, catL2, catL3].filter(Boolean).join('/')
+    const rawPrice = (editingProduct as any).price
+    const rawStock = (editingProduct as any).stock
+
+    const parsedPrice =
+      rawPrice === undefined || rawPrice === null || String(rawPrice).trim() === ''
+        ? undefined
+        : Number.parseFloat(String(rawPrice))
+
+    const price = Number.isFinite(parsedPrice) ? parsedPrice : undefined
+
+    const parsedStock =
+      rawStock === undefined || rawStock === null || String(rawStock).trim() === ''
+        ? undefined
+        : Number.parseInt(String(rawStock), 10)
+
+    const stock = Number.isFinite(parsedStock) ? parsedStock : undefined
     try {
-      const res = await fetch(`http://localhost:3000/api/copy/drafts/${editingProduct.id}`, {
+      const res = await authedFetch(`/api/copy/drafts/${editingProduct.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: editingProduct.title,
-          price: (editingProduct as any).price || '',
-          stock: (editingProduct as any).stock || '',
+          price,
+          stock,
           detailHtml: editingProduct.detailHtml || '',
           categoryPath,
-          attributes: JSON.stringify(attrs),
-          images: JSON.stringify(editMainImages),
-          detailImages: JSON.stringify(editDetailImages),
+          attributes: attrs,
+          images: editMainImages,
+          detailImages: editDetailImages,
           model: editingProduct.model || '',
           brand: editingProduct.brand || '',
           originalUrl: editingProduct.originalUrl || ''
@@ -279,7 +321,7 @@ export default function TaskPage() {
     setSelectedIds(next)
   }
 
-  const allSelected = useMemo(() => products.length && selectedIds.size === products.length, [products, selectedIds])
+  const allSelected = useMemo(() => products.length > 0 && selectedIds.size === products.length, [products, selectedIds])
 
   const toggleSelectAll = () => {
     if (allSelected) {
@@ -707,14 +749,16 @@ export default function TaskPage() {
                 )
               })()}
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">商品详情 (HTML)</label>
-                <textarea
-                  className="w-full border border-gray-300 rounded px-3 py-2 h-40 font-mono text-xs focus:ring-blue-500 focus:border-blue-500"
-                  value={editingProduct.detailHtml || ''}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, detailHtml: e.target.value })}
-                />
-              </div>
+              {!!(editingProduct.detailHtml || '').trim() && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">商品详情 (HTML)</label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded px-3 py-2 h-40 font-mono text-xs focus:ring-blue-500 focus:border-blue-500"
+                    value={editingProduct.detailHtml || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, detailHtml: e.target.value })}
+                  />
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                 {missingNotice && <div className="text-red-500 text-sm mr-auto">{missingNotice}</div>}

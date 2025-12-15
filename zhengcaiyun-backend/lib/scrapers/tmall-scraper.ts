@@ -1,4 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
+import { buildPuppeteerArgs, resolvePuppeteerExecutablePath } from '@/lib/puppeteer-launch';
 
 export interface TmallProductData {
     title: string;
@@ -36,7 +37,7 @@ export async function scrapeTmallProduct(productUrl: string): Promise<TmallProdu
         });
 
         // 等待页面加载(天猫是React应用,需要等待动态渲染)
-        await page.waitForTimeout(3000);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
 
         // 检查是否遇到登录墙
         const hasLoginWall = await page.evaluate(() => {
@@ -195,23 +196,13 @@ export async function scrapeTmallProduct(productUrl: string): Promise<TmallProdu
 }
 
 async function launchBrowser(): Promise<Browser> {
-    const fs = require('fs');
-    const chromePaths = [
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'
-    ];
-
-    const executablePath = chromePaths.find((path: string) => fs.existsSync(path));
-
+    const executablePath = resolvePuppeteerExecutablePath();
     return await puppeteer.launch({
         headless: true,
         executablePath: executablePath,
+        timeout: 60000,
         args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-web-security'  // 天猫可能需要
+            ...buildPuppeteerArgs(['--disable-web-security']) // 天猫可能需要
         ]
     });
 }

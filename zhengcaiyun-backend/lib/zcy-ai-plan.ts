@@ -5,6 +5,7 @@ export type AICommandType =
     | "EXPAND_MARKET"
     | "SELECT_BID"
     | "CONFIRM_DIALOG"
+    | "SELECT_CATEGORY"
     | "SELECT_CATEGORY_LEVEL1"
     | "SELECT_CATEGORY_LEVEL2"
     | "SELECT_CATEGORY_LEVEL3"

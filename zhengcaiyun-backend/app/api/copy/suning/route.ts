@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getActorFromRequest } from '@/lib/request-actor';
 import { scrapeSuningProduct } from '@/lib/scrapers/suning-scraper';
 
 export async function POST(request: NextRequest) {
     try {
-        const user = await getAuthUser(request);
-        if (!user) {
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
         }
 
         const body = await request.json();
@@ -20,10 +25,10 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        console.log(`[API /copy/suning] User ${user.userId} copying: ${url}`);
+        console.log(`[API /copy/suning] User ${userId} copying: ${url}`);
 
         const existing = await prisma.productDraft.findFirst({
-            where: { userId: user.userId, originalUrl: url }
+            where: { userId, originalUrl: url }
         });
 
         if (existing && existing.status === 'scraped') {
@@ -53,7 +58,7 @@ export async function POST(request: NextRequest) {
         } else {
             draft = await prisma.productDraft.create({
                 data: {
-                    userId: user.userId,
+                    userId,
                     originalUrl: url,
                     title: productData.title,
                     images: JSON.stringify(productData.images),

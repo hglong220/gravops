@@ -6,10 +6,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import CryptoJS from 'crypto-js';
+import { getPluginLicenseFromRequest } from '@/lib/plugin-auth';
 
 // 策略加密密钥
-const STRATEGY_SECRET = process.env.STRATEGY_SECRET || 'gravops-strategy-secret-key-2024';
+export const dynamic = 'force-dynamic';
 
 // ============================================
 // 京东采集策略
@@ -278,10 +278,7 @@ const ALL_STRATEGIES = {
 };
 
 // 加密函数
-function encryptStrategy(data: any): string {
-  const jsonStr = JSON.stringify(data);
-  return CryptoJS.AES.encrypt(jsonStr, STRATEGY_SECRET).toString();
-}
+// NOTE: Strategy is not encrypted; access is controlled by plugin token.
 
 // CORS头
 const corsHeaders = {
@@ -296,6 +293,11 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await getPluginLicenseFromRequest(request);
+    if (!auth && process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    }
+
     const body = await request.json();
     const { platform, action } = body;
 
@@ -319,12 +321,7 @@ export async function POST(request: NextRequest) {
       expiresIn: 3600000
     };
 
-    const encrypted = encryptStrategy(payload);
-
-    return NextResponse.json({
-      success: true,
-      data: encrypted
-    }, { headers: corsHeaders });
+    return NextResponse.json({ success: true, data: payload }, { headers: corsHeaders });
 
   } catch (error) {
     console.error('[Strategy] Error:', error);

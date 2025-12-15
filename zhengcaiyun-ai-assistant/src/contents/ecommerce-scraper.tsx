@@ -1,17 +1,11 @@
 import type { PlasmoCSConfig, PlasmoGetStyle, PlasmoMountShadowHost } from "plasmo"
 import { useEffect, useState } from "react"
+import { fetchWithAuth } from "../utils/api"
 
 // 导入Pro采集引擎（新增，不影响政采云）
-import { scrapeJDPro } from "../utils/scraper.jd.pro"
-import { scrapeTmallPro } from "../utils/scraper.tmall.pro"
-import { scrapeSuningPro } from "../utils/scraper.suning.pro"
 
 // 统一解析后端地址，避免“未配置后端地址”错误
-const resolveBackendUrl = () =>
-    process.env.PLASMO_PUBLIC_BACKEND_URL ||
-    (window as any).PLASMO_PUBLIC_BACKEND_URL ||
-    localStorage.getItem("BACKEND_URL") ||
-    "http://localhost:3000"
+// 采集核心已迁移到服务端：插件只负责触发/展示
 
 // 配置 Plasmo Content Script - 支持京东、天猫、淘宝、苏宁
 export const config: PlasmoCSConfig = {
@@ -127,48 +121,18 @@ const EcommerceScraperWidget = () => {
     const handleCopy = async () => {
         setLoading(true)
         try {
-            const hostname = window.location.hostname
-            let productData: any
+            const currentUrl = window.location.href
+            const hint = extractEcommerceHint()
 
-            // 根据平台选择Pro采集引擎（新增逻辑，不影响政采云）
-            if (hostname.includes('jd.com')) {
-                productData = await scrapeJDPro()
-            } else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
-                productData = await scrapeTmallPro()
-            } else if (hostname.includes('suning.com')) {
-                productData = await scrapeSuningPro()
-            } else {
-                productData = scrapePageData() // 兜底使用原逻辑
-            }
-
-            if (!productData.title) throw new Error('无法获取商品标题，请刷新页面重试')
-
-            // 转换Pro引擎输出格式
-            const pushData = {
-                originalUrl: productData.url || window.location.href,
-                title: productData.title,
-                price: String(productData.price || '0'),
-                images: productData.images || [],
-                attributes: productData.specs || {},
-                shopName: productData.platform || '电商平台',
-                brand: productData.specs?.['品牌'] || '',
-                model: productData.specs?.['型号'] || '',
-                // 新增：SKU多规格数据（政采云兼容格式）
-                skuData: productData.skuData || null
-            }
-
-            // 推送到本地 dashboard/tasks
-            const BACKEND_URL = resolveBackendUrl();
-            if (!BACKEND_URL) throw new Error('未配置后端地址');
-            await fetch(`${BACKEND_URL}/api/push-tasks`, {
+            const resp = await fetchWithAuth("/api/plugin/copy", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    type: "single",
-                    link: window.location.href,
-                    data: pushData
-                })
+                body: JSON.stringify({ url: currentUrl, hint })
             })
+
+            const data = await resp.json().catch(() => ({}))
+            if (!resp.ok || !data?.success) {
+                throw new Error(data?.error || `采集失败 (${resp.status})`)
+            }
 
             setPushSuccess(true)
             setSuccessMsg("采集成功！")
@@ -219,174 +183,215 @@ const EcommerceScraperWidget = () => {
     )
 }
 
-// 采集数据逻辑
-function scrapePageData() {
+export default EcommerceScraperWidget
+
+function extractEcommerceHint(): Record<string, any> {
     const url = window.location.href
     const hostname = window.location.hostname
-    let data = {
-        originalUrl: url,
-        title: '',
-        price: '0',
-        images: [] as string[],
-        attributes: {} as Record<string, string>,
-        detailHtml: '',
-        shopName: '',
-        category: '',
-        brand: '',
-        model: ''
+
+    if (hostname.includes("jd.com")) {
+        return extractJdHint(url)
     }
 
-    // 通用图片采集函数 - 收集页面上所有大尺寸商品图
-    const collectImages = () => {
-        const imgs: string[] = []
-        document.querySelectorAll('img').forEach((img: HTMLImageElement) => {
-            let src = img.src || img.getAttribute('data-src') || img.getAttribute('data-url') || img.getAttribute('data-lazy-img')
-            if (!src) return
-            // 过滤掉小图标、视频、base64
-            if (src.includes('data:image')) return
-            if (src.includes('video') || src.includes('.mp4') || src.includes('play')) return
-            if (img.width < 100 && img.height < 100 && img.naturalWidth < 100) return
-            // 转换为高清
-            src = src.replace(/\/n\d+\//, '/n1/')
-            src = src.replace(/_\d+x\d+[^.]*\.(jpg|png|webp)/i, '.$1')
-            src = src.replace(/_60x60\.jpg/i, '')
-            // 去重
-            if (!imgs.includes(src)) imgs.push(src)
-        })
-        return imgs.slice(0, 15)  // 最多15张
-    }
-
-    // 通用标题采集 - 从页面title提取
-    const getTitle = () => {
-        // 页面标题通常是：商品名 - 平台名
-        let title = document.title.split(/[-–—|_]/)[0].trim()
-        // 去掉平台后缀
-        title = title.replace(/京东|天猫|淘宝|苏宁|tmall|taobao|jd|suning/gi, '').trim()
-        return title
-    }
-
-    // 京东
-    if (hostname.includes('jd.com')) {
-        // 标题 - 优先尝试选择器，失败则用页面title
-        let title = ''
-        const titleEl = document.querySelector('.sku-name, .itemInfo-wrap .sku-name, h1')
-        if (titleEl?.textContent?.trim()?.length > 5) {
-            title = titleEl.textContent.trim()
-        }
-        if (!title) title = getTitle()
-        data.title = title
-
-        // 价格
-        const priceText = document.body.innerText.match(/[¥￥]\s*(\d+\.?\d*)/)?.[1] || ''
-        data.price = priceText
-
-        // 主图
-        data.images = collectImages()
-
-        // 尝试从页面文本提取品牌
-        const brandMatch = document.body.innerText.match(/品牌[：:]\s*([^\s\n]+)/)
-        if (brandMatch) data.brand = brandMatch[1]
-
-        data.shopName = '京东'
-        console.log('[JD采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
-    }
-    // 天猫/淘宝
-    else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
-        // 标题
-        let title = ''
-        const titleEl = document.querySelector('[class*="mainTitle"], .tb-main-title, h1')
-        if (titleEl?.textContent?.trim()?.length > 5) {
-            title = titleEl.textContent.trim()
-        }
-        if (!title) title = getTitle()
-        data.title = title
-
-        // 价格
-        const priceText = document.body.innerText.match(/[¥￥]\s*(\d+\.?\d*)/)?.[1] || ''
-        data.price = priceText
-
-        // 主图
-        data.images = collectImages()
-
-        // 品牌
-        const brandMatch = document.body.innerText.match(/品牌[：:]\s*([^\s\n]+)/)
-        if (brandMatch) data.brand = brandMatch[1]
-
-        data.shopName = '淘宝/天猫'
-        console.log('[天猫采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
-    }
-    // 苏宁
-    else if (hostname.includes('suning.com')) {
-        // 标题
-        let title = ''
-        const titleEl = document.querySelector('.proinfo-title, #itemDisplayName, h1')
-        if (titleEl?.textContent?.trim()?.length > 5) {
-            title = titleEl.textContent.trim()
-        }
-        if (!title) title = getTitle()
-        data.title = title
-
-        // 价格
-        const priceEl = document.querySelector('.mainprice, #promotionPrice')
-        if (priceEl) data.price = priceEl.textContent?.replace(/[^\d.]/g, '') || ''
-
-        // 主图
-        data.images = collectImages()
-
-        // 品牌
-        const brandEl = document.querySelector('.proinfo-brand a')
-        if (brandEl) data.brand = brandEl.textContent?.trim() || ''
-
-        data.shopName = '苏宁'
-        console.log('[苏宁采集] 标题:', data.title?.substring(0, 30), '图片:', data.images.length)
-    }
-
-    if (!data.title) data.title = document.title
-    data.title = data.title.trim()
-    data.images = [...new Set(data.images)].slice(0, 10)
-
-    // Category Extraction
-    let categoryParts: string[] = []
-
-    // 1. Try Breadcrumbs (DOM)
-    if (hostname.includes('jd.com')) {
-        const crumbs = document.querySelectorAll('#crumb-wrap .crumb a, .breadcrumb a, .w .breadcrumb a, .mbreadcrumb a, #ur-here a')
-        crumbs.forEach(el => categoryParts.push(el.textContent?.trim() || ''))
-    } else if (hostname.includes('tmall.com') || hostname.includes('taobao.com')) {
-        const crumbs = document.querySelectorAll('.tm-breadcrumbs a, #J_Crumb a, .tb-breadcrumb a, .ui-breadcrumb a')
-        crumbs.forEach(el => categoryParts.push(el.textContent?.trim() || ''))
-    }
-
-    // 2. Fallback: Meta Tags (Keywords often contain category structure)
-    if (categoryParts.length === 0) {
-        const keywords = document.querySelector('meta[name="keywords"]')?.getAttribute('content');
-        if (keywords) {
-            // JD/Tmall keywords often look like "Brand, Model, Category, Subcategory"
-            // We can try to use it as a rough category path
-            categoryParts.push(keywords.split(',')[0]);
-        }
-    }
-
-    // 3. Fallback: Script Data (JSON-LD or internal vars)
-    if (categoryParts.length === 0) {
-        // Try to find specific JS variables if possible (advanced)
-        // For now, let's stick to DOM and Meta
-    }
-
-    // Filter and Join
-    // Remove common non-category words like "首页", "Home", "全部商品"
-    const ignoreWords = ['首页', 'Home', '全部商品', '全部结果'];
-    data.category = categoryParts
-        .map(s => s.trim())
-        .filter(s => s && !ignoreWords.includes(s))
-        .join('/');
-
-    if (!data.category) {
-        console.warn('Category extraction failed');
-        data.category = '未分类'; // Mark as unclassified so user knows
-    }
-
-    return data
+    return {}
 }
 
-export default EcommerceScraperWidget
+function extractJdHint(url: string): Record<string, any> {
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+
+    const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
+
+    const skuId = (() => {
+        const m = url.match(/\/(\d+)\.html/i)
+        return m ? m[1] : ""
+    })()
+
+    const title =
+        text(document.querySelector(".sku-name")) ||
+        text(document.querySelector(".itemInfo-wrap h1")) ||
+        text(document.querySelector(".p-name")) ||
+        (document.title || "").split("-")[0]?.trim() ||
+        ""
+
+    const priceEl =
+        document.querySelector(".p-price .price") ||
+        (skuId ? document.querySelector(`.price.J-p-${skuId}`) : null) ||
+        document.querySelector("[class*='J-p-']")
+
+    const price = cleanPrice(text(priceEl))
+
+    const normalizeImg = (raw: string) => {
+        let u = String(raw || "").trim()
+        if (!u) return null
+        if (u.startsWith("data:")) return null
+        if (u.startsWith("//")) u = `https:${u}`
+        if (u.startsWith("/jfs/")) u = `https://img10.360buyimg.com/n1${u}`
+        if (u.startsWith("/")) u = `https://item.jd.com${u}`
+        if (u.startsWith("jfs/")) u = `https://img10.360buyimg.com/n1/${u}`
+        u = u
+            .replace("/n5/", "/n1/")
+            .replace("/n7/", "/n1/")
+            .replace("/n9/", "/n1/")
+            .replace("/s54x54_jfs/", "/n1/")
+            .replace("/s60x60_jfs/", "/n1/")
+        if (!u.includes("360buyimg.com")) return null
+        return u
+    }
+
+    const images: string[] = []
+    const seen = new Set<string>()
+    const addImg = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u) return
+        if (seen.has(u)) return
+        seen.add(u)
+        images.push(u)
+    }
+
+    document
+        .querySelectorAll("#spec-list img, #spec-n1 img, .spec-items img, .lh img")
+        .forEach((node) => {
+            const img = node as HTMLImageElement
+            addImg(
+                img.getAttribute("data-origin") ||
+                img.getAttribute("data-url") ||
+                img.getAttribute("data-src") ||
+                img.getAttribute("data-lazy-img") ||
+                img.getAttribute("data-lazyload") ||
+                img.getAttribute("src")
+            )
+        })
+
+    const attributes: Record<string, string> = {}
+    document
+        .querySelectorAll(
+            [
+                "#parameter-brand li",
+                "#parameter2 li",
+                ".parameter2 li",
+                ".p-parameter-list li",
+                ".p-parameter li",
+                ".Ptable-item",
+                ".Ptable-item dl",
+                ".Ptable-item li"
+            ].join(",")
+        )
+        .forEach((row) => {
+            const t = text(row)
+            const m = t.match(/^(.+?)[:：]\s*(.+)$/)
+            if (!m) return
+            const k = m[1].trim()
+            const v = m[2].trim()
+            if (!k || !v) return
+            if (k.length > 40 || v.length > 200) return
+            attributes[k] = v
+        })
+
+    const brand = attributes["品牌"] || attributes["品牌名称"] || ""
+    const model = attributes["型号"] || attributes["产品型号"] || attributes["规格型号"] || ""
+
+    const derived = deriveBrandModelFromTitle(title || "")
+
+    const detailImages: string[] = []
+    const seenDetail = new Set<string>()
+    const addDetail = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u) return
+        if (seenDetail.has(u)) return
+        seenDetail.add(u)
+        detailImages.push(u)
+    }
+
+    document
+        .querySelectorAll(
+            [
+                "#J-detail-content img",
+                "#detail img",
+                ".detail-content img",
+                ".product-detail img",
+                "div[id*='detail'] img"
+            ].join(",")
+        )
+        .forEach((node) => {
+            const img = node as HTMLImageElement
+            addDetail(
+                img.getAttribute("data-origin") ||
+                img.getAttribute("data-url") ||
+                img.getAttribute("data-src") ||
+                img.getAttribute("data-lazy-img") ||
+                img.getAttribute("data-lazyload") ||
+                img.getAttribute("src")
+            )
+        })
+
+    const specGroups = extractJdSpecGroups(normalizeImg)
+
+    return {
+        title: title || undefined,
+        price: price || undefined,
+        images: images.slice(0, 10),
+        detailImages: detailImages.slice(0, 30),
+        brand: brand || derived.brand || undefined,
+        model: model || derived.model || undefined,
+        skuId: skuId || undefined,
+        specGroups: specGroups.length ? specGroups : undefined,
+        attributes: Object.keys(attributes).length ? attributes : undefined
+    }
+}
+
+function deriveBrandModelFromTitle(title: string): { brand: string; model: string } {
+    const t = String(title || "").replace(/\s+/g, " ").trim()
+    if (!t) return { brand: "", model: "" }
+
+    // brand: take prefix before first digit cluster when possible
+    const firstDigitIdx = t.search(/\d/)
+    const brandPart = (firstDigitIdx > 0 ? t.slice(0, firstDigitIdx) : t.split(" ")[0] || "").trim()
+    const brand = brandPart.replace(/[【】\[\]（）()]/g, "").trim()
+
+    // model: try patterns like 323dnw / M233sdn / LBP2900 etc.
+    const modelMatch =
+        t.match(/\b[A-Za-z]{0,6}\d{2,}[A-Za-z0-9\-]{0,10}\b/) ||
+        t.match(/\b\d{2,}[A-Za-z][A-Za-z0-9\-]{0,10}\b/)
+
+    const model = modelMatch ? modelMatch[0] : ""
+
+    return { brand, model }
+}
+
+function extractJdSpecGroups(
+    normalizeImg: (raw: string) => string | null
+): Array<{ name: string; values: Array<{ name: string; image?: string }> }> {
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+
+    const groups: Array<{ name: string; values: Array<{ name: string; image?: string }> }> = []
+
+    const containers = Array.from(document.querySelectorAll("div[id^='choose-attr-']"))
+    for (const c of containers) {
+        const name = text(c.querySelector(".dt"))
+        if (!name) continue
+        if (name.includes("数量") || name.includes("服务") || name.includes("套装")) continue
+
+        const items = Array.from(c.querySelectorAll(".dd .item"))
+        const values: Array<{ name: string; image?: string }> = []
+
+        for (const it of items) {
+            const vName = text(it.querySelector("a")) || text(it)
+            if (!vName) continue
+
+            const imgEl = it.querySelector("img") as HTMLImageElement | null
+            const imgRaw =
+                imgEl?.getAttribute("data-url") || imgEl?.getAttribute("data-src") || imgEl?.getAttribute("src")
+            const img = imgRaw ? normalizeImg(imgRaw) : null
+
+            values.push(img ? { name: vName, image: img } : { name: vName })
+        }
+
+        if (values.length) {
+            groups.push({ name, values })
+        }
+    }
+
+    return groups
+}

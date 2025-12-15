@@ -1,95 +1,175 @@
-import CryptoJS from 'crypto-js';
-
-// 开发环境使用 localhost，生产环境从环境变量获取
-const API_BASE_URL = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+import CryptoJS from "crypto-js"
 
 export interface LicenseVerifyResult {
-    valid: boolean;
-    error?: string;
-    companyName?: string;
-    expiresAt?: number;
+  valid: boolean
+  error?: string
+  code?: string
+  bindUrl?: string
+  companyName?: string
+  expiresAt?: number
+  plan?: string
+  userId?: string | null
+  maxDevices?: number
+  currentDevices?: number
+  token?: string
 }
 
-// 加密存储License信息
-export async function storeLicense(licenseKey: string, companyName: string): Promise<void> {
-    const encrypted = CryptoJS.AES.encrypt(
-        JSON.stringify({ licenseKey, companyName, activatedAt: Date.now() }),
-        'your-secret-key'
-    ).toString();
-
-    await chrome.storage.local.set({ license: encrypted });
-    console.log('[License] 已保存授权信息');
+async function getBackendUrl(): Promise<string> {
+  const result = await chrome.storage.local.get(["apiUrl"])
+  return (
+    result.apiUrl ||
+    process.env.PLASMO_PUBLIC_BACKEND_URL ||
+    "http://localhost:3000"
+  )
 }
 
-// 读取本地License信息
-export async function getStoredLicense(): Promise<{ licenseKey: string; companyName: string } | null> {
-    const result = await chrome.storage.local.get('license');
-    if (!result.license) return null;
+async function getOrCreateDeviceId(): Promise<string> {
+  const result = await chrome.storage.local.get(["deviceId"])
+  if (result.deviceId) return result.deviceId
 
-    try {
-        const decrypted = CryptoJS.AES.decrypt(result.license, 'your-secret-key').toString(CryptoJS.enc.Utf8);
-        const data = JSON.parse(decrypted);
-        return { licenseKey: data.licenseKey, companyName: data.companyName };
-    } catch (error) {
-        console.error('[License] 解密失败:', error);
-        return null;
+  const newDeviceId = `device-${Date.now()}-${Math.random()
+    .toString(36)
+    .substring(2)}`
+  await chrome.storage.local.set({ deviceId: newDeviceId })
+  return newDeviceId
+}
+
+// 兼容旧版本：曾把 license 加密存到 key=license
+function decryptLegacyLicense(encrypted: string): {
+  licenseKey: string
+  companyName: string
+} | null {
+  try {
+    const decrypted = CryptoJS.AES.decrypt(encrypted, "your-secret-key").toString(
+      CryptoJS.enc.Utf8
+    )
+    const data = JSON.parse(decrypted)
+    if (!data?.licenseKey || !data?.companyName) return null
+    return { licenseKey: data.licenseKey, companyName: data.companyName }
+  } catch {
+    return null
+  }
+}
+
+export async function storeLicense(
+  licenseKey: string,
+  companyName: string,
+  token?: string
+): Promise<void> {
+  const deviceId = await getOrCreateDeviceId()
+
+  const licenseInfo = {
+    licenseKey,
+    companyName,
+    activatedAt: Date.now()
+  }
+
+  await chrome.storage.local.set({
+    licenseKey,
+    licenseInfo,
+    deviceId,
+    ...(token ? { token } : {})
+  })
+}
+
+export async function getStoredLicense(): Promise<
+  { licenseKey: string; companyName: string } | null
+> {
+  const result = await chrome.storage.local.get(["licenseKey", "licenseInfo", "license"])
+
+  // 新版：明文存储 + licenseInfo
+  if (result.licenseKey && result.licenseInfo?.companyName) {
+    return {
+      licenseKey: result.licenseKey,
+      companyName: result.licenseInfo.companyName
     }
+  }
+
+  // 旧版：加密在 key=license
+  if (typeof result.license === "string" && result.license.length > 0) {
+    const legacy = decryptLegacyLicense(result.license)
+    if (legacy) {
+      // 自动迁移到新版存储结构
+      await storeLicense(legacy.licenseKey, legacy.companyName)
+      await chrome.storage.local.remove(["license"])
+      return legacy
+    }
+  }
+
+  return null
 }
 
-// 验证License
 export async function verifyLicense(
-    licenseKey: string,
-    currentCompanyName: string
+  licenseKey: string,
+  currentCompanyName: string
 ): Promise<LicenseVerifyResult> {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/verify-license`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                licenseKey,
-                companyName: currentCompanyName
-            })
-        });
+  try {
+    const apiUrl = await getBackendUrl()
+    const deviceId = await getOrCreateDeviceId()
 
-        if (!response.ok) {
-            const error = await response.json();
-            return { valid: false, error: error.message || '验证失败' };
-        }
+    const response = await fetch(`${apiUrl}/api/plugin/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        licenseKey,
+        companyName: currentCompanyName,
+        deviceId
+      })
+    })
 
-        const data = await response.json();
-        return {
-            valid: true,
-            companyName: data.companyName,
-            expiresAt: data.expiresAt
-        };
-    } catch (error) {
-        console.error('[License] 验证请求失败:', error);
-        return { valid: false, error: '网络错误，请检查连接' };
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok || !data?.valid) {
+      return {
+        valid: false,
+        error: data?.error || "验证失败",
+        code: data?.code,
+        bindUrl: data?.bindUrl,
+        plan: data?.plan,
+        userId: data?.userId ?? null,
+        maxDevices: data?.maxDevices,
+        currentDevices: data?.currentDevices
+      }
     }
+
+    // 存储 token，供后续接口调用（fetchWithAuth）使用
+    if (data.token) {
+      await chrome.storage.local.set({ token: data.token })
+    }
+
+    return {
+      valid: true,
+      companyName: data.companyName,
+      expiresAt: data.expiresAt,
+      token: data.token,
+      code: data?.code,
+      bindUrl: data?.bindUrl,
+      plan: data?.plan,
+      userId: data?.userId ?? null,
+      maxDevices: data?.maxDevices,
+      currentDevices: data?.currentDevices
+    }
+  } catch (error) {
+    console.error("[License] 验证请求失败:", error)
+    return { valid: false, error: "网络错误，请检查连接" }
+  }
 }
 
-// 在线验证（每次使用前调用）
 export async function checkAuthorization(currentCompanyName: string): Promise<boolean> {
-    const stored = await getStoredLicense();
+  const stored = await getStoredLicense()
+  if (!stored) return false
 
-    if (!stored) {
-        console.warn('[Auth] 未找到本地授权信息');
-        return false;
-    }
-
-    // 验证公司名称是否匹配
-    if (stored.companyName !== currentCompanyName) {
-        console.error('[Auth] 公司名称不匹配');
-        return false;
-    }
-
-    // 在线验证License有效性
-    const result = await verifyLicense(stored.licenseKey, currentCompanyName);
-    return result.valid;
+  // 在线刷新 token + 校验
+  const result = await verifyLicense(stored.licenseKey, currentCompanyName)
+  return result.valid === true
 }
 
-// 清除授权信息
 export async function clearLicense(): Promise<void> {
-    await chrome.storage.local.remove('license');
-    console.log('[License] 已清除授权信息');
+  await chrome.storage.local.remove([
+    "license",
+    "licenseKey",
+    "licenseInfo",
+    "deviceId",
+    "token"
+  ])
 }

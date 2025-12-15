@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getActorFromRequest } from "@/lib/request-actor"
 
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -17,6 +18,19 @@ export async function OPTIONS() {
 
 export async function POST(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request)
+        if (!actor) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders })
+        }
+
+        const userId = actor.kind === "user" ? actor.userId : actor.userId
+        if (!userId) {
+            return NextResponse.json(
+                { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+                { status: 403, headers: corsHeaders }
+            )
+        }
+
         const body = await request.json()
         const { draftId, templateId } = body
 
@@ -28,8 +42,8 @@ export async function POST(request: NextRequest) {
         }
 
         // 1. 获取草稿信息
-        const draft = await prisma.productDraft.findUnique({
-            where: { id: draftId }
+        const draft = await prisma.productDraft.findFirst({
+            where: { id: draftId, userId }
         })
 
         if (!draft) {
@@ -43,18 +57,18 @@ export async function POST(request: NextRequest) {
         let template = null
 
         if (templateId) {
-            template = await prisma.zcyPublishTemplate.findUnique({
-                where: { id: templateId }
+            template = await prisma.zcyPublishTemplate.findFirst({
+                where: { id: templateId, userId }
             })
         } else if (draft.templateId) {
-            template = await prisma.zcyPublishTemplate.findUnique({
-                where: { id: draft.templateId }
+            template = await prisma.zcyPublishTemplate.findFirst({
+                where: { id: draft.templateId, userId }
             })
         } else {
             // 查找默认模板
             template = await prisma.zcyPublishTemplate.findFirst({
                 where: {
-                    userId: draft.userId,
+                    userId,
                     isDefault: true
                 }
             })

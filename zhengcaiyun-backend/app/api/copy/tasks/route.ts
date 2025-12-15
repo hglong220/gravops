@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 export async function GET(request: NextRequest) {
     try {
         // 临时禁用授权验证用于测试
-        let user = await getAuthUser(request);
-        if (!user) {
-            // Fallback to test user for demo
-            user = { userId: 'test-user-001', email: 'test@example.com' };
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
         }
 
         const tasks = await prisma.copyTask.findMany({
             where: {
-                userId: user.userId
+                userId
             },
             orderBy: {
                 createdAt: 'desc'

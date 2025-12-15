@@ -20,8 +20,8 @@ interface ProductDraft {
   detailHtml?: string;
   status: string;
   publishUrl?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 type PublishResult = { publishId: string; note?: string };
@@ -50,7 +50,7 @@ const worker = new Worker(
       await markStatus(draftId, "processing");
 
       // 1. 获取草稿
-      const draft = await fetchDraft(draftId);
+      const draft = await fetchDraft(draftId, userId);
       await job.updateProgress(20);
 
       // 2. 解析图片/属性
@@ -95,14 +95,18 @@ worker.on("error", (err) => {
   console.error("Worker error:", err);
 });
 
-async function fetchDraft(draftId: string): Promise<ProductDraft> {
-  const resp = await fetch(`http://localhost:3000/api/copy/get?id=${draftId}`);
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`获取草稿失败 ${resp.status}: ${text}`);
+async function fetchDraft(draftId: string, userId?: string): Promise<ProductDraft> {
+  const draft = await prisma.productDraft.findUnique({ where: { id: draftId } });
+
+  if (!draft) {
+    throw new Error(`草稿不存在: ${draftId}`);
   }
-  const data = (await resp.json()) as { draft: ProductDraft };
-  return data.draft;
+
+  if (userId && draft.userId !== userId) {
+    throw new Error(`草稿归属不匹配: ${draftId}`);
+  }
+
+  return draft as unknown as ProductDraft;
 }
 
 function parseDraftData(draft: ProductDraft) {

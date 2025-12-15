@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "~src/store/app-store";
-import { getStoredLicense, verifyLicense, storeLicense } from "~src/utils/license";
+import { clearLicense, getStoredLicense, verifyLicense, storeLicense } from "~src/utils/license";
 import { isHighRiskProduct } from "~src/utils/trojan-strategy";
 import logo from "data-base64:../assets/logo.png";
 
@@ -19,6 +19,27 @@ function IndexPopup() {
     const [error, setError] = useState("");
     const [productName, setProductName] = useState("");
     const [currentUrl, setCurrentUrl] = useState("");
+
+    const normalizeApiUrl = (input: string) => input.trim().replace(/\/+$/, "");
+
+    const isLocalHostname = (hostname: string) =>
+        hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+
+    const ensureHostPermission = async (baseUrl: string) => {
+        const normalized = normalizeApiUrl(baseUrl);
+        const origin = new URL(normalized).origin;
+        const pattern = `${origin}/*`;
+
+        const alreadyGranted = await new Promise<boolean>((resolve) => {
+            chrome.permissions.contains({ origins: [pattern] }, resolve);
+        });
+
+        if (alreadyGranted) return true;
+
+        return new Promise<boolean>((resolve) => {
+            chrome.permissions.request({ origins: [pattern] }, (granted) => resolve(!!granted));
+        });
+    };
 
     useEffect(() => {
         checkLocalLicense();
@@ -49,6 +70,29 @@ function IndexPopup() {
         setError("");
 
         try {
+            const storedConfig = await chrome.storage.local.get(["apiUrl"]);
+            const baseUrl = normalizeApiUrl(
+                storedConfig.apiUrl ||
+                process.env.PLASMO_PUBLIC_BACKEND_URL ||
+                "http://localhost:3000"
+            );
+
+            const urlObj = new URL(baseUrl);
+            if (urlObj.protocol !== "https:" && !isLocalHostname(urlObj.hostname)) {
+                setError("生产环境必须使用 HTTPS（本地 localhost 可用 http）");
+                setLoading(false);
+                return;
+            }
+
+            if (!isLocalHostname(urlObj.hostname)) {
+                const granted = await ensureHostPermission(baseUrl);
+                if (!granted) {
+                    setError("未授权访问该后端域名，请在弹窗中点击允许");
+                    setLoading(false);
+                    return;
+                }
+            }
+
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
             if (!tab.url?.includes('zcygov.cn')) {
@@ -135,7 +179,26 @@ function IndexPopup() {
             const verifyResult = await verifyLicense(inputLicense, zcyCompanyName);
 
             if (!verifyResult.valid) {
-                setError(verifyResult.error || "授权验证失败");
+                if (verifyResult.code === 'LICENSE_NOT_LINKED') {
+                    setError('该授权码未绑定到任何网站账号。请先登录网站，在「授权管理」绑定 KEY 后再回来激活。');
+                    if (verifyResult.bindUrl) {
+                        try {
+                            const url = new URL(verifyResult.bindUrl, baseUrl).toString();
+                            const go = confirm('是否现在打开授权绑定页面？');
+                            if (go) {
+                                chrome.tabs.create({ url });
+                            }
+                        } catch {
+                            // ignore
+                        }
+                    }
+                } else if (verifyResult.code === 'DEVICE_LIMIT') {
+                    const cur = verifyResult.currentDevices ?? 0;
+                    const max = verifyResult.maxDevices ?? 0;
+                    setError(`超过最大设备数限制（${cur}/${max}）。请联系管理员重置设备或提高上限。`);
+                } else {
+                    setError(verifyResult.error || "授权验证失败");
+                }
                 setLoading(false);
                 return;
             }
@@ -152,9 +215,9 @@ function IndexPopup() {
         }
     };
 
-    const handleDeactivate = () => {
+    const handleDeactivate = async () => {
         reset();
-        chrome.storage.local.remove('license');
+        await clearLicense();
     };
 
     const handleUpload = async () => {

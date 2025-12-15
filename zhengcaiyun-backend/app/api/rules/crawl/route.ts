@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import puppeteer from 'puppeteer';
 import OpenAI from 'openai';
 
-puppeteer.use(StealthPlugin());
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
     try {
@@ -29,7 +28,7 @@ export async function POST(request: NextRequest) {
             // Try common content selectors
             const content = document.querySelector('.article-content, .help-detail, .notice-content, .main-content')
                 || document.body;
-            return content.innerText;
+            return (content as HTMLElement).innerText || content.textContent || '';
         });
 
         await browser.close();

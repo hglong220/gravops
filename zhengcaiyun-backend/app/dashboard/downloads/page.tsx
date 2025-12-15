@@ -1,24 +1,77 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+type Versions = {
+    chrome: { version: string; date: string; size: string; link: string }
+    windows: { version: string; date: string; size: string; link: string }
+}
+
+const DEFAULT_VERSIONS: Versions = {
+    chrome: {
+        version: 'v1.2.0',
+        date: '2025-11-20',
+        size: '2.5 MB',
+        link: '#'
+    },
+    windows: {
+        version: 'v1.0.5',
+        date: '2025-11-15',
+        size: '45.2 MB',
+        link: '#'
+    }
+}
 
 export default function DownloadsPage() {
-    const [versions, setVersions] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
+    const router = useRouter()
+    const [versions, setVersions] = useState<Versions>(DEFAULT_VERSIONS)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
-        fetch('/api/admin/versions')
-            .then(res => res.json())
-            .then(data => {
-                setVersions(data);
-                setLoading(false);
-            });
-    }, []);
+        const token = localStorage.getItem('token')
+        if (!token) {
+            router.push('/login')
+            return
+        }
 
-    if (loading) return <div className="p-8 text-gray-500">Loading...</div>;
+        ;(async () => {
+            try {
+                setError(null)
+                const res = await fetch('/api/versions', {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+
+                if (res.status === 401) {
+                    localStorage.removeItem('token')
+                    localStorage.removeItem('user')
+                    router.push('/login')
+                    return
+                }
+
+                const data = await res.json()
+                if (data?.chrome?.version && data?.windows?.version) {
+                    setVersions(data)
+                } else {
+                    setVersions(DEFAULT_VERSIONS)
+                }
+            } catch {
+                setError('加载失败，请刷新重试')
+                setVersions(DEFAULT_VERSIONS)
+            } finally {
+                setLoading(false)
+            }
+        })()
+    }, [router])
+
+    if (loading) return <div className="p-8 text-gray-500">Loading...</div>
 
     return (
         <div className="space-y-6">
+            {error && (
+                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">{error}</div>
+            )}
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">软件下载</h1>
                 <p className="text-sm text-gray-500 mt-1">获取最新版本的客户端和浏览器插件。</p>
@@ -114,5 +167,5 @@ export default function DownloadsPage() {
                 </div>
             </div>
         </div>
-    );
+    )
 }

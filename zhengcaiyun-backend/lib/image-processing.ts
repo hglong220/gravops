@@ -16,6 +16,12 @@ interface ImageResult {
 
 export class ImageProcessingService {
 
+    private bufferToArrayBuffer(data: Uint8Array): ArrayBuffer {
+        const arrayBuffer = new ArrayBuffer(data.byteLength);
+        new Uint8Array(arrayBuffer).set(data);
+        return arrayBuffer;
+    }
+
     /**
      * 获取合规图片（核心方法）
      */
@@ -303,7 +309,7 @@ export class ImageProcessingService {
         try {
             const response = await fetch('/api/ai/detect-image-issues', {
                 method: 'POST',
-                body: imageBuffer,
+                body: this.bufferToArrayBuffer(imageBuffer),
                 headers: { 'Content-Type': 'image/jpeg' }
             });
 
@@ -336,7 +342,7 @@ export class ImageProcessingService {
      */
     private async uploadProcessedImage(imageBuffer: Buffer): Promise<string> {
         const formData = new FormData();
-        formData.append('image', new Blob([imageBuffer]));
+        formData.append('image', new Blob([this.bufferToArrayBuffer(imageBuffer)]));
 
         const response = await fetch('/api/upload/image', {
             method: 'POST',
@@ -353,7 +359,7 @@ export class ImageProcessingService {
     private async removeWatermark(imageBuffer: Buffer): Promise<Buffer> {
         const response = await fetch('/api/ai/remove-watermark', {
             method: 'POST',
-            body: imageBuffer,
+            body: this.bufferToArrayBuffer(imageBuffer),
             headers: { 'Content-Type': 'image/jpeg' }
         });
 
@@ -367,7 +373,7 @@ export class ImageProcessingService {
     private async removeLogo(imageBuffer: Buffer): Promise<Buffer> {
         const response = await fetch('/api/ai/remove-logo', {
             method: 'POST',
-            body: imageBuffer,
+            body: this.bufferToArrayBuffer(imageBuffer),
             headers: { 'Content-Type': 'image/jpeg' }
         });
 
@@ -381,7 +387,7 @@ export class ImageProcessingService {
     private async removeContact(imageBuffer: Buffer): Promise<Buffer> {
         const response = await fetch('/api/ai/remove-contact', {
             method: 'POST',
-            body: imageBuffer,
+            body: this.bufferToArrayBuffer(imageBuffer),
             headers: { 'Content-Type': 'image/jpeg' }
         });
 
@@ -419,8 +425,8 @@ export class ImageProcessingService {
         const words2 = title2.split(/\s+/);
         let matchCount = 0;
 
-        words1.forEach(w1 => {
-            if (w1.length > 2 && words2.some(w2 => w2.includes(w1) || w1.includes(w2))) {
+        words1.forEach((w1: string) => {
+            if (w1.length > 2 && words2.some((w2: string) => w2.includes(w1) || w1.includes(w2))) {
                 matchCount++;
             }
         });

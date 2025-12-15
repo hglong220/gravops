@@ -10,18 +10,20 @@ datasource db {
 model User {
   id          String    @id @default(cuid())
   email       String    @unique
+  phone       String?   @unique
   password    String
   name        String?
-  phone       String?
-  isBanned    Boolean   @default(false)
   companyName String?
   creditCode  String?
+  isBanned    Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   licenses    License[]
   orders      Order[]
 
   @@index([email])
+  @@index([phone])
+  @@index([companyName])
 }
 
 model Order {
@@ -31,7 +33,10 @@ model Order {
   amount        Int
   status        String   @default("pending")
   paymentMethod String   @default("wechat")
+  licenseKey    String?
+  paidAt        DateTime?
   transactionId String?  @unique
+  companyName   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   license       License?
@@ -150,6 +155,7 @@ model ProductDraft {
   detailHtml   String
   status       String    @default("pending")
   publishUrl   String?
+  templateId   String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   copyTaskId   String?
@@ -274,3 +280,26 @@ model RpaLearningRecord {
   @@index([successCount])
 }
 
+/// 政采云发布模板 - 用于保存用户常用发布配置
+model ZcyPublishTemplate {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  /// 电子卖场名称，如 "青海网超"
+  market       String
+  /// 卖场代码（可选）
+  marketCode   String?
+  /// 类目路径 JSON数组: ["一级","二级","三级"]
+  categoryPath String
+  /// 标项名称（可选）
+  bidItemName  String?
+  /// 关键属性映射 JSON
+  keyAttrs     String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, name], name: "userId_name")
+  @@index([userId])
+  @@index([market])
+}

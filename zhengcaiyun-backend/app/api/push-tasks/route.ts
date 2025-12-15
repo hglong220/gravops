@@ -2,6 +2,7 @@
 import { prisma } from "@/lib/prisma"
 import { Queue } from "bullmq"
 import Redis from "ioredis"
+import { getActorFromRequest } from "@/lib/request-actor"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,17 +15,51 @@ export async function OPTIONS() {
 }
 
 // BullMQ v4 连接 Redis 队列
-const connection = new Redis({
-  host: "localhost",
-  port: 6379,
-  maxRetriesPerRequest: null,
-  retryStrategy: () => null
-})
-const publishQueue = new Queue("zcy-publish", { connection })
-const collectQueue = new Queue("zcy-collect", { connection })
+// 懒加载：避免构建期/未配置 Redis 时直接连接
+let queues: { publishQueue: Queue; collectQueue: Queue } | null = null
+
+function getQueues() {
+  if (queues) return queues
+
+  const redisUrl = process.env.REDIS_URL
+  const redisHost = process.env.REDIS_HOST || "localhost"
+  const redisPort = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379
+
+  const connection = redisUrl
+    ? new Redis(redisUrl, {
+      maxRetriesPerRequest: null,
+      retryStrategy: () => null
+    })
+    : new Redis({
+      host: redisHost,
+      port: redisPort,
+      maxRetriesPerRequest: null,
+      retryStrategy: () => null
+    })
+
+  queues = {
+    publishQueue: new Queue("zcy-publish", { connection }),
+    collectQueue: new Queue("zcy-collect", { connection })
+  }
+
+  return queues
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await getActorFromRequest(request)
+    if (!actor) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders })
+    }
+
+    const userId = actor.kind === "user" ? actor.userId : actor.userId
+    if (!userId) {
+      return NextResponse.json(
+        { error: "License is not linked to a user", code: "LICENSE_NOT_LINKED" },
+        { status: 403, headers: corsHeaders }
+      )
+    }
+
     const body = await request.json()
     const { type, link, links, shopUrl, data, items } = body
 
@@ -50,7 +85,7 @@ export async function POST(request: NextRequest) {
       // 单品推送：直接创建已采集草稿
       const draft = await prisma.productDraft.create({
         data: {
-          userId: "test-user-001",
+          userId,
           title: safeData.title || "Untitled",
           originalUrl: link,
           shopName: safeData.shopName || "Unknown",
@@ -101,7 +136,7 @@ export async function POST(request: NextRequest) {
 
       const task = await prisma.copyTask.create({
         data: {
-          userId: "test-user-001",
+          userId,
           shopName: "批量采集",
           shopUrl: shopUrl || "",
           totalCount: linkItems.length,
@@ -114,7 +149,7 @@ export async function POST(request: NextRequest) {
       // 查找已存在的草稿，避免重复导致 500
       const existingDrafts = await prisma.productDraft.findMany({
         where: {
-          userId: "test-user-001",
+          userId,
           originalUrl: { in: linkItems.map((i) => i.url) }
         }
       })
@@ -143,7 +178,7 @@ export async function POST(request: NextRequest) {
 
           return prisma.productDraft.create({
             data: {
-              userId: "test-user-001",
+              userId,
               title: cleanTitle,
               originalUrl: url,
               shopName: initialShop,
@@ -157,6 +192,8 @@ export async function POST(request: NextRequest) {
           })
         })
       )
+
+      const { collectQueue } = getQueues()
 
       await Promise.all(
         drafts

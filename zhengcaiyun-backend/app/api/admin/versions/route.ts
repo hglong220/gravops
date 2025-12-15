@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getAdminFromRequest } from '@/lib/admin-auth';
 
 const DATA_FILE = path.join(process.cwd(), 'data', 'versions.json');
 
@@ -24,8 +25,13 @@ const DEFAULT_VERSIONS = {
     }
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         if (fs.existsSync(DATA_FILE)) {
             const data = fs.readFileSync(DATA_FILE, 'utf-8');
             return NextResponse.json(JSON.parse(data));
@@ -36,8 +42,13 @@ export async function GET() {
     }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const body = await request.json();
         fs.writeFileSync(DATA_FILE, JSON.stringify(body, null, 2));
         return NextResponse.json({ success: true, data: body });

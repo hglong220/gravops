@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 /**
  * GET /api/copy/tasks/pending
@@ -9,9 +8,21 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json(
+                { error: 'License is not linked to a user', code: 'LICENSE_NOT_LINKED' },
+                { status: 403 }
+            );
+        }
+
         const { searchParams } = new URL(request.url);
         const limit = parseInt(searchParams.get('limit') || '10');
-        const userId = searchParams.get('userId') || 'demo-user';
 
         const pendingDrafts = await prisma.productDraft.findMany({
             where: {
@@ -35,6 +46,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             success: true,
             drafts: pendingDrafts,
+            tasks: pendingDrafts,
             count: pendingDrafts.length
         }, {
             headers: {

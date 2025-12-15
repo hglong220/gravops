@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getActorFromRequest } from '@/lib/request-actor';
 
 export async function POST(request: NextRequest) {
     try {
+        const actor = await getActorFromRequest(request);
+        if (!actor) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const userId = actor.kind === 'user' ? actor.userId : actor.userId;
+        if (!userId) {
+            return NextResponse.json({ error: 'License is not linked to a user' }, { status: 401 });
+        }
+
         const body = await request.json();
         const { ids } = body as { ids: string[] };
 
@@ -12,7 +23,8 @@ export async function POST(request: NextRequest) {
 
         const result = await prisma.productDraft.deleteMany({
             where: {
-                id: { in: ids }
+                id: { in: ids },
+                userId
             }
         });
 

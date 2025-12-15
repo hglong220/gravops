@@ -1,10 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import os from 'os';
 
 import { prisma } from '@/lib/prisma';
+import type { SystemLog } from '@prisma/client';
+import { getAdminFromRequest } from '@/lib/admin-auth';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
     try {
+        const admin = getAdminFromRequest(request);
+        if (!admin) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const cpus = os.cpus();
         const totalMem = os.totalmem();
         const freeMem = os.freemem();
@@ -17,7 +26,7 @@ export async function GET() {
                 return acc + ((total - idle) / total);
             }, 0) / cpus.length : 0;
 
-        let logs = [];
+        let logs: SystemLog[] = [];
         try {
             logs = await prisma.systemLog.findMany({
                 orderBy: { createdAt: 'desc' },

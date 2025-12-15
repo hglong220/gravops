@@ -1,27 +1,57 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDownloadsPage() {
+    const router = useRouter();
     const [versions, setVersions] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        fetch('/api/admin/versions')
-            .then(res => res.json())
-            .then(data => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
+        fetch('/api/admin/versions', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then((res) => {
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    router.push('/login');
+                    return null;
+                }
+                return res.json();
+            })
+            .then((data) => {
+                if (!data) return;
                 setVersions(data);
                 setLoading(false);
-            });
-    }, []);
+            })
+            .catch(() => setLoading(false));
+    }, [router]);
 
     const handleSave = async () => {
         setSaving(true);
         try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                router.push('/login');
+                return;
+            }
+
             await fetch('/api/admin/versions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(versions)
             });
             alert('保存成功');

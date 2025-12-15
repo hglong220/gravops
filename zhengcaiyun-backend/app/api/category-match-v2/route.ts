@@ -81,8 +81,8 @@ async function checkTemplateCache(
         const template = await prisma.categoryTemplate.findFirst({
             where: {
                 titleKey,
-                platform: platform || null,
-                brand: brand || null
+                platform: platform ?? '',
+                brand: brand ?? ''
             },
             orderBy: { hitCount: 'desc' }
         });
@@ -119,10 +119,15 @@ function localRuleMatch(
     userCategories: Category[]
 ): MatchResult | null {
     const titleLower = title.toLowerCase();
-    let bestMatch: { path: string[], score: number } | null = null;
 
     // 递归搜索最佳匹配
-    function search(cats: Category[], path: string[] = [], depth: number = 0) {
+    function search(
+        cats: Category[],
+        path: string[] = [],
+        depth: number = 0
+    ): { path: string[]; score: number } | null {
+        let bestMatch: { path: string[]; score: number } | null = null;
+
         for (const cat of cats) {
             const currentPath = [...path, cat.name];
             let score = 0;
@@ -146,12 +151,17 @@ function localRuleMatch(
 
             // 递归子类目
             if (cat.children && cat.children.length > 0 && depth < 4) {
-                search(cat.children, currentPath, depth + 1);
+                const childMatch = search(cat.children, currentPath, depth + 1);
+                if (childMatch && (!bestMatch || childMatch.score > bestMatch.score)) {
+                    bestMatch = childMatch;
+                }
             }
         }
+
+        return bestMatch;
     }
 
-    search(userCategories);
+    const bestMatch = search(userCategories);
 
     if (bestMatch && bestMatch.score >= 15) {
         const confidence = Math.min(bestMatch.score / 50, 0.95);
@@ -359,8 +369,8 @@ async function saveToTemplate(
     result: MatchResult
 ): Promise<void> {
     try {
-        const platformValue = platform ?? null;
-        const brandValue = brand ?? null;
+        const platformValue = platform ?? '';
+        const brandValue = brand ?? '';
 
         await prisma.categoryTemplate.upsert({
             where: {

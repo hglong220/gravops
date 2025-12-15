@@ -1,25 +1,46 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function SystemPage() {
+    const router = useRouter();
     const [metrics, setMetrics] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setLoading(false);
+            router.push('/login');
+            return;
+        }
+
         const fetchMetrics = () => {
-            fetch('/api/admin/system')
-                .then(res => res.json())
-                .then(data => {
+            fetch('/api/admin/system', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+                .then((res) => {
+                    if (res.status === 401) {
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                        router.push('/login');
+                        return null;
+                    }
+                    return res.json();
+                })
+                .then((data) => {
+                    if (!data) return;
                     setMetrics(data);
                     setLoading(false);
-                });
+                })
+                .catch(() => setLoading(false));
         };
 
         fetchMetrics();
         const interval = setInterval(fetchMetrics, 5000); // Refresh every 5s
         return () => clearInterval(interval);
-    }, []);
+    }, [router]);
 
     if (loading) return <div className="p-8 text-gray-500">Loading system metrics...</div>;
     if (!metrics || metrics.error) return <div className="p-8 text-red-500">Error loading metrics: {metrics?.error || 'Unknown error'}</div>;
