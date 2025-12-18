@@ -185,20 +185,79 @@ const EcommerceScraperWidget = () => {
 
 export default EcommerceScraperWidget
 
+// 用于存储 main-world 传来的数据
+let mainWorldData: any = null
+
+// 监听 main-world 消息
+if (typeof window !== 'undefined') {
+    window.addEventListener('message', (event) => {
+        if (event.data?.type === 'ECOMMERCE_PRODUCT_DATA') {
+            mainWorldData = event.data
+            console.log('[EcommerceScraper] 收到 main-world 数据:', {
+                platform: mainWorldData.platform,
+                paramCount: Object.keys(mainWorldData.params || {}).length,
+                colorSizeCount: (mainWorldData.colorSize || []).length,
+                imageCount: (mainWorldData.imageAndVideoJson || mainWorldData.images || []).length
+            })
+        }
+    })
+}
+
 function extractEcommerceHint(): Record<string, any> {
     const url = window.location.href
     const hostname = window.location.hostname
 
-    if (hostname.includes("jd.com")) {
-        return extractJdHint(url)
+    if (hostname.includes("jd.com") || hostname.includes("jd.hk")) {
+        return extractJdHint(url, mainWorldData)
+    }
+    if (hostname.includes("tmall.com") || hostname.includes("tmall.hk") || hostname.includes("taobao.com")) {
+        return extractTmallHint(url, mainWorldData)
+    }
+    if (hostname.includes("suning.com") || hostname.includes("suning.cn")) {
+        return extractSuningHint(url, mainWorldData)
     }
 
     return {}
 }
 
-function extractJdHint(url: string): Record<string, any> {
-    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+// ========== 通用工具函数 ==========
 
+function getMetaContent(nameOrProp: string): string {
+    const el =
+        document.querySelector(`meta[property="${nameOrProp}"]`) ||
+        document.querySelector(`meta[name="${nameOrProp}"]`)
+    return (el as HTMLMetaElement | null)?.content?.trim() || ""
+}
+
+function deriveBrandModelFromTitle(title: string): { brand: string; model: string } {
+    const t = String(title || "").replace(/\s+/g, " ").trim()
+    if (!t) return { brand: "", model: "" }
+
+    const firstDigitIdx = t.search(/\d/)
+    const brandPart = (firstDigitIdx > 0 ? t.slice(0, firstDigitIdx) : t.split(" ")[0] || "").trim()
+    const brand = brandPart.replace(/[【】\[\]（）()]/g, "").trim()
+
+    const modelMatch =
+        t.match(/\b[A-Za-z]{0,6}\d{2,}[A-Za-z0-9\-]{0,10}\b/) ||
+        t.match(/\b\d{2,}[A-Za-z][A-Za-z0-9\-]{0,10}\b/)
+
+    const model = modelMatch ? modelMatch[0] : ""
+
+    return { brand, model }
+}
+
+function mergeParamsIntoAttributes(attributes: Record<string, string>, params: Record<string, string>) {
+    for (const [k, v] of Object.entries(params)) {
+        if (!attributes[k]) {
+            attributes[k] = v
+        }
+    }
+}
+
+// ========== 京东采集 ==========
+
+function extractJdHint(url: string, mw?: any): Record<string, any> {
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
     const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
 
     const skuId = (() => {
@@ -243,12 +302,21 @@ function extractJdHint(url: string): Record<string, any> {
     const addImg = (raw: string | null | undefined) => {
         if (!raw) return
         const u = normalizeImg(raw)
-        if (!u) return
-        if (seen.has(u)) return
+        if (!u || seen.has(u)) return
         seen.add(u)
         images.push(u)
     }
 
+    // 优先使用 main-world 的图片
+    if (mw?.imageAndVideoJson && Array.isArray(mw.imageAndVideoJson)) {
+        for (const item of mw.imageAndVideoJson) {
+            if (item.type === 1 && item.img) {
+                addImg(item.img)
+            }
+        }
+    }
+
+    // DOM 补充
     document
         .querySelectorAll("#spec-list img, #spec-n1 img, .spec-items img, .lh img")
         .forEach((node) => {
@@ -288,9 +356,13 @@ function extractJdHint(url: string): Record<string, any> {
             attributes[k] = v
         })
 
+    // 合并 main-world 参数
+    if (mw?.params) {
+        mergeParamsIntoAttributes(attributes, mw.params)
+    }
+
     const brand = attributes["品牌"] || attributes["品牌名称"] || ""
     const model = attributes["型号"] || attributes["产品型号"] || attributes["规格型号"] || ""
-
     const derived = deriveBrandModelFromTitle(title || "")
 
     const detailImages: string[] = []
@@ -298,8 +370,7 @@ function extractJdHint(url: string): Record<string, any> {
     const addDetail = (raw: string | null | undefined) => {
         if (!raw) return
         const u = normalizeImg(raw)
-        if (!u) return
-        if (seenDetail.has(u)) return
+        if (!u || seenDetail.has(u)) return
         seenDetail.add(u)
         detailImages.push(u)
     }
@@ -326,13 +397,14 @@ function extractJdHint(url: string): Record<string, any> {
             )
         })
 
-    const specGroups = extractJdSpecGroups(normalizeImg)
+    // SKU 规格组
+    const specGroups = extractJdSpecGroups(normalizeImg, mw?.colorSize)
 
     return {
         title: title || undefined,
         price: price || undefined,
-        images: images.slice(0, 10),
-        detailImages: detailImages.slice(0, 30),
+        images: images.slice(0, 20),
+        detailImages: detailImages.slice(0, 50),
         brand: brand || derived.brand || undefined,
         model: model || derived.model || undefined,
         skuId: skuId || undefined,
@@ -341,32 +413,27 @@ function extractJdHint(url: string): Record<string, any> {
     }
 }
 
-function deriveBrandModelFromTitle(title: string): { brand: string; model: string } {
-    const t = String(title || "").replace(/\s+/g, " ").trim()
-    if (!t) return { brand: "", model: "" }
-
-    // brand: take prefix before first digit cluster when possible
-    const firstDigitIdx = t.search(/\d/)
-    const brandPart = (firstDigitIdx > 0 ? t.slice(0, firstDigitIdx) : t.split(" ")[0] || "").trim()
-    const brand = brandPart.replace(/[【】\[\]（）()]/g, "").trim()
-
-    // model: try patterns like 323dnw / M233sdn / LBP2900 etc.
-    const modelMatch =
-        t.match(/\b[A-Za-z]{0,6}\d{2,}[A-Za-z0-9\-]{0,10}\b/) ||
-        t.match(/\b\d{2,}[A-Za-z][A-Za-z0-9\-]{0,10}\b/)
-
-    const model = modelMatch ? modelMatch[0] : ""
-
-    return { brand, model }
-}
-
 function extractJdSpecGroups(
-    normalizeImg: (raw: string) => string | null
+    normalizeImg: (raw: string) => string | null,
+    colorSize?: any[]
 ): Array<{ name: string; values: Array<{ name: string; image?: string }> }> {
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
-
     const groups: Array<{ name: string; values: Array<{ name: string; image?: string }> }> = []
 
+    // 优先使用 main-world 的 colorSize
+    if (Array.isArray(colorSize) && colorSize.length > 0) {
+        for (const group of colorSize) {
+            if (!group || typeof group !== 'object') continue
+            const name = group.name || ''
+            const values = group.values || []
+            if (name && Array.isArray(values) && values.length > 0) {
+                groups.push({ name, values })
+            }
+        }
+        if (groups.length > 0) return groups
+    }
+
+    // DOM 回退
     const containers = Array.from(document.querySelectorAll("div[id^='choose-attr-']"))
     for (const c of containers) {
         const name = text(c.querySelector(".dt"))
@@ -392,6 +459,501 @@ function extractJdSpecGroups(
             groups.push({ name, values })
         }
     }
+
+    return groups
+}
+
+// ========== 天猫采集 ==========
+
+function extractTmallHint(url: string, mw?: any): Record<string, any> {
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+    const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
+
+    const skuId = (() => {
+        const m = url.match(/[?&]id=(\d+)/i)
+        return m ? m[1] : ""
+    })()
+
+    // 标题提取 - 多选择器 + 验证
+    const extractTitle = (): string => {
+        // 多个选择器按优先级尝试
+        const selectors = [
+            ".tb-main-title",
+            "[class*='ItemHeader--mainTitle']",
+            "[class*='mainTitle']",
+            "[class*='itemTitle']",
+            "[class*='ItemTitle']",
+            "h1[class*='title']",
+            "h3[class*='title']",
+            "#J_Title .tb-main-title",
+            ".tb-detail-hd h1",
+            "[data-spm*='title']"
+        ]
+
+        for (const sel of selectors) {
+            const el = document.querySelector(sel)
+            if (el) {
+                const t = text(el)
+                // 验证标题有效性：长度>5，不是"登录"等无效内容
+                if (t && t.length > 5 && !['登录', '登陆', '天猫', '淘宝', '首页'].includes(t)) {
+                    return t
+                }
+            }
+        }
+
+        // meta标签
+        const ogTitle = getMetaContent("og:title")
+        if (ogTitle && ogTitle.length > 5 && !ogTitle.includes('登录')) {
+            return ogTitle
+        }
+
+        // document.title 回退
+        const docTitle = (document.title || "").split("-")[0]?.split("_")[0]?.split("|")[0]?.trim()
+        if (docTitle && docTitle.length > 5 && !['登录', '天猫', '淘宝'].some(k => docTitle.includes(k))) {
+            return docTitle
+        }
+
+        return ""
+    }
+
+    const title = mw?.title || extractTitle()
+
+    const price =
+        mw?.price ||
+        cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
+        cleanPrice(text(document.querySelector(".tm-price"))) ||
+        cleanPrice(text(document.querySelector("[class*='Price']"))) ||
+        cleanPrice(text(document.querySelector("[class*='PriceBox']"))) ||
+        cleanPrice(text(document.querySelector("[class*='priceWrap']"))) ||
+        cleanPrice(text(document.querySelector(".tb-rmb-num"))) ||
+        ""
+
+    const normalizeImg = (raw: string): string | null => {
+        let u = String(raw || "").trim()
+        if (!u) return null
+        if (u.startsWith("data:")) return null
+        if (u.startsWith("//")) u = `https:${u}`
+        if (!/(alicdn\.com|tmall\.com|taobao\.com)/i.test(u)) return null
+        // 转为大图
+        u = u.replace(/_\d+x\d+(?:q\d+)?\.(jpg|png|webp|avif)$/i, '.$1')
+            .replace(/_\d+\.(jpg|png|webp|avif)$/i, '.$1')
+            .replace(/\.(jpg|png|webp|avif)_\d+x\d+\.(jpg|png|webp|avif)$/i, '.$1')
+        const lower = u.toLowerCase()
+        // 过滤非商品图
+        if (lower.includes('avatar') || lower.includes('icon') || lower.includes('logo') ||
+            lower.includes('sprite') || lower.includes('qrcode') || lower.includes('88vip') ||
+            lower.includes('shopcard') || lower.includes('banner') || lower.includes('coupon')) {
+            return null
+        }
+        return u
+    }
+
+    const images: string[] = []
+    const seen = new Set<string>()
+    const addImg = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u || seen.has(u)) return
+        seen.add(u)
+        images.push(u)
+    }
+
+    // 优先使用 main-world 的图片
+    if (mw?.images && Array.isArray(mw.images)) {
+        for (const img of mw.images) {
+            addImg(img)
+        }
+    }
+
+    // DOM 图片提取 - 扩展选择器
+    document.querySelectorAll([
+        "#J_UlThumb img",
+        ".tb-gallery img",
+        ".tb-thumb img",
+        "[class*='PicGallery'] img",
+        "[class*='mainPic'] img",
+        "[class*='thumbnails'] img",
+        "[class*='Thumbnail'] img",
+        "[class*='ItemHeader'] img",
+        "[class*='gallery'] img",
+        "[class*='sku'] img[src*='alicdn']",
+        "ul[class*='thumb'] img",
+        ".tb-pic img"
+    ].join(",")).forEach((node) => {
+        const img = node as HTMLImageElement
+        addImg(
+            img.getAttribute("data-src") ||
+            img.getAttribute("data-ks-lazyload") ||
+            img.getAttribute("data-lazyload-src") ||
+            img.getAttribute("src")
+        )
+    })
+
+    addImg(getMetaContent("og:image"))
+
+    const attributes: Record<string, string> = {}
+
+    // 参数提取黑名单 - 过滤无效的键
+    const paramBlacklist = ['用户评价', '服务评价', '物流评价', '评价', '评分', '销量', '成交', '收藏']
+
+    document.querySelectorAll([
+        "#J_AttrUL li",
+        ".tb-property-cont li",
+        ".ItemPropList--item",
+        "[class*='paramsInfoArea'] li",
+        "[class*='paramsWrap'] li",
+        "#J_AttrList li",
+        "[class*='Attrs'] li",
+        "[class*='attrs'] li",
+        "[class*='ProductParams'] li",
+        "[class*='productParams'] li",
+        "[class*='DetailProp'] li",
+        ".tm-attr li",
+        ".attributes-list li",
+        "[data-spm*='params'] li",
+        "table[class*='param'] tr",
+        "[class*='Specification'] tr"
+    ].join(",")).forEach((el) => {
+        let k = '', v = ''
+
+        // 尝试从 tr 获取
+        if (el.tagName === 'TR') {
+            const tds = el.querySelectorAll('td, th')
+            if (tds.length >= 2) {
+                k = (tds[0].textContent || '').trim()
+                v = (tds[1].textContent || '').trim()
+            }
+        } else {
+            // 从 li 获取
+            const t = (el.textContent || "").trim()
+            const m = t.match(/^(.+?)[:：]\s*(.+)$/)
+            if (m) {
+                k = m[1].trim()
+                v = m[2].trim()
+            }
+        }
+
+        if (!k || !v) return
+        if (k.length > 40 || v.length > 200) return
+        // 过滤无效参数
+        if (paramBlacklist.some(b => k.includes(b))) return
+        attributes[k] = v
+    })
+
+    // 合并 main-world 参数
+    if (mw?.params) {
+        mergeParamsIntoAttributes(attributes, mw.params)
+    }
+
+    const brand = attributes["品牌"] || attributes["品牌名称"] || ""
+    const model = attributes["型号"] || attributes["产品型号"] || attributes["规格型号"] || ""
+    const derived = deriveBrandModelFromTitle(title)
+
+    // 详情图
+    const detailImages: string[] = []
+    const seenDetail = new Set<string>()
+    const addDetail = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u || seenDetail.has(u)) return
+        seenDetail.add(u)
+        detailImages.push(u)
+    }
+
+    document.querySelectorAll([
+        "#J_DivItemDesc img",
+        ".tb-detail-content img",
+        "#description img",
+        ".detail-content img",
+        "div[id*='desc'] img",
+        "div[id*='detail'] img"
+    ].join(",")).forEach((node) => {
+        const img = node as HTMLImageElement
+        addDetail(img.getAttribute("data-ks-lazyload") || img.getAttribute("data-src") || img.getAttribute("src"))
+    })
+
+    // SKU 规格组
+    const specGroups = extractTmallSpecGroups(mw?.colorSize)
+
+    return {
+        title: title || undefined,
+        price: price || undefined,
+        images: images.slice(0, 20),
+        detailImages: detailImages.slice(0, 50),
+        brand: brand || derived.brand || undefined,
+        model: model || derived.model || undefined,
+        skuId: skuId || undefined,
+        specGroups: specGroups.length ? specGroups : undefined,
+        attributes: Object.keys(attributes).length ? attributes : undefined
+    }
+}
+
+function extractTmallSpecGroups(colorSize?: any[]): Array<{ name: string; values: Array<{ name: string; image?: string }> }> {
+    const groups: Array<{ name: string; values: Array<{ name: string; image?: string }> }> = []
+
+    // 优先使用 main-world 的 colorSize
+    if (Array.isArray(colorSize) && colorSize.length > 0) {
+        for (const group of colorSize) {
+            if (!group || typeof group !== 'object') continue
+            const name = group.name || ''
+            const values = group.values || []
+            if (name && Array.isArray(values) && values.length > 0) {
+                groups.push({ name, values })
+            }
+        }
+        if (groups.length > 0) return groups
+    }
+
+    // DOM 回退
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+    const normalizeLabel = (s: string) => String(s || "").replace(/[:：]$/, "").trim()
+    const blacklistNames = ['券后', '优惠', '满减', '促销', '红包', '折扣', '立减', '包邮', '活动', '赠品', '补贴']
+
+    document.querySelectorAll([
+        ".tb-prop",
+        ".J_Prop",
+        ".tm-sale-prop",
+        "[class*='SkuPanel']",
+        "[class*='skuWrapper']",
+        "[class*='GeneralSkuPanel']"
+    ].join(",")).forEach((block) => {
+        const name = normalizeLabel(
+            text(block.querySelector(".tb-property-type, .tb-metatit, .J_Prop_Title, dt")) ||
+            block.getAttribute("data-type") || ""
+        )
+
+        if (!name) return
+        if (blacklistNames.some(b => name.includes(b))) return
+
+        const values: Array<{ name: string; image?: string }> = []
+        block.querySelectorAll("li, [class*='valueItem'], [class*='skuItem']").forEach((li) => {
+            const label = normalizeLabel(
+                text(li.querySelector("a, span, div")) ||
+                li.getAttribute("title") ||
+                text(li)
+            )
+            if (!label || label.length > 50) return
+            if (blacklistNames.some(b => label.includes(b))) return
+            const img = (li.querySelector("img") as HTMLImageElement)?.getAttribute("src") || undefined
+            values.push({ name: label, image: img })
+        })
+
+        if (values.length > 0) {
+            groups.push({ name, values: values.slice(0, 50) })
+        }
+    })
+
+    return groups
+}
+
+// ========== 苏宁采集 ==========
+
+function extractSuningHint(url: string, mw?: any): Record<string, any> {
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+    const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
+
+    const skuId = (() => {
+        const m = url.match(/\/(\d+)\/(\d+)\.html/i)
+        return m ? m[2] : ""
+    })()
+
+    const title =
+        mw?.title ||
+        getMetaContent("og:title") ||
+        text(document.querySelector(".proinfo-title")) ||
+        text(document.querySelector("#itemDisplayName")) ||
+        text(document.querySelector("[class*='pro-title']")) ||
+        (document.title || "").split("-")[0]?.trim() ||
+        ""
+
+    const price =
+        mw?.price ||
+        cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
+        cleanPrice(text(document.querySelector(".mainprice"))) ||
+        cleanPrice(text(document.querySelector("[class*='priceBox'] span"))) ||
+        ""
+
+    const normalizeImg = (raw: string): string | null => {
+        let u = String(raw || "").trim()
+        if (!u) return null
+        if (u.startsWith("data:")) return null
+        if (u.startsWith("//")) u = `https:${u}`
+        u = u.replace(/^http:/i, "https:")
+
+        try {
+            u = new URL(u, location.href).toString()
+        } catch { return null }
+
+        if (!/(suning\.(cn|com)|cnsuningimg\.com|uimg\.(cn|com))/i.test(u)) return null
+        u = u.replace(/_\d+x\d+_/g, "_800x800_")
+            .replace(/_\d+w_\d+h_/g, "_800w_800h_")
+        return u
+    }
+
+    const images: string[] = []
+    const seen = new Set<string>()
+    const addImg = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u || seen.has(u)) return
+        seen.add(u)
+        images.push(u)
+    }
+
+    // 优先使用 main-world 的图片
+    if (mw?.images && Array.isArray(mw.images)) {
+        for (const img of mw.images) {
+            addImg(img)
+        }
+    }
+
+    // DOM 补充
+    document.querySelectorAll([
+        "#imageZoom img",
+        "#bigImg",
+        "img[id*='bigImg']",
+        ".imgzoom-thumb-main img",
+        "ul.imgzoom-thumb li img",
+        ".imgzoom-thumb img",
+        "img[src*='suning']",
+        "img[data-src*='suning']"
+    ].join(",")).forEach((node) => {
+        const img = node as HTMLImageElement
+        addImg(
+            img.getAttribute("src2") ||
+            img.getAttribute("data-src2") ||
+            img.getAttribute("src-large") ||
+            img.getAttribute("data-original") ||
+            img.getAttribute("data-src") ||
+            img.getAttribute("src")
+        )
+    })
+
+    addImg(getMetaContent("og:image"))
+
+    const attributes: Record<string, string> = {}
+    document.querySelectorAll([
+        ".pro-detail-parameter li",
+        ".procon-param li",
+        "#kernelParmeter li",
+        ".pro-parameters li",
+        ".proinfo-param li",
+        ".product-params li",
+        ".parameter-item",
+        "[class*='paramItem']"
+    ].join(",")).forEach((li) => {
+        const t = (li.textContent || "").trim()
+        const m = t.match(/^(.+?)[:：]\s*(.+)$/)
+        if (!m) return
+        const k = m[1].trim()
+        const v = m[2].trim()
+        if (!k || !v) return
+        if (k.length > 40 || v.length > 200) return
+        attributes[k] = v
+    })
+
+    // 合并 main-world 参数
+    if (mw?.params) {
+        mergeParamsIntoAttributes(attributes, mw.params)
+    }
+
+    const brand = attributes["品牌"] || attributes["品牌名称"] || ""
+    const model = attributes["型号"] || attributes["产品型号"] || attributes["规格型号"] || ""
+    const derived = deriveBrandModelFromTitle(title)
+
+    // 详情图
+    const detailImages: string[] = []
+    const seenDetail = new Set<string>()
+    const addDetail = (raw: string | null | undefined) => {
+        if (!raw) return
+        const u = normalizeImg(raw)
+        if (!u || seenDetail.has(u)) return
+        seenDetail.add(u)
+        detailImages.push(u)
+    }
+
+    document.querySelectorAll([
+        "#productDetail img",
+        ".product-detail img",
+        ".detail-content img",
+        "div[id*='detail'] img",
+        "div[class*='proDetail'] img"
+    ].join(",")).forEach((node) => {
+        const img = node as HTMLImageElement
+        addDetail(img.getAttribute("data-src") || img.getAttribute("src"))
+    })
+
+    // SKU 规格组
+    const specGroups = extractSuningSpecGroups(mw?.colorSize)
+
+    return {
+        title: title || undefined,
+        price: price || undefined,
+        images: images.slice(0, 20),
+        detailImages: detailImages.slice(0, 50),
+        brand: brand || derived.brand || undefined,
+        model: model || derived.model || undefined,
+        skuId: skuId || undefined,
+        specGroups: specGroups.length ? specGroups : undefined,
+        attributes: Object.keys(attributes).length ? attributes : undefined
+    }
+}
+
+function extractSuningSpecGroups(colorSize?: any[]): Array<{ name: string; values: Array<{ name: string; image?: string }> }> {
+    const groups: Array<{ name: string; values: Array<{ name: string; image?: string }> }> = []
+
+    // 优先使用 main-world 的 colorSize
+    if (Array.isArray(colorSize) && colorSize.length > 0) {
+        for (const group of colorSize) {
+            if (!group || typeof group !== 'object') continue
+            const name = group.name || ''
+            const values = group.values || []
+            if (name && Array.isArray(values) && values.length > 0) {
+                groups.push({ name, values })
+            }
+        }
+        if (groups.length > 0) return groups
+    }
+
+    // DOM 回退
+    const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
+    const normalizeLabel = (s: string) => String(s || "").replace(/[:：]$/, "").trim()
+
+    document.querySelectorAll([
+        ".choose-attr-box",
+        ".color-choose",
+        ".size-choose",
+        "[class*='proChoose']",
+        "[class*='sku-choose']",
+        ".prop-box",
+        ".proinfo-spec",
+        "#colorItemList",
+        "#versionItemList",
+        "[id*='ItemList']"
+    ].join(",")).forEach((block) => {
+        const name = normalizeLabel(
+            text(block.querySelector(".dt, .title, label, [class*='title'], dt")) ||
+            block.getAttribute("data-title") || ""
+        )
+
+        if (!name) return
+
+        const values: Array<{ name: string; image?: string }> = []
+        block.querySelectorAll("li, dd, a[data-value], [class*='item']").forEach((li) => {
+            const label = normalizeLabel(
+                li.getAttribute("title") ||
+                li.getAttribute("data-value") ||
+                text(li)
+            )
+            if (!label || label.length > 50) return
+            const img = (li.querySelector("img") as HTMLImageElement)?.getAttribute("src") || undefined
+            values.push({ name: label, image: img })
+        })
+
+        if (values.length > 0) {
+            groups.push({ name, values: values.slice(0, 50) })
+        }
+    })
 
     return groups
 }
