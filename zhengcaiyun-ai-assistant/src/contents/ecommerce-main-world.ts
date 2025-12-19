@@ -15,11 +15,123 @@ export const config: PlasmoCSConfig = {
         "https://detail.tmall.com/*",
         "https://detail.tmall.hk/*",
         "https://chaoshi.detail.tmall.com/*",
+        "https://item.taobao.com/*",
         "https://product.suning.com/*"
     ],
     world: "MAIN",
-    run_at: "document_idle"
+    run_at: "document_start" // 改为 document_start 以便拦截网络请求
 }
+
+// ========== 网络拦截器（在 document_start 时立即执行） ==========
+
+// 存储拦截到的数据
+const interceptedNetworkData: Record<string, any> = {}
+
+// 检测平台（网络拦截器专用）
+function detectNetworkPlatform(): 'jd' | 'tmall' | 'taobao' | 'suning' | null {
+    const hostname = window.location.hostname
+    if (hostname.includes('jd.com')) return 'jd'
+    if (hostname.includes('tmall.com')) return 'tmall'
+    if (hostname.includes('taobao.com')) return 'taobao'
+    if (hostname.includes('suning.com')) return 'suning'
+    return null
+}
+
+// 安全解析 JSON（包括 JSONP）
+function safeJsonParse(text: string): any {
+    try {
+        const jsonpMatch = text.match(/^\s*\w+\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?\s*$/)
+        if (jsonpMatch) return JSON.parse(jsonpMatch[1])
+        return JSON.parse(text)
+    } catch { return null }
+}
+
+// API 匹配规则
+const API_PATTERNS = {
+    jd: {
+        productDetail: [/api\.m\.jd\.com.*wareBusiness/i, /cd\.jd\.com.*getDetailData/i],
+        price: [/p\.3\.cn.*skuIds/i, /c0\.3\.cn.*skuIds/i],
+        sku: [/cd\.jd\.com.*getColorSize/i]
+    },
+    tmall: {
+        productDetail: [/mtop\.taobao\.detail/i, /mtop\.tmall\.detail/i, /h5api.*getDetail/i],
+        sku: [/mtop\.taobao\.pcdetail/i, /skuInfo/i]
+    },
+    suning: {
+        productDetail: [/getItemInfo/i, /getProductDetail/i],
+        price: [/getprice/i]
+    }
+}
+
+// 处理拦截到的响应
+function processInterceptedResponse(url: string, responseText: string) {
+    if (!url || !responseText) return
+    const platform = detectNetworkPlatform()
+    if (!platform) return
+
+    const patterns = API_PATTERNS[platform as keyof typeof API_PATTERNS]
+    if (!patterns) return
+
+    for (const [type, regexList] of Object.entries(patterns)) {
+        for (const regex of regexList) {
+            if (regex.test(url)) {
+                const data = safeJsonParse(responseText)
+                if (data) {
+                    interceptedNetworkData[`${platform}_${type}`] = data
+                    console.log(`[Network Interceptor] 捕获 ${platform} ${type}:`,
+                        typeof data === 'object' ? Object.keys(data).slice(0, 3) : typeof data)
+
+                    // 发送给 content script
+                    window.postMessage({
+                        type: 'ECOMMERCE_NETWORK_INTERCEPTED',
+                        payload: { platform, type: `${platform}_${type}`, data, timestamp: Date.now() }
+                    }, '*')
+                }
+                return
+            }
+        }
+    }
+}
+
+// 拦截 XMLHttpRequest
+const _originalXhrOpen = XMLHttpRequest.prototype.open
+const _originalXhrSend = XMLHttpRequest.prototype.send
+
+XMLHttpRequest.prototype.open = function (method: string, url: string | URL) {
+    (this as any)._interceptor_url = typeof url === 'string' ? url : url.toString()
+    return _originalXhrOpen.apply(this, arguments as any)
+}
+
+XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+    this.addEventListener('load', function () {
+        try {
+            const url = (this as any)._interceptor_url || ''
+            if (url && this.responseText) {
+                processInterceptedResponse(url, this.responseText)
+            }
+        } catch { }
+    })
+    return _originalXhrSend.apply(this, arguments as any)
+}
+
+// 拦截 fetch
+const _originalFetch = window.fetch
+window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const response = await _originalFetch.apply(this, [input, init])
+    try {
+        const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : input.toString())
+        const clone = response.clone()
+        clone.text().then(text => {
+            if (text) processInterceptedResponse(url, text)
+        }).catch(() => { })
+    } catch { }
+    return response
+}
+
+    // 暴露拦截数据供后续使用
+    ; (window as any).__INTERCEPTED_NETWORK_DATA__ = interceptedNetworkData
+
+console.log(`[Network Interceptor] 已启动 (${detectNetworkPlatform() || 'unknown'})`)
 
 // ========== 通用工具函数 ==========
 
@@ -292,7 +404,17 @@ function extractJDParams(globalData: any): Record<string, string> {
 function extractTmallGlobalData(): any {
     const win = window as any
 
+    // 首选：ICE 框架数据（阿里新版前端框架）
+    try {
+        const iceData = win.__ICE_APP_CONTEXT__?.loaderData?.home?.data?.res
+        if (iceData) {
+            console.log('[Tmall MainWorld] 找到 ICE 框架数据')
+            return { source: '__ICE_APP_CONTEXT__', data: iceData }
+        }
+    } catch { }
+
     const sources = [
+        { key: '__ICE_APP_CONTEXT__', path: 'loaderData.home.data.res' },
         { key: '__UNIVERSAL_DATA_FOR_REHYDRATION__', path: null },
         { key: '__APOLLO_STATE__', path: null },
         { key: '__INITIAL_STATE__', path: null },
@@ -405,11 +527,14 @@ function extractTmallColorSizeFromDOM(): any[] {
     // SKU 名称黑名单
     const nameBlacklist = ['券后', '优惠', '满减', '促销', '红包', '折扣', '立减', '包邮', '活动', '赠品', '补贴', '领取', '已售', '数量', '服务', '保障']
 
-    // SKU 值黑名单 - 过滤功能按钮文字
+    // SKU 值黑名单 - 过滤功能按钮文字和营销标签
     const valueBlacklist = [
         '切换大图', '大图模式', '查看功能', '查看商品', '知道了', '店长主推', '套餐类型',
         '有货', '选购更多', '加入购物车', '立即购买', '收藏', '分享', '客服', '举报',
-        '新增功能', '可切换', '了解更多', '查看详情', '点击查看', '展开', '收起'
+        '新增功能', '可切换', '了解更多', '查看详情', '点击查看', '展开', '收起',
+        // 营销标签和状态标签
+        '多人加购', '即将售罄', '热销', '限时', '新品', '预售', '预订',
+        '仅剩', '库存', '售罄', '缺货', '补货', '下架', '暂无', '无货', '到货通知'
     ]
 
     // 新版天猫 skuWrapper 结构
@@ -494,17 +619,46 @@ function extractTmallParams(globalData: any): Record<string, string> {
         if (!params[k]) params[k] = v
     }
 
+    // 处理数组格式的参数
     const harvestArray = (arr: any[]) => {
         for (const p of arr) {
             if (!p || typeof p !== 'object') continue
-            const name = p.name || p.attrName || p.key || p.label || p.title || ''
-            const value = p.value || p.attrValue || p.val || p.text || ''
+            // 支持 ICE 框架的 {propertyName, valueName} 格式
+            const name = p.propertyName || p.name || p.attrName || p.key || p.label || p.title || ''
+            const value = p.valueName || p.value || p.attrValue || p.val || p.text || ''
             if (name && value) put(name, value)
         }
     }
 
-    // 多路径提取
+    // 1. 首选：ICE 框架的 plusViewVO.industryParamVO（天猫新版）
+    try {
+        const industryParams = data?.plusViewVO?.industryParamVO
+        if (industryParams) {
+            // basicParamList - 基础参数（品牌、型号等）
+            if (Array.isArray(industryParams.basicParamList)) {
+                harvestArray(industryParams.basicParamList)
+                console.log(`[Tmall] 从 basicParamList 获取到 ${industryParams.basicParamList.length} 个参数`)
+            }
+            // enhanceParamList - 增强参数（技术规格等）
+            if (Array.isArray(industryParams.enhanceParamList)) {
+                harvestArray(industryParams.enhanceParamList)
+                console.log(`[Tmall] 从 enhanceParamList 获取到 ${industryParams.enhanceParamList.length} 个参数`)
+            }
+            // groupParamList - 分组参数
+            if (Array.isArray(industryParams.groupParamList)) {
+                for (const group of industryParams.groupParamList) {
+                    if (Array.isArray(group?.paramList)) {
+                        harvestArray(group.paramList)
+                    }
+                }
+            }
+        }
+    } catch { }
+
+    // 2. 其他路径提取
     const paramPaths = [
+        data?.item?.props,           // ICE 框架路径
+        data?.props,                 // ICE 框架路径
         data?.moduleData?.itemProps?.props,
         data?.itemProps?.props,
         data?.props?.props,
@@ -517,7 +671,7 @@ function extractTmallParams(globalData: any): Record<string, string> {
     for (const path of paramPaths) {
         if (Array.isArray(path)) {
             harvestArray(path)
-            if (Object.keys(params).length >= 5) break
+            if (Object.keys(params).length >= 10) break
         }
     }
 
@@ -528,7 +682,12 @@ function extractTmallParams(globalData: any): Record<string, string> {
             '.tb-property-cont li',
             '.ItemPropList--item',
             "[class*='paramsInfoArea'] li",
-            "[class*='paramsWrap'] li"
+            "[class*='paramsWrap'] li",
+            "[class*='BasicContent'] li",
+            "[class*='ItemProp'] li",
+            "[class*='detailAttr'] li",
+            ".tb-attributes li",
+            "[class*='Attrs'] li"
         ].join(',')).forEach((li) => {
             const t = (li.textContent || '').trim()
             const m = t.match(/^(.+?)[:：]\s*(.+)$/)
@@ -536,7 +695,82 @@ function extractTmallParams(globalData: any): Record<string, string> {
         })
     }
 
+    console.log(`[Tmall MainWorld] 提取到${Object.keys(params).length}个参数`)
     return params
+}
+
+/**
+ * 提取天猫商品标题 - 多来源 + 严格过滤
+ */
+function extractTmallTitle(globalData: any): string {
+    const invalidKeywords = ['登录', '登陆', '天猫', '淘宝', '首页', '购物车', '我的订单', '收藏夹', '消息', '查看']
+
+    const isValidTitle = (t: string): boolean => {
+        if (!t || t.length < 5) return false
+        if (invalidKeywords.some(k => t.includes(k))) return false
+        // 标题应该包含一些中文或英文字符
+        if (!/[\u4e00-\u9fa5]/.test(t) && !/[A-Za-z0-9]/.test(t)) return false
+        return true
+    }
+
+    // 来源1: ICE 框架数据（最可靠）
+    const data = globalData?.data ?? globalData
+    const globalTitles = [
+        data?.item?.title,           // ICE 框架路径
+        data?.itemDO?.title,
+        data?.title,
+        data?.itemTitle,
+        data?.productTitle,
+        data?.name
+    ]
+    for (const t of globalTitles) {
+        if (typeof t === 'string' && isValidTitle(t)) {
+            console.log('[Tmall MainWorld] 从全局变量获取标题:', t.substring(0, 30) + '...')
+            return t.trim()
+        }
+    }
+
+    // 来源2: DOM 选择器（新增 span 选择器）
+    const selectors = [
+        "[class*='mainTitle']",      // 天猫新版，span 元素
+        '.tb-main-title',
+        "[class*='ItemHeader--mainTitle']",
+        "h1[class*='title']",
+        "[class*='ItemTitle']",
+        "[class*='productTitle']"
+    ]
+    for (const sel of selectors) {
+        try {
+            const el = document.querySelector(sel)
+            if (el) {
+                const t = (el.textContent || '').trim()
+                if (isValidTitle(t)) {
+                    console.log(`[Tmall MainWorld] 从 DOM ${sel} 获取标题`)
+                    return t
+                }
+            }
+        } catch { }
+    }
+
+    // 来源3: Meta 标签
+    const ogTitle = getMetaContent('og:title')
+    if (isValidTitle(ogTitle)) {
+        return ogTitle
+    }
+
+    // 来源4: document.title - 智能分割
+    const docTitle = document.title || ''
+    const parts = docTitle.split(/[-_|【]/)
+    for (const part of parts) {
+        const cleaned = part.trim()
+        if (isValidTitle(cleaned)) {
+            console.log('[Tmall MainWorld] 从 document.title 提取标题')
+            return cleaned
+        }
+    }
+
+    console.log('[Tmall MainWorld] 标题提取失败，返回空')
+    return ''
 }
 
 function extractTmallImages(): string[] {
@@ -556,6 +790,16 @@ function extractTmallImages(): string[] {
         if (lower.includes('avatar') || lower.includes('icon') || lower.includes('logo') ||
             lower.includes('sprite') || lower.includes('qrcode') || lower.includes('88vip')) {
             return null
+        }
+        // 过滤小尺寸图片（如 App 下载引导图，URL 中包含 tps-236-298 这样的尺寸标识）
+        const tpsMatch = u.match(/tps-(\d+)-(\d+)/)
+        if (tpsMatch) {
+            const width = parseInt(tpsMatch[1], 10)
+            const height = parseInt(tpsMatch[2], 10)
+            if (width < 400 || height < 400) {
+                console.log(`[Tmall] 过滤小尺寸图片: ${width}x${height}`, u.substring(0, 50))
+                return null
+            }
         }
         return u
     }
@@ -895,6 +1139,7 @@ function extractProductData() {
     let colorSize: any[] = []
     let imageAndVideoJson: any[] = []
     let images: string[] = []
+    let descImages: string[] = []  // 详情图 URL
     let title: string = ''
     let price: string = ''
 
@@ -914,8 +1159,25 @@ function extractProductData() {
         }
         colorSize = extractTmallColorSize()
         images = extractTmallImages()
-        title = getMetaContent('og:title')
+
+        // 增强标题提取 - 多来源 + 过滤
+        title = extractTmallTitle(globalData)
         price = cleanNumericPrice(getMetaContent('product:price:amount') || getMetaContent('og:product:price:amount'))
+
+        // 提取详情图 URL
+        try {
+            const iceData = (window as any).__ICE_APP_CONTEXT__?.loaderData?.home?.data?.res
+            const descUrl = iceData?.item?.pcADescUrl || iceData?.pcDescUrl || iceData?.descUrl || ''
+            if (descUrl) {
+                console.log('[Tmall MainWorld] 详情图 URL:', descUrl)
+                // 发送详情图 URL 给内容脚本，让它异步加载
+                window.postMessage({
+                    type: 'TMALL_DESC_URL',
+                    descUrl
+                }, '*')
+            }
+        } catch { }
+
         console.log('[Tmall MainWorld] colorSize:', colorSize.length, '组')
     } else if (platform === 'Suning') {
         globalData = extractSuningGlobalData()
@@ -972,10 +1234,37 @@ window.addEventListener('message', (event) => {
     }
 })
 
-// 页面加载后自动提取一次
-setTimeout(() => {
-    console.log('[MainWorld] 自动执行首次提取')
-    extractProductData()
-}, 2000)
+// 检查 DOM 是否准备好
+function isDomReady(): boolean {
+    // 检查是否有标题元素
+    const hasTitle = !!document.querySelector('.sku-name, .tb-main-title, .proinfo-title, h1')
+    // 检查是否有正文内容
+    const bodyLength = (document.body?.innerText || '').length
+    return hasTitle || bodyLength > 1000
+}
+
+// 等待 DOM 准备好后执行提取
+function waitForDomAndExtract(retries = 0) {
+    if (isDomReady() || retries >= 10) {
+        console.log(`[MainWorld] DOM 准备好，开始提取 (重试次数: ${retries})`)
+        extractProductData()
+    } else {
+        console.log(`[MainWorld] 等待 DOM 准备... (${retries}/10)`)
+        setTimeout(() => waitForDomAndExtract(retries + 1), 500)
+    }
+}
+
+// 页面加载后自动提取
+if (document.readyState === 'loading') {
+    // 如果文档还在加载，等待 DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('[MainWorld] DOMContentLoaded 触发')
+        setTimeout(waitForDomAndExtract, 1000) // 额外等待1秒让JS执行
+    })
+} else {
+    // 文档已加载完成
+    console.log('[MainWorld] 文档已加载，等待JS执行')
+    setTimeout(waitForDomAndExtract, 2000) // 等待2秒
+}
 
 console.log(`[MainWorld] E-commerce script loaded on ${location.hostname}`)
