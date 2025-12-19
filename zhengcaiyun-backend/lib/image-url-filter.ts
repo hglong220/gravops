@@ -43,6 +43,35 @@ function normalizeJdImageUrl(url: string, target: number): string {
   }
 }
 
+/**
+ * 规范化天猫/淘宝图片 URL，尝试获取原始大图
+ * 阿里 CDN 图片 URL 通常带有尺寸后缀，如：
+ * - _100x100.jpg
+ * - _400x400.jpg
+ * - _790x790.jpg
+ * - _q90.jpg (质量)
+ * 去除这些后缀可以获取原始大图
+ */
+function normalizeTmallImageUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (!u.hostname.includes('alicdn.com') && !u.hostname.includes('taobaocdn.com')) {
+      return url
+    }
+    // 去除尺寸后缀，如 _100x100.jpg -> .jpg
+    const nextPath = u.pathname
+      .replace(/_\d+x\d+(?:q\d+)?\.(jpg|png|jpeg)$/i, '.$1')
+      .replace(/_\d+x\d+\.(jpg|png|jpeg)$/i, '.$1')
+      .replace(/_q\d+\.(jpg|png|jpeg)$/i, '.$1')
+    if (nextPath === u.pathname) return url
+    u.pathname = nextPath
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
+
 function stripModernFormatSuffix(url: string): string {
   try {
     const u = new URL(url)
@@ -63,6 +92,16 @@ function isMaybeUselessByUrl(url: string): boolean {
   if (base.endsWith('.webp')) return true
   if (base.endsWith('.svg')) return true
   if (base.endsWith('.gif')) return true
+
+  // 天猫/淘宝小尺寸图片过滤（如 App 下载引导图，URL 中包含 tps-236-298 这样的尺寸标识）
+  const tpsMatch = u.match(/tps-(\d+)-(\d+)/)
+  if (tpsMatch) {
+    const width = parseInt(tpsMatch[1], 10)
+    const height = parseInt(tpsMatch[2], 10)
+    if (width < 400 || height < 400) {
+      return true
+    }
+  }
 
   // common non-product assets / UI icons
   const keywords = [
@@ -95,7 +134,13 @@ function defaultReferer(platform: string | undefined, imageUrl: string): string 
     try {
       const u = new URL(imageUrl)
       if (u.hostname.includes('360buyimg.com')) return 'https://item.jd.com/'
-    } catch {}
+    } catch { }
+  }
+  if (platform === 'tmall' || platform === 'taobao') {
+    try {
+      const u = new URL(imageUrl)
+      if (u.hostname.includes('alicdn.com')) return 'https://detail.tmall.com/'
+    } catch { }
   }
   return undefined
 }
@@ -150,8 +195,17 @@ export async function filterImageUrlsForUpload(inputUrls: string[], options: Fil
     concurrency,
     async (originalUrl): Promise<string | null> => {
       const stripped = stripModernFormatSuffix(originalUrl)
+
+      // 根据平台尝试获取更大尺寸的图片
+      let normalizedUrl = stripped
+      if (platform === 'jd') {
+        normalizedUrl = normalizeJdImageUrl(stripped, targetSize)
+      } else if (platform === 'tmall' || platform === 'taobao') {
+        normalizedUrl = normalizeTmallImageUrl(stripped)
+      }
+
       const candidates = uniqKeepOrder([
-        platform === 'jd' ? normalizeJdImageUrl(stripped, targetSize) : stripped,
+        normalizedUrl,
         stripped,
         originalUrl
       ])
@@ -184,9 +238,21 @@ export async function filterImageUrlsForUpload(inputUrls: string[], options: Fil
   ).slice(0, maxCount)
 
   // Never return empty main images: keep at least one original (still helps UI not crash).
+  // 但确保不使用明显无效的图片（如 tps 小图）作为 fallback
   if (kind === 'main' && filtered.length === 0) {
-    const fallback = platform === 'jd' ? normalizeJdImageUrl(cleaned[0], targetSize) : cleaned[0]
-    return [fallback].filter(Boolean).slice(0, maxCount)
+    // 找到第一个不是无用图片的 URL 作为 fallback
+    const validFallback = cleaned.find(url => !isMaybeUselessByUrl(url))
+    if (validFallback) {
+      let fallback = validFallback
+      if (platform === 'jd') {
+        fallback = normalizeJdImageUrl(validFallback, targetSize)
+      } else if (platform === 'tmall' || platform === 'taobao') {
+        fallback = normalizeTmallImageUrl(validFallback)
+      }
+      return [fallback].filter(Boolean).slice(0, maxCount)
+    }
+    // 如果所有图片都无效，返回空数组而不是无效图片
+    return []
   }
 
   return filtered

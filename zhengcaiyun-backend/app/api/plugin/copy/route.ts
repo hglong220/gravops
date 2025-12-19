@@ -105,16 +105,16 @@ export async function POST(request: NextRequest) {
 
     const hintImages = Array.isArray(hint?.images)
       ? (hint.images as any[])
-          .filter((x) => typeof x === 'string')
-          .map((x) => x.trim())
-          .filter(Boolean)
+        .filter((x) => typeof x === 'string')
+        .map((x) => x.trim())
+        .filter(Boolean)
       : []
 
     const hintDetailImages = Array.isArray(hint?.detailImages)
       ? (hint.detailImages as any[])
-          .filter((x) => typeof x === 'string')
-          .map((x) => x.trim())
-          .filter(Boolean)
+        .filter((x) => typeof x === 'string')
+        .map((x) => x.trim())
+        .filter(Boolean)
       : []
 
     const hintAttributes =
@@ -135,24 +135,47 @@ export async function POST(request: NextRequest) {
 
     let mergedDetailImages = Array.from(new Set([...hintDetailImages])).filter(Boolean).slice(0, 60)
 
-    // JD 图片里容易混入图标/表情等无用图，并且部分尺寸不足；在服务端做一次筛选与清理。
+    // 图片过滤：
+    // - JD: 后端进行严格过滤（图片探测可靠）
+    // - 天猫/淘宝: 跳过后端过滤，直接使用前端过滤后的图片（后端探测对阿里 CDN 不可靠）
+    // - 苏宁: 同样跳过后端过滤
     if (platform === 'jd') {
       ;[mergedImages, mergedDetailImages] = await Promise.all([
         filterImageUrlsForUpload(mergedImages, {
           platform,
           kind: 'main',
-          minSize: 900,
+          minSize: 500,
           maxCount: 10,
           targetSize: 900
         }),
         filterImageUrlsForUpload(mergedDetailImages, {
           platform,
           kind: 'detail',
-          minSize: 900,
+          minSize: 400,
           maxCount: 60,
           targetSize: 900
         })
       ])
+    } else if (platform === 'tmall' || platform === 'taobao' || platform === 'suning') {
+      // 对天猫/淘宝/苏宁，只做简单的 URL 过滤，不进行远程探测
+      const filterTmallUrls = (urls: string[]) => {
+        return urls.filter(url => {
+          const lower = url.toLowerCase()
+          // 过滤小尺寸 tps 图片
+          const tpsMatch = lower.match(/tps-(\d+)-(\d+)/)
+          if (tpsMatch) {
+            const w = parseInt(tpsMatch[1], 10)
+            const h = parseInt(tpsMatch[2], 10)
+            if (w < 400 || h < 400) return false
+          }
+          // 过滤无用图片
+          const badKeywords = ['sprite', 'icon', 'logo', 'avatar', 'qrcode', 'loading', 'placeholder']
+          if (badKeywords.some(k => lower.includes(k))) return false
+          return true
+        })
+      }
+      mergedImages = filterTmallUrls(mergedImages).slice(0, 10)
+      mergedDetailImages = filterTmallUrls(mergedDetailImages).slice(0, 60)
     }
 
     const scrapedPrice =
@@ -172,10 +195,10 @@ export async function POST(request: NextRequest) {
         ? scrapedAttrs
         : hintAttributes
           ? Object.fromEntries(
-              Object.entries(hintAttributes)
-                .map(([k, v]) => [String(k || '').trim(), String(v ?? '').trim()])
-                .filter(([k, v]) => k && v)
-            )
+            Object.entries(hintAttributes)
+              .map(([k, v]) => [String(k || '').trim(), String(v ?? '').trim()])
+              .filter(([k, v]) => k && v)
+          )
           : scrapedAttrs
 
     const deriveFromAttrs = (keys: string[]) => {
@@ -210,8 +233,23 @@ export async function POST(request: NextRequest) {
     const stockNumber =
       typeof skuData.stock === 'string' ? Number.parseInt(skuData.stock, 10) : Number(skuData.stock ?? 99)
 
+    // 标题优先级：有效的客户端 hint.title > 有效的服务端 productData.title > 默认"未知商品"
+    const hintTitle = typeof hint?.title === 'string' ? hint.title.trim() : ''
+    const scrapedTitle = typeof productData?.title === 'string' ? productData.title.trim() : ''
+
+    // 判断标题是否有效（长度>5 且不包含无效关键词）
+    const isValidTitle = (t: string) => {
+      if (!t || t.length < 5) return false
+      if (['未知商品', '登录', '登陆', '天猫', '淘宝', '首页'].some(k => t === k || t.includes('登录'))) return false
+      return true
+    }
+
+    const finalTitle = isValidTitle(hintTitle) ? hintTitle : (isValidTitle(scrapedTitle) ? scrapedTitle : (hintTitle || scrapedTitle || '未知商品'))
+
+    console.log('[plugin/copy] 标题来源:', { hintTitle: hintTitle?.substring(0, 20), scrapedTitle: scrapedTitle?.substring(0, 20), final: finalTitle?.substring(0, 20) })
+
     const draftData = {
-      title: productData.title,
+      title: finalTitle,
       originalId: hintSkuId || undefined,
       brand: finalBrand || null,
       model: finalModel || null,
@@ -229,16 +267,16 @@ export async function POST(request: NextRequest) {
 
     const draft = existing
       ? await prisma.productDraft.update({
-          where: { id: existing.id },
-          data: draftData
-        })
+        where: { id: existing.id },
+        data: draftData
+      })
       : await prisma.productDraft.create({
-          data: {
-            userId,
-            originalUrl: url,
-            ...draftData
-          }
-        })
+        data: {
+          userId,
+          originalUrl: url,
+          ...draftData
+        }
+      })
 
     return NextResponse.json({ success: true, draft })
   } catch (error) {
