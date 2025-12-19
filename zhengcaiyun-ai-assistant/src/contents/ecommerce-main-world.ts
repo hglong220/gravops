@@ -524,81 +524,154 @@ function extractTmallColorSizeFromDOM(): any[] {
     const domGroups: any[] = []
     const normalizeLabel = (s: string) => String(s || '').replace(/[:：]$/, '').trim()
 
-    // SKU 名称黑名单
+    // SKU 名称黑名单（规格组标题）
     const nameBlacklist = ['券后', '优惠', '满减', '促销', '红包', '折扣', '立减', '包邮', '活动', '赠品', '补贴', '领取', '已售', '数量', '服务', '保障']
 
-    // SKU 值黑名单 - 过滤功能按钮文字和营销标签
+    // SKU 值黑名单 - 过滤功能按钮和营销标签
     const valueBlacklist = [
-        '切换大图', '大图模式', '查看功能', '查看商品', '知道了', '店长主推', '套餐类型',
+        '切换大图', '大图模式', '查看功能', '查看商品', '知道了', '店长主推',
         '有货', '选购更多', '加入购物车', '立即购买', '收藏', '分享', '客服', '举报',
         '新增功能', '可切换', '了解更多', '查看详情', '点击查看', '展开', '收起',
-        // 营销标签和状态标签
         '多人加购', '即将售罄', '热销', '限时', '新品', '预售', '预订',
         '仅剩', '库存', '售罄', '缺货', '补货', '下架', '暂无', '无货', '到货通知'
     ]
 
-    // 新版天猫 skuWrapper 结构
-    document.querySelectorAll("[class*='skuWrapper']").forEach((wrapper) => {
-        const fullText = (wrapper as HTMLElement).innerText || ''
-        const lines = fullText.split('\n').map(l => l.trim()).filter(l => l && l.length < 50)
+    // 方案1：尝试从全局变量获取（最精准）
+    try {
+        const win = window as any
+        const iceData = win.__ICE_APP_CONTEXT__?.loaderData?.home?.data?.res
 
-        let name = ''
-        const values: any[] = []
-
-        for (const line of lines) {
-            // 跳过黑名单名称
-            if (nameBlacklist.some(b => line.includes(b))) continue
-            // 跳过价格
-            if (/^[¥￥]?\d/.test(line)) continue
-            // 跳过黑名单值
-            if (valueBlacklist.some(b => line.includes(b))) continue
-
-            if (!name) {
-                name = line
-            } else {
-                values.push({ name: line })
+        // ICE 框架首选路径：skuBase.props（最精准，已分组）
+        const skuBaseProps = iceData?.skuBase?.props
+        if (Array.isArray(skuBaseProps) && skuBaseProps.length > 0) {
+            console.log('[Tmall] 从 ICE skuBase.props 获取 SKU，共', skuBaseProps.length, '组')
+            for (const prop of skuBaseProps) {
+                if (!prop || !prop.name) continue
+                const propName = prop.name
+                // values 数组中每个 value 有 name 字段（纯净的规格值）
+                // corner.cornerText 是营销标签，不需要
+                const values = (prop.values || []).map((v: any) => ({
+                    name: v.name || '',
+                    image: v.image || undefined
+                })).filter((v: any) => v.name && v.name.length > 0)
+                if (values.length > 0) {
+                    domGroups.push({ name: propName, values })
+                    console.log(`[Tmall] ICE SKU 组: ${propName} = ${values.length} 个值`)
+                }
             }
+            if (domGroups.length > 0) return domGroups
         }
 
-        if (name && values.length > 0) {
-            domGroups.push({ name, values: values.slice(0, 50) })
-            console.log(`[Tmall MainWorld] DOM SKU: ${name} = ${values.length}个值`)
+        // 备选路径：skuCore.skuProps 或 item.skuProps
+        const skuProps = iceData?.skuCore?.skuProps || iceData?.item?.skuProps
+        if (Array.isArray(skuProps) && skuProps.length > 0) {
+            console.log('[Tmall] 从 ICE skuCore/item.skuProps 获取 SKU')
+            for (const prop of skuProps) {
+                if (!prop || !prop.name) continue
+                const values = (prop.values || []).map((v: any) => ({
+                    name: v.name || v.text || '',
+                    image: v.image || undefined
+                })).filter((v: any) => v.name)
+                if (values.length > 0) {
+                    domGroups.push({ name: prop.name, values })
+                }
+            }
+            if (domGroups.length > 0) return domGroups
+        }
+
+        // TShop 结构（传统天猫/淘宝）
+        if (win.TShop?.Setup?.valItemInfo?.propertyList) {
+            const propertyList = win.TShop.Setup.valItemInfo.propertyList
+            console.log('[Tmall] 从 TShop.valItemInfo.propertyList 获取 SKU')
+            for (const prop of propertyList) {
+                if (!prop || !prop.name) continue
+                const values = (prop.values || []).map((v: any) => ({
+                    name: v.name || v.text || '',
+                    image: v.image || undefined
+                })).filter((v: any) => v.name)
+                if (values.length > 0) {
+                    domGroups.push({ name: prop.name, values })
+                }
+            }
+            if (domGroups.length > 0) return domGroups
+        }
+    } catch { }
+
+    // 方案2：分组遍历 DOM（按您的建议优化）
+    // 关键：先找到每个规格组容器，再在容器内部提取标题和选项
+    const groupSelectors = [
+        '.tm-sale-prop',      // 天猫传统结构
+        '.J_Prop',            // 淘宝结构
+        '.tb-prop',           // 淘宝另一种结构
+        "[class*='SkuPanel']",
+        "[class*='GeneralSkuPanel']",
+        "[class*='skuItem--']" // 新版天猫单个规格组
+    ]
+
+    document.querySelectorAll(groupSelectors.join(",")).forEach((group) => {
+        // 1. 提取当前规格组的标题
+        const labelNode = group.querySelector('.tb-property-type, .tb-metatit, .J_Prop_Title, dt, [class*="skuTitle"]')
+        let groupName = normalizeLabel((labelNode as HTMLElement)?.innerText || '')
+
+        // 如果没有找到标题节点，尝试从 data-type 属性获取
+        if (!groupName) {
+            groupName = group.getAttribute('data-type') || ''
+        }
+
+        if (!groupName) return
+        if (nameBlacklist.some(b => groupName.includes(b))) return
+
+        // 2. 在当前规格组内部提取所有选项（只在 group 内部查找，不会混到其他组）
+        const values: any[] = []
+        group.querySelectorAll("li, [class*='valueItem'], [class*='skuItem']").forEach((li) => {
+            const label = normalizeLabel(
+                (li.querySelector('a, span, div') as HTMLElement)?.innerText ||
+                li.getAttribute('title') ||
+                (li as HTMLElement).innerText || ''
+            )
+            if (!label || label.length > 50) return
+            if (nameBlacklist.some(b => label.includes(b))) return
+            if (valueBlacklist.some(b => label.includes(b))) return
+            const img = (li.querySelector('img') as HTMLImageElement)?.getAttribute('src') || undefined
+            values.push({ name: label, image: img })
+        })
+
+        if (values.length > 0) {
+            domGroups.push({ name: groupName, values: values.slice(0, 50) })
+            console.log(`[Tmall MainWorld] DOM SKU 分组: ${groupName} = ${values.length}个值`)
         }
     })
 
-    // 传统天猫结构
+    // 方案3：新版天猫 skuWrapper 结构（如果以上都没有找到）
     if (domGroups.length === 0) {
-        document.querySelectorAll([
-            ".tb-prop",
-            ".J_Prop",
-            ".tm-sale-prop",
-            "[class*='SkuPanel']",
-            "[class*='GeneralSkuPanel']"
-        ].join(",")).forEach((block) => {
-            const name = normalizeLabel(
-                (block.querySelector('.tb-property-type, .tb-metatit, .J_Prop_Title, dt') as HTMLElement)?.innerText || ''
-            ) || block.getAttribute('data-type') || ''
+        document.querySelectorAll("[class*='skuWrapper']").forEach((wrapper, idx) => {
+            // 找标题（通常是第一个有文本的子元素）
+            const titleEl = wrapper.querySelector("[class*='skuTitle'], [class*='title'], dt, label")
+            let groupName = normalizeLabel((titleEl as HTMLElement)?.innerText || '')
 
-            if (!name) return
-            if (nameBlacklist.some(b => name.includes(b))) return
+            if (!groupName) {
+                // 尝试从第一行文本获取
+                const firstTextNode = wrapper.querySelector('div, span')
+                groupName = normalizeLabel((firstTextNode as HTMLElement)?.innerText?.split('\n')[0] || '')
+            }
 
+            if (!groupName || nameBlacklist.some(b => groupName.includes(b))) return
+
+            // 找选项容器
             const values: any[] = []
-            block.querySelectorAll("li, [class*='valueItem'], [class*='skuItem']").forEach((li) => {
-                const label = normalizeLabel(
-                    (li.querySelector('a, span, div') as HTMLElement)?.innerText ||
-                    li.getAttribute('title') ||
-                    (li as HTMLElement).innerText || ''
-                )
+            wrapper.querySelectorAll("[class*='valueItem'], [class*='skuValue'], li, button").forEach((item) => {
+                const label = normalizeLabel((item as HTMLElement).innerText || item.getAttribute('title') || '')
                 if (!label || label.length > 50) return
+                if (label === groupName) return // 跳过标题自身
                 if (nameBlacklist.some(b => label.includes(b))) return
                 if (valueBlacklist.some(b => label.includes(b))) return
-                const img = (li.querySelector('img') as HTMLImageElement)?.getAttribute('src') || undefined
+                const img = (item.querySelector('img') as HTMLImageElement)?.getAttribute('src') || undefined
                 values.push({ name: label, image: img })
             })
 
             if (values.length > 0) {
-                domGroups.push({ name, values: values.slice(0, 50) })
-                console.log(`[Tmall MainWorld] DOM SKU: ${name} = ${values.length}个值`)
+                domGroups.push({ name: groupName, values: values.slice(0, 50) })
+                console.log(`[Tmall MainWorld] SKU wrapper ${idx}: ${groupName} = ${values.length}个值`)
             }
         })
     }
@@ -797,7 +870,6 @@ function extractTmallImages(): string[] {
             const width = parseInt(tpsMatch[1], 10)
             const height = parseInt(tpsMatch[2], 10)
             if (width < 400 || height < 400) {
-                console.log(`[Tmall] 过滤小尺寸图片: ${width}x${height}`, u.substring(0, 50))
                 return null
             }
         }
@@ -812,7 +884,43 @@ function extractTmallImages(): string[] {
         images.push(u)
     }
 
-    // 主图 - 扩展选择器
+    // 方案1：从 ICE 框架获取主图（最精准）
+    try {
+        const win = window as any
+        const iceData = win.__ICE_APP_CONTEXT__?.loaderData?.home?.data?.res
+
+        // item.images 是纯净的主图 URL 数组
+        const itemImages = iceData?.item?.images
+        if (Array.isArray(itemImages) && itemImages.length > 0) {
+            console.log('[Tmall] 从 ICE item.images 获取主图，共', itemImages.length, '张')
+            for (const imgUrl of itemImages) {
+                if (typeof imgUrl === 'string') {
+                    addImg(imgUrl)
+                }
+            }
+            if (images.length > 0) {
+                console.log(`[Tmall MainWorld] ICE 主图提取成功: ${images.length}张`)
+                return images.slice(0, 30)
+            }
+        }
+
+        // 备选：TShop 结构
+        const tshopImages = win.TShop?.Setup?.valItemInfo?.itemPics
+        if (Array.isArray(tshopImages) && tshopImages.length > 0) {
+            console.log('[Tmall] 从 TShop itemPics 获取主图')
+            for (const imgUrl of tshopImages) {
+                if (typeof imgUrl === 'string') {
+                    addImg(imgUrl)
+                }
+            }
+            if (images.length > 0) {
+                return images.slice(0, 30)
+            }
+        }
+    } catch { }
+
+    // 方案2：DOM 解析（兜底）
+    console.log('[Tmall] 降级为 DOM 解析获取主图')
     document.querySelectorAll([
         '#J_UlThumb img',
         '.tb-gallery img',
@@ -840,7 +948,7 @@ function extractTmallImages(): string[] {
     // og:image
     addImg(getMetaContent('og:image'))
 
-    console.log(`[Tmall MainWorld] 提取到${images.length}张图片`)
+    console.log(`[Tmall MainWorld] DOM 主图提取: ${images.length}张`)
     return images.slice(0, 30)
 }
 
@@ -921,46 +1029,78 @@ function extractSuningColorSize(): any[] {
 
 function extractSuningColorSizeFromDOM(): any[] {
     const domGroups: any[] = []
-    const normalizeLabel = (s: string) => String(s || '').replace(/[:：]$/, '').trim()
+    const normalizeLabel = (s: string) => String(s || '').replace(/[:：]$/, '').replace(/已选中/g, '').replace(/【本地区暂不销售】/g, '').trim()
 
-    const skuSelectors = [
-        ".choose-attr-box",
-        ".color-choose",
-        ".size-choose",
-        "[class*='proChoose']",
-        "[class*='sku-choose']",
-        ".prop-box",
-        ".proinfo-spec",
-        "#colorItemList",
-        "#versionItemList",
-        "[id*='ItemList']"
-    ]
+    // 黑名单：过滤营销标签和状态文字
+    const valueBlacklist = ['已选中', '暂不销售', '缺货', '售罄', '无货', '预约', '即将上市']
 
-    document.querySelectorAll(skuSelectors.join(",")).forEach((block) => {
-        const name = normalizeLabel(
-            (block.querySelector('.dt, .title, label, [class*="title"], dt') as HTMLElement)?.innerText ||
-            block.getAttribute('data-title') || ''
-        )
-
-        if (!name) return
+    // 方案1：精准 dl 结构（苏宁标准布局）
+    document.querySelectorAll('.pro-select dl, .prop-list dl, .choose-pams dl').forEach((dl) => {
+        const title = normalizeLabel((dl.querySelector('dt') as HTMLElement)?.innerText || '')
+        if (!title) return
 
         const values: any[] = []
-        block.querySelectorAll("li, dd, a[data-value], [class*='item']").forEach((li) => {
+        dl.querySelectorAll('dd li, dd a, dd span[title]').forEach((el) => {
             const label = normalizeLabel(
-                li.getAttribute('title') ||
-                li.getAttribute('data-value') ||
-                (li as HTMLElement).innerText || ''
+                el.getAttribute('title') ||
+                (el as HTMLElement).innerText || ''
             )
-            if (!label || label.length > 50) return
-            const img = (li.querySelector('img') as HTMLImageElement)?.getAttribute('src') || undefined
-            values.push({ name: label, image: img })
+            if (!label || label.length > 60) return
+            if (valueBlacklist.some(b => label.includes(b))) return
+
+            const skuId = el.getAttribute('partnumber') || el.getAttribute('data-id')
+            const img = (el.querySelector('img') as HTMLImageElement)?.src
+            values.push({ name: label, image: img, skuId })
         })
 
         if (values.length > 0) {
-            domGroups.push({ name, values: values.slice(0, 50) })
-            console.log(`[Suning MainWorld] DOM SKU: ${name} = ${values.length}个值`)
+            domGroups.push({ name: title, values: values.slice(0, 50) })
+            console.log(`[Suning MainWorld] SKU 组: ${title} = ${values.length}个值`)
         }
     })
+
+    // 方案2：兼容其他选择器结构
+    if (domGroups.length === 0) {
+        const skuSelectors = [
+            ".choose-attr-box",
+            ".color-choose",
+            ".size-choose",
+            "[class*='proChoose']",
+            "[class*='sku-choose']",
+            ".prop-box",
+            ".proinfo-spec",
+            "#colorItemList",
+            "#versionItemList",
+            "[id*='ItemList']"
+        ]
+
+        document.querySelectorAll(skuSelectors.join(",")).forEach((block) => {
+            const name = normalizeLabel(
+                (block.querySelector('.dt, .title, label, [class*="title"], dt') as HTMLElement)?.innerText ||
+                block.getAttribute('data-title') || ''
+            )
+
+            if (!name) return
+
+            const values: any[] = []
+            block.querySelectorAll("li, dd, a[data-value], [class*='item']").forEach((li) => {
+                const label = normalizeLabel(
+                    li.getAttribute('title') ||
+                    li.getAttribute('data-value') ||
+                    (li as HTMLElement).innerText || ''
+                )
+                if (!label || label.length > 50) return
+                if (valueBlacklist.some(b => label.includes(b))) return
+                const img = (li.querySelector('img') as HTMLImageElement)?.getAttribute('src') || undefined
+                values.push({ name: label, image: img })
+            })
+
+            if (values.length > 0) {
+                domGroups.push({ name, values: values.slice(0, 50) })
+                console.log(`[Suning MainWorld] DOM SKU: ${name} = ${values.length}个值`)
+            }
+        })
+    }
 
     return domGroups
 }
@@ -1037,9 +1177,39 @@ function extractSuningImages(): string[] {
             return null
         }
 
-        if (!/(suning\.(cn|com)|cnsuningimg\.com|uimg\.(cn|com))/i.test(u)) return null
+        if (!/(suning\.(cn|com)|cnsuningimg\.com|uimg\.(cn|com)|imgservice\.suning)/i.test(u)) return null
+
+        // 过滤非商品图
+        const lower = u.toLowerCase()
+        // 品牌 logo、图标、占位符
+        if (lower.includes('logo') || lower.includes('icon') || lower.includes('sprite') ||
+            lower.includes('talk8') || lower.includes('kefu') || lower.includes('qrcode') ||
+            lower.includes('blank.gif') || lower.includes('loading')) {
+            return null
+        }
+        // 苏宁静态资源服务器（通常是 loading 图、占位图）
+        if (lower.includes('ssr.suning.cn')) {
+            return null
+        }
+        // 项目/活动资源（广告图、流程图）
+        if (lower.includes('res.suning.cn/proj') || lower.includes('/project/')) {
+            return null
+        }
+        // 品牌 logo 图（如 HP logo）- 通常是宽高比特殊的小图
+        if (lower.includes('/b0/hz_')) {
+            return null
+        }
+        // 能效标识图（中国能效标识二维码等）
+        if (lower.includes('/nengxiao') || lower.includes('/energylabel') ||
+            lower.includes('energy_label') || lower.includes('/nxbz/') ||
+            lower.includes('/pcnx/') || lower.includes('/cebp/')) {
+            return null
+        }
+
+        // 将缩略图 URL 转换为高清图 URL
         u = u.replace(/_\d+x\d+_/g, '_800x800_')
-            .replace(/_\d+w_\d+h_/g, '_800w_800h_')
+            .replace(/_\d+w_\d+h_\w+$/i, '') // 去掉尺寸后缀
+            .replace(/_60x60\.jpg$/i, '') // 去掉 60x60 后缀
         return u
     }
 
@@ -1051,30 +1221,82 @@ function extractSuningImages(): string[] {
         images.push(u)
     }
 
-    // 主图
-    document.querySelectorAll([
-        '#imageZoom img',
-        '#bigImg',
-        'img[id*="bigImg"]',
-        '.imgzoom-thumb-main img',
-        'ul.imgzoom-thumb li img',
-        '.imgzoom-thumb img',
-        'img[src*="suning"]',
-        'img[data-src*="suning"]'
-    ].join(',')).forEach((node) => {
-        const img = node as HTMLImageElement
-        addImg(
-            img.getAttribute('src2') ||
-            img.getAttribute('data-src2') ||
-            img.getAttribute('src-large') ||
-            img.getAttribute('data-original') ||
-            img.getAttribute('data-src') ||
-            img.getAttribute('src')
-        )
-    })
+    // 方案1：从 window.zoom.thumbItems 获取主图（最精准）
+    try {
+        const win = window as any
+        const thumbItems = win.zoom?.thumbItems
+        if (thumbItems && thumbItems.length > 0) {
+            console.log('[Suning] 从 zoom.thumbItems 获取主图，共', thumbItems.length, '张')
+            for (const item of thumbItems) {
+                let imgUrl: string | null = null
+                if (typeof item === 'string') {
+                    imgUrl = item
+                } else if (item && typeof item === 'object') {
+                    imgUrl = item.src || item.bigImg || item.getAttribute?.('src')
+                    if (!imgUrl) {
+                        const imgEl = item.querySelector?.('img')
+                        imgUrl = imgEl?.src || imgEl?.getAttribute('data-src')
+                    }
+                }
+                if (imgUrl) {
+                    addImg(imgUrl)
+                }
+            }
+            if (images.length > 0) {
+                console.log(`[Suning MainWorld] zoom 主图提取成功: ${images.length}张`)
+                return images.slice(0, 30)
+            }
+        }
+    } catch { }
 
-    addImg(getMetaContent('og:image'))
+    // 方案2：DOM 解析（兜底）- 限制在主图区域内
+    console.log('[Suning] 降级为 DOM 解析获取主图')
 
+    // 只在主图区域内查找，避免抓到"热销推荐"等其他区域的图片
+    const mainImageContainer = document.querySelector('#imageZoom, .imgzoom-wrap, .pro-img-main, .product-image')
+
+    if (mainImageContainer) {
+        // 优先从主图容器内提取
+        mainImageContainer.querySelectorAll('img, ul.imgzoom-thumb li img').forEach((node) => {
+            const img = node as HTMLImageElement
+            addImg(
+                img.getAttribute('src2') ||
+                img.getAttribute('data-src2') ||
+                img.getAttribute('src-large') ||
+                img.getAttribute('data-original') ||
+                img.getAttribute('data-src') ||
+                img.getAttribute('src')
+            )
+        })
+    } else {
+        // 如果找不到主图容器，使用更精确的选择器
+        document.querySelectorAll([
+            '#imageZoom img',
+            '#bigImg',
+            'img[id*="bigImg"]',
+            '.imgzoom-thumb-main img',
+            'ul.imgzoom-thumb li img',
+            '.imgzoom-thumb img'
+            // 移除过于宽泛的选择器: img[src*="suning"], img[data-src*="suning"]
+        ].join(',')).forEach((node) => {
+            const img = node as HTMLImageElement
+            addImg(
+                img.getAttribute('src2') ||
+                img.getAttribute('data-src2') ||
+                img.getAttribute('src-large') ||
+                img.getAttribute('data-original') ||
+                img.getAttribute('data-src') ||
+                img.getAttribute('src')
+            )
+        })
+    }
+
+    // 如果还没有主图，尝试从 og:image 获取
+    if (images.length === 0) {
+        addImg(getMetaContent('og:image'))
+    }
+
+    console.log(`[Suning MainWorld] DOM 主图提取: ${images.length}张`)
     return images.slice(0, 30)
 }
 
@@ -1187,8 +1409,38 @@ function extractProductData() {
         colorSize = extractSuningColorSize()
         images = extractSuningImages()
         title = getMetaContent('og:title')
-        price = cleanNumericPrice(getMetaContent('product:price:amount') || getMetaContent('og:product:price:amount'))
-        console.log('[Suning MainWorld] colorSize:', colorSize.length, '组')
+
+        // 苏宁价格提取：多重来源，优先全局变量
+        const win = window as any
+        price = ''
+
+        // 1. 优先 promotionPrice（促销价）
+        if (win.sn?.promotionPrice) {
+            price = cleanNumericPrice(win.sn.promotionPrice)
+            console.log('[Suning MainWorld] 从 sn.promotionPrice 获取价格:', price)
+        }
+        // 2. 备选 priceInvData.promotionPrice
+        if (!price && win.sn?.priceInvData?.promotionPrice) {
+            price = cleanNumericPrice(win.sn.priceInvData.promotionPrice)
+        }
+        // 3. 备选 netPrice（易购价）
+        if (!price && win.sn?.netPrice) {
+            price = cleanNumericPrice(win.sn.netPrice)
+        }
+        // 4. DOM 兜底 - .mainprice
+        if (!price) {
+            const mainPriceEl = document.querySelector('.mainprice, .price-promo .mainprice, .price-current') as HTMLElement
+            if (mainPriceEl) {
+                price = cleanNumericPrice(mainPriceEl.innerText)
+                console.log('[Suning MainWorld] 从 DOM .mainprice 获取价格:', price)
+            }
+        }
+        // 5. meta 标签兜底
+        if (!price) {
+            price = cleanNumericPrice(getMetaContent('product:price:amount') || getMetaContent('og:product:price:amount'))
+        }
+
+        console.log('[Suning MainWorld] colorSize:', colorSize.length, '组, 价格:', price)
     }
 
     // Fallback: 从Script标签解析
@@ -1240,6 +1492,17 @@ function isDomReady(): boolean {
     const hasTitle = !!document.querySelector('.sku-name, .tb-main-title, .proinfo-title, h1')
     // 检查是否有正文内容
     const bodyLength = (document.body?.innerText || '').length
+
+    // 苏宁特殊检测：检查价格是否已加载
+    const hostname = location.hostname
+    if (hostname.includes('suning')) {
+        const win = window as any
+        const hasPrice = !!(win.sn?.promotionPrice || win.sn?.netPrice || document.querySelector('.mainprice'))
+        const hasSn = !!win.sn?.partNumber
+        // 苏宁需要有标题且（有价格或商品编号）才算准备好
+        return hasTitle && (hasPrice || hasSn || bodyLength > 2000)
+    }
+
     return hasTitle || bodyLength > 1000
 }
 

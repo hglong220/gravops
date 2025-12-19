@@ -1,20 +1,18 @@
-// ================= 京东 SKU 采集模块 (用户方案重写版) =================
-// 优先使用colorSize结构化数据，彻底抛弃页面文本提取方案
+﻿// ================= 浜笢 SKU 閲囬泦妯″潡 (鐢ㄦ埛鏂规閲嶅啓鐗? =================
+// 浼樺厛浣跨敤colorSize缁撴瀯鍖栨暟鎹紝褰诲簳鎶涘純椤甸潰鏂囨湰鎻愬彇鏂规
 
-// 规格值接口
-export interface SpecValue {
+// 瑙勬牸鍊兼帴鍙?export interface SpecValue {
     id: string
     name: string
     image?: string
 }
 
-// 规格组接口
-export interface SpecGroup {
+// 瑙勬牸缁勬帴鍙?export interface SpecGroup {
     name: string
     values: SpecValue[]
 }
 
-// SKU组合价格映射
+// SKU缁勫悎浠锋牸鏄犲皠
 export interface SkuPrice {
     skuId: string
     price: number
@@ -22,7 +20,7 @@ export interface SkuPrice {
     specs: Record<string, string>
 }
 
-// 完整SKU数据结构
+// 瀹屾暣SKU鏁版嵁缁撴瀯
 export interface JDSkuData {
     specGroups: SpecGroup[]
     skuPrices: SkuPrice[]
@@ -38,42 +36,37 @@ interface JdColorSizeItem {
 }
 
 /**
- * 从colorSize构建SKU规格组（用户方案核心函数）
- * 自动扫出所有属性名，按属性名聚合生成规格组
- */
+ * 浠巆olorSize鏋勫缓SKU瑙勬牸缁勶紙鐢ㄦ埛鏂规鏍稿績鍑芥暟锛? * 鑷姩鎵嚭鎵€鏈夊睘鎬у悕锛屾寜灞炴€у悕鑱氬悎鐢熸垚瑙勬牸缁? */
 function buildSkuFromColorSize(colorSize: JdColorSizeItem[]): JDSkuData | null {
     if (!Array.isArray(colorSize) || !colorSize.length) {
-        console.log('[JD SKU] colorSize为空，无法构建')
+        console.log('[JD SKU] colorSize涓虹┖锛屾棤娉曟瀯寤?)
         return null
     }
 
-    console.log('[JD SKU] buildSkuFromColorSize处理:', colorSize.length, '个SKU')
-    console.log('[JD SKU] colorSize第一项:', JSON.stringify(colorSize[0]).substring(0, 200))
+    console.log('[JD SKU] buildSkuFromColorSize澶勭悊:', colorSize.length, '涓猄KU')
+    console.log('[JD SKU] colorSize绗竴椤?', JSON.stringify(colorSize[0]).substring(0, 200))
 
-    // 1. 找出所有"规格名"（排除非规格字段）
-    const excludeKeys = new Set(['skuId', 'stock', 'jdPrice', 'image', 'img', 'imgUrl', 'price'])
+    // 1. 鎵惧嚭鎵€鏈?瑙勬牸鍚?锛堟帓闄ら潪瑙勬牸瀛楁锛?    const excludeKeys = new Set(['skuId', 'stock', 'jdPrice', 'image', 'img', 'imgUrl', 'price'])
     const specNameSet = new Set<string>()
 
     for (const item of colorSize) {
         Object.keys(item).forEach((key) => {
             if (excludeKeys.has(key)) return
-            // 一般都是中文字段，比如 颜色 / 套餐类型 / 款式 等
-            if (typeof item[key] === 'string' && item[key].trim()) {
+            // 涓€鑸兘鏄腑鏂囧瓧娈碉紝姣斿 棰滆壊 / 濂楅绫诲瀷 / 娆惧紡 绛?            if (typeof item[key] === 'string' && item[key].trim()) {
                 specNameSet.add(key)
             }
         })
     }
 
     const specNames = Array.from(specNameSet)
-    console.log('[JD SKU] 发现规格名:', specNames)
+    console.log('[JD SKU] 鍙戠幇瑙勬牸鍚?', specNames)
 
     if (!specNames.length) {
-        console.log('[JD SKU] 未找到规格名')
+        console.log('[JD SKU] 鏈壘鍒拌鏍煎悕')
         return null
     }
 
-    // 2. 聚合规格值（去重）
-    const specValuesMap = new Map<string, Set<string>>()
+    // 2. 鑱氬悎瑙勬牸鍊硷紙鍘婚噸锛?    const specValuesMap = new Map<string, Set<string>>()
     specNames.forEach((n) => specValuesMap.set(n, new Set()))
 
     for (const item of colorSize) {
@@ -83,10 +76,9 @@ function buildSkuFromColorSize(colorSize: JdColorSizeItem[]): JDSkuData | null {
         }
     }
 
-    // 3. 生成规格组
-    const specGroups: SpecGroup[] = specNames.map((name) => {
+    // 3. 鐢熸垚瑙勬牸缁?    const specGroups: SpecGroup[] = specNames.map((name) => {
         const values = Array.from(specValuesMap.get(name)!)
-        console.log(`[JD SKU] 规格组 "${name}": ${values.length}个值`)
+        console.log(`[JD SKU] 瑙勬牸缁?"${name}": ${values.length}涓€糮)
         return {
             name,
             values: values.map((v, idx) => ({
@@ -96,7 +88,7 @@ function buildSkuFromColorSize(colorSize: JdColorSizeItem[]): JDSkuData | null {
         }
     })
 
-    // 4. 默认选中的规格（优先用页面上真正选中的）
+    // 4. 榛樿閫変腑鐨勮鏍硷紙浼樺厛鐢ㄩ〉闈笂鐪熸閫変腑鐨勶級
     let defaultItem: JdColorSizeItem | null = null
 
     try {
@@ -105,8 +97,7 @@ function buildSkuFromColorSize(colorSize: JdColorSizeItem[]): JDSkuData | null {
 
         if (selectedText) {
             defaultItem = colorSize.find((it) => {
-                // 遍历所有规格字段检查是否匹配
-                for (const name of specNames) {
+                // 閬嶅巻鎵€鏈夎鏍煎瓧娈垫鏌ユ槸鍚﹀尮閰?                for (const name of specNames) {
                     const val = String(it[name] ?? '').trim()
                     if (val && selectedText.includes(val)) {
                         return true
@@ -116,27 +107,26 @@ function buildSkuFromColorSize(colorSize: JdColorSizeItem[]): JDSkuData | null {
             }) || null
         }
     } catch (_) {
-        // 忽略 DOM 读取错误
+        // 蹇界暐 DOM 璇诲彇閿欒
     }
 
     if (!defaultItem) defaultItem = colorSize[0]
 
-    console.log('[JD SKU] 默认规格:', JSON.stringify(defaultItem).substring(0, 100))
+    console.log('[JD SKU] 榛樿瑙勬牸:', JSON.stringify(defaultItem).substring(0, 100))
 
     return {
         specGroups,
-        skuPrices: [], // 暂不拆分每个SKU价格
+        skuPrices: [], // 鏆備笉鎷嗗垎姣忎釜SKU浠锋牸
         defaultPrice: null,
         defaultSpec: defaultItem
     }
 }
 
 /**
- * 从京东页面提取完整SKU数据（用户方案重写版）
- * @param mainWorldColorSize - 从主世界脚本获取的colorSize数组
+ * 浠庝含涓滈〉闈㈡彁鍙栧畬鏁碨KU鏁版嵁锛堢敤鎴锋柟妗堥噸鍐欑増锛? * @param mainWorldColorSize - 浠庝富涓栫晫鑴氭湰鑾峰彇鐨刢olorSize鏁扮粍
  */
 export async function extractJDSkuData(mainWorldColorSize?: any[]): Promise<JDSkuData> {
-    console.log('[JD SKU] 开始采集SKU数据...')
+    console.log('[JD SKU] 寮€濮嬮噰闆哠KU鏁版嵁...')
 
     const result: JDSkuData = {
         specGroups: [],
@@ -144,37 +134,36 @@ export async function extractJDSkuData(mainWorldColorSize?: any[]): Promise<JDSk
         defaultPrice: null
     }
 
-    // 策略1: 强制优先使用colorSize（用户方案核心）
+    // 绛栫暐1: 寮哄埗浼樺厛浣跨敤colorSize锛堢敤鎴锋柟妗堟牳蹇冿級
     if (mainWorldColorSize && Array.isArray(mainWorldColorSize) && mainWorldColorSize.length > 0) {
-        console.log('[JD SKU] 使用主世界colorSize:', mainWorldColorSize.length, '个SKU')
+        console.log('[JD SKU] 浣跨敤涓讳笘鐣宑olorSize:', mainWorldColorSize.length, '涓猄KU')
 
         const built = buildSkuFromColorSize(mainWorldColorSize)
         if (built && built.specGroups.length > 0) {
-            console.log('[JD SKU] colorSize构建成功, 规格组数:', built.specGroups.length)
+            console.log('[JD SKU] colorSize鏋勫缓鎴愬姛, 瑙勬牸缁勬暟:', built.specGroups.length)
             result.specGroups = built.specGroups
             result.defaultSpec = built.defaultSpec
 
-            // 提取默认价格（从页面获取）
-            const priceEl = document.querySelector('.price, .p-price, #jd-price, [class*="Price"]')
+            // 鎻愬彇榛樿浠锋牸锛堜粠椤甸潰鑾峰彇锛?            const priceEl = document.querySelector('.price, .p-price, #jd-price, [class*="Price"]')
             const priceText = priceEl?.textContent || ''
             const priceMatch = priceText.match(/[\d,.]+/)
             if (priceMatch) {
                 result.defaultPrice = parseFloat(priceMatch[0].replace(/,/g, ''))
             }
 
-            // 关键：直接返回，不再走页面文本提取！
+            // 鍏抽敭锛氱洿鎺ヨ繑鍥烇紝涓嶅啀璧伴〉闈㈡枃鏈彁鍙栵紒
             const totalSpecs = result.specGroups.reduce((sum, g) => sum + g.values.length, 0)
-            console.log('[JD SKU] 最终结果:', {
-                规格组数: result.specGroups.length,
-                规格值总数: totalSpecs,
-                默认价格: result.defaultPrice
+            console.log('[JD SKU] 鏈€缁堢粨鏋?', {
+                瑙勬牸缁勬暟: result.specGroups.length,
+                瑙勬牸鍊兼€绘暟: totalSpecs,
+                榛樿浠锋牸: result.defaultPrice
             })
             return result
         }
     }
 
-    // 兜底：只有colorSize完全失败才用页面文本（基本不会走到这里）
-    console.log('[JD SKU] colorSize失败，使用页面文本兜底')
+    // 鍏滃簳锛氬彧鏈塩olorSize瀹屽叏澶辫触鎵嶇敤椤甸潰鏂囨湰锛堝熀鏈笉浼氳蛋鍒拌繖閲岋級
+    console.log('[JD SKU] colorSize澶辫触锛屼娇鐢ㄩ〉闈㈡枃鏈厹搴?)
     const pageTextData = extractFromPageText()
     if (pageTextData.specGroups.length > 0) {
         result.specGroups = pageTextData.specGroups
@@ -182,17 +171,17 @@ export async function extractJDSkuData(mainWorldColorSize?: any[]): Promise<JDSk
     }
 
     const totalSpecs = result.specGroups.reduce((sum, g) => sum + g.values.length, 0)
-    console.log('[JD SKU] 最终结果:', {
-        规格组数: result.specGroups.length,
-        规格值总数: totalSpecs,
-        默认价格: result.defaultPrice
+    console.log('[JD SKU] 鏈€缁堢粨鏋?', {
+        瑙勬牸缁勬暟: result.specGroups.length,
+        瑙勬牸鍊兼€绘暟: totalSpecs,
+        榛樿浠锋牸: result.defaultPrice
     })
 
     return result
 }
 
 /**
- * 从页面文本提取规格（兜底方案，基本不用）
+ * 浠庨〉闈㈡枃鏈彁鍙栬鏍硷紙鍏滃簳鏂规锛屽熀鏈笉鐢級
  */
 function extractFromPageText(): JDSkuData {
     const result: JDSkuData = {
@@ -211,7 +200,7 @@ function extractFromPageText(): JDSkuData {
     return result
 }
 
-// ========== 兼容旧接口 ==========
+// ========== 鍏煎鏃ф帴鍙?==========
 
 export interface SkuVariant {
     skuId: string

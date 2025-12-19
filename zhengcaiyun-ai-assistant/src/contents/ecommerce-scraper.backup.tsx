@@ -124,14 +124,6 @@ const EcommerceScraperWidget = () => {
             const currentUrl = window.location.href
             const hint = extractEcommerceHint()
 
-            // 调试：确认发送到后端的数据
-            console.log('[EcommerceScraper] 发送到后端的 hint:', {
-                title: hint?.title?.substring(0, 30),
-                brand: hint?.brand,
-                model: hint?.model,
-                imagesCount: hint?.images?.length
-            })
-
             const resp = await fetchWithAuth("/api/plugin/copy", {
                 method: "POST",
                 body: JSON.stringify({ url: currentUrl, hint })
@@ -193,91 +185,36 @@ const EcommerceScraperWidget = () => {
 
 export default EcommerceScraperWidget
 
-// ========== 数据存储 ==========
-
-// 用于存储 main-world 传来的全局变量数据
+// 用于存储 main-world 传来的数据
 let mainWorldData: any = null
 
-// 用于存储网络拦截的 API 数据（优先级更高）
-let networkInterceptedData: Record<string, any> = {}
-
-// ========== 消息监听 ==========
-
+// 监听 main-world 消息
 if (typeof window !== 'undefined') {
     window.addEventListener('message', (event) => {
-        // 原有的 main-world 全局变量数据
         if (event.data?.type === 'ECOMMERCE_PRODUCT_DATA') {
             mainWorldData = event.data
-            // 正确统计图片数量：合并 imageAndVideoJson 和 images
-            const imgCount = (mainWorldData.imageAndVideoJson?.length || 0) + (mainWorldData.images?.length || 0)
-            console.log('[EcommerceScraper] 收到 main-world 全局变量数据:', {
+            console.log('[EcommerceScraper] 收到 main-world 数据:', {
                 platform: mainWorldData.platform,
-                title: mainWorldData.title?.substring(0, 30) || '(无)',
                 paramCount: Object.keys(mainWorldData.params || {}).length,
                 colorSizeCount: (mainWorldData.colorSize || []).length,
-                imageCount: imgCount
+                imageCount: (mainWorldData.imageAndVideoJson || mainWorldData.images || []).length
             })
         }
-
-        // 新增：网络拦截的 API 数据（更精准）
-        if (event.data?.type === 'ECOMMERCE_NETWORK_INTERCEPTED') {
-            const payload = event.data.payload
-            if (payload?.type && payload?.data) {
-                networkInterceptedData[payload.type] = payload.data
-                console.log('[EcommerceScraper] 收到网络拦截数据:', {
-                    type: payload.type,
-                    platform: payload.platform,
-                    dataKeys: typeof payload.data === 'object' ? Object.keys(payload.data).slice(0, 5) : typeof payload.data
-                })
-            }
-        }
-
-        // 天猫详情图 URL
-        if (event.data?.type === 'TMALL_DESC_URL' && event.data.descUrl) {
-            console.log('[EcommerceScraper] 收到天猫详情图 URL:', event.data.descUrl)
-            // 存储详情图 URL，在采集时使用
-            mainWorldData = mainWorldData || {}
-            mainWorldData.descUrl = event.data.descUrl
-        }
     })
-
-    // 苏宁参数预加载：页面加载后自动点击"包装及参数"标签页
-    // 这样当用户点击采集按钮时，完整参数（如 CCC 认证编号）已经加载好了
-    if (window.location.hostname.includes('suning')) {
-        setTimeout(() => {
-            try {
-                const paramTab = Array.from(document.querySelectorAll('a, li, span')).find(
-                    el => el.textContent?.includes('包装及参数')
-                ) as HTMLElement | undefined
-                if (paramTab) {
-                    paramTab.click()
-                    console.log('[Suning] 预加载：自动点击"包装及参数"标签页')
-                }
-            } catch { }
-        }, 2000) // 延迟 2 秒，等页面主体加载完成
-    }
 }
-
-// ========== 数据提取入口 ==========
 
 function extractEcommerceHint(): Record<string, any> {
     const url = window.location.href
     const hostname = window.location.hostname
 
-    // 合并数据源：网络拦截数据 + main-world 数据
-    const mergedData = {
-        mainWorld: mainWorldData,
-        network: networkInterceptedData
-    }
-
     if (hostname.includes("jd.com") || hostname.includes("jd.hk")) {
-        return extractJdHint(url, mainWorldData, networkInterceptedData)
+        return extractJdHint(url, mainWorldData)
     }
     if (hostname.includes("tmall.com") || hostname.includes("tmall.hk") || hostname.includes("taobao.com")) {
-        return extractTmallHint(url, mainWorldData, networkInterceptedData)
+        return extractTmallHint(url, mainWorldData)
     }
     if (hostname.includes("suning.com") || hostname.includes("suning.cn")) {
-        return extractSuningHint(url, mainWorldData, networkInterceptedData)
+        return extractSuningHint(url, mainWorldData)
     }
 
     return {}
@@ -319,7 +256,7 @@ function mergeParamsIntoAttributes(attributes: Record<string, string>, params: R
 
 // ========== 京东采集 ==========
 
-function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>): Record<string, any> {
+function extractJdHint(url: string, mw?: any): Record<string, any> {
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
     const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
 
@@ -328,33 +265,19 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
         return m ? m[1] : ""
     })()
 
-    // 优先级：网络拦截 > main-world > DOM
-    // 从网络拦截数据获取商品信息
-    const netProduct = networkData?.jd_product_extracted
-    const netPrice = networkData?.jd_price_extracted
-
     const title =
-        netProduct?.title ||
-        mw?.title ||
         text(document.querySelector(".sku-name")) ||
         text(document.querySelector(".itemInfo-wrap h1")) ||
         text(document.querySelector(".p-name")) ||
         (document.title || "").split("-")[0]?.trim() ||
         ""
 
-    // 价格：优先使用网络拦截的实时价格
-    let price = ""
-    if (netPrice?.prices?.[0]?.price) {
-        price = cleanPrice(String(netPrice.prices[0].price))
-    } else if (netProduct?.price) {
-        price = cleanPrice(String(netProduct.price))
-    } else {
-        const priceEl =
-            document.querySelector(".p-price .price") ||
-            (skuId ? document.querySelector(`.price.J-p-${skuId}`) : null) ||
-            document.querySelector("[class*='J-p-']")
-        price = cleanPrice(text(priceEl))
-    }
+    const priceEl =
+        document.querySelector(".p-price .price") ||
+        (skuId ? document.querySelector(`.price.J-p-${skuId}`) : null) ||
+        document.querySelector("[class*='J-p-']")
+
+    const price = cleanPrice(text(priceEl))
 
     const normalizeImg = (raw: string) => {
         let u = String(raw || "").trim()
@@ -384,15 +307,7 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
         images.push(u)
     }
 
-    // 优先级：网络拦截 > main-world > DOM
-    // 1. 网络拦截的图片
-    if (netProduct?.images && Array.isArray(netProduct.images)) {
-        for (const img of netProduct.images) {
-            addImg(typeof img === 'string' ? img : img?.url || img?.img)
-        }
-    }
-
-    // 2. main-world 的图片
+    // 优先使用 main-world 的图片
     if (mw?.imageAndVideoJson && Array.isArray(mw.imageAndVideoJson)) {
         for (const item of mw.imageAndVideoJson) {
             if (item.type === 1 && item.img) {
@@ -482,10 +397,8 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
             )
         })
 
-    // SKU 规格组 - 优先使用网络拦截数据
-    const netSku = networkData?.jd_sku_extracted
-    const colorSizeSource = netSku?.colorSize || netProduct?.colorSize || mw?.colorSize
-    const specGroups = extractJdSpecGroups(normalizeImg, colorSizeSource)
+    // SKU 规格组
+    const specGroups = extractJdSpecGroups(normalizeImg, mw?.colorSize)
 
     return {
         title: title || undefined,
@@ -552,7 +465,7 @@ function extractJdSpecGroups(
 
 // ========== 天猫采集 ==========
 
-function extractTmallHint(url: string, mw?: any, networkData?: Record<string, any>): Record<string, any> {
+function extractTmallHint(url: string, mw?: any): Record<string, any> {
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
 
     // 改进的价格清理函数 - 提取第一个有效价格
@@ -573,19 +486,8 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
         return m ? m[1] : ""
     })()
 
-    // 标题提取 - 多选择器 + 严格验证
+    // 标题提取 - 多选择器 + 验证
     const extractTitle = (): string => {
-        // 无效标题关键词（包含即过滤）
-        const invalidKeywords = ['登录', '登陆', '天猫', '淘宝', '首页', '购物车', '我的订单', '收藏夹', '消息']
-
-        const isValidTitle = (t: string): boolean => {
-            if (!t || t.length < 5) return false
-            if (invalidKeywords.some(k => t.includes(k))) return false
-            // 标题应该包含一些中文或商品相关词
-            if (!/[\u4e00-\u9fa5]/.test(t) && !/[A-Za-z0-9]/.test(t)) return false
-            return true
-        }
-
         // 多个选择器按优先级尝试
         const selectors = [
             ".tb-main-title",
@@ -597,20 +499,15 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
             "h3[class*='title']",
             "#J_Title .tb-main-title",
             ".tb-detail-hd h1",
-            "[data-spm*='title']",
-            // 新增选择器
-            "[class*='Title'] h1",
-            "[class*='productTitle']",
-            "[class*='product-title']",
-            "h1[itemprop='name']",
-            "[class*='detailPageTitle']"
+            "[data-spm*='title']"
         ]
 
         for (const sel of selectors) {
             const el = document.querySelector(sel)
             if (el) {
                 const t = text(el)
-                if (isValidTitle(t)) {
+                // 验证标题有效性：长度>5，不是"登录"等无效内容
+                if (t && t.length > 5 && !['登录', '登陆', '天猫', '淘宝', '首页'].includes(t)) {
                     return t
                 }
             }
@@ -618,69 +515,30 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
 
         // meta标签
         const ogTitle = getMetaContent("og:title")
-        if (isValidTitle(ogTitle)) {
+        if (ogTitle && ogTitle.length > 5 && !ogTitle.includes('登录')) {
             return ogTitle
         }
 
-        // document.title 回退 - 更智能的提取
-        const docTitle = document.title || ""
-        // 尝试提取标题中的商品名部分（通常是第一部分）
-        const titleParts = docTitle.split(/[-_|【]/)
-        for (const part of titleParts) {
-            const cleaned = part.trim()
-            if (isValidTitle(cleaned)) {
-                return cleaned
-            }
-        }
-
-        // 最后尝试：提取 document.title 中包含商品品牌的部分
-        const brandKeywords = ['HP', '惠普', '佳能', '爱普生', '小米', '华为', '联想']
-        for (const brand of brandKeywords) {
-            if (docTitle.includes(brand)) {
-                // 返回包含品牌的完整标题部分
-                const match = docTitle.match(new RegExp(`[^-_|]*${brand}[^-_|]*`))
-                if (match && isValidTitle(match[0].trim())) {
-                    return match[0].trim()
-                }
-            }
+        // document.title 回退
+        const docTitle = (document.title || "").split("-")[0]?.split("_")[0]?.split("|")[0]?.trim()
+        if (docTitle && docTitle.length > 5 && !['登录', '天猫', '淘宝'].some(k => docTitle.includes(k))) {
+            return docTitle
         }
 
         return ""
     }
 
-    // 优先级：网络拦截 > main-world > DOM
-    const netProduct = networkData?.tmall_product_extracted
-    const netSku = networkData?.tmall_sku_extracted
+    const title = mw?.title || extractTitle()
 
-    // 调试：检查各来源的标题
-    console.log('[Tmall extractHint] 标题来源检查:', {
-        netProduct: netProduct?.title?.substring(0, 20),
-        mwTitle: mw?.title?.substring(0, 20),
-        extractTitle: '延迟获取'
-    })
-
-    // 标题优先级：网络拦截 > main-world > DOM
-    let title = netProduct?.title || mw?.title || ''
-    if (!title || title.length < 5) {
-        title = extractTitle()
-    }
-    console.log('[Tmall extractHint] 最终标题:', title?.substring(0, 30))
-
-    // 价格：优先使用网络拦截的实时价格
-    let price = ""
-    if (netProduct?.price) {
-        price = cleanPrice(String(netProduct.price))
-    } else if (mw?.price) {
-        price = cleanPrice(String(mw.price))
-    } else {
-        price = cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
-            cleanPrice(text(document.querySelector(".tm-price"))) ||
-            cleanPrice(text(document.querySelector("[class*='Price']"))) ||
-            cleanPrice(text(document.querySelector("[class*='PriceBox']"))) ||
-            cleanPrice(text(document.querySelector("[class*='priceWrap']"))) ||
-            cleanPrice(text(document.querySelector(".tb-rmb-num"))) ||
-            ""
-    }
+    const price =
+        mw?.price ||
+        cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
+        cleanPrice(text(document.querySelector(".tm-price"))) ||
+        cleanPrice(text(document.querySelector("[class*='Price']"))) ||
+        cleanPrice(text(document.querySelector("[class*='PriceBox']"))) ||
+        cleanPrice(text(document.querySelector("[class*='priceWrap']"))) ||
+        cleanPrice(text(document.querySelector(".tb-rmb-num"))) ||
+        ""
 
     const normalizeImg = (raw: string): string | null => {
         let u = String(raw || "").trim()
@@ -712,15 +570,7 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
         images.push(u)
     }
 
-    // 优先级：网络拦截 > main-world > DOM
-    // 1. 网络拦截的图片
-    if (netProduct?.images && Array.isArray(netProduct.images)) {
-        for (const img of netProduct.images) {
-            addImg(typeof img === 'string' ? img : img?.url || img?.img)
-        }
-    }
-
-    // 2. main-world 的图片
+    // 优先使用 main-world 的图片
     if (mw?.images && Array.isArray(mw.images)) {
         for (const img of mw.images) {
             addImg(img)
@@ -756,35 +606,9 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
     const attributes: Record<string, string> = {}
 
     // 参数提取黑名单 - 过滤无效的键
-    const paramBlacklist = ['用户评价', '服务评价', '物流评价', '评价', '评分', '销量', '成交', '收藏', '发货', '包邮', '优惠', '券']
+    const paramBlacklist = ['用户评价', '服务评价', '物流评价', '评价', '评分', '销量', '成交', '收藏']
 
-    // 策略0: 优先从网络拦截数据获取参数（最精准）
-    const netProps = netProduct?.props || netSku?.props || []
-    if (Array.isArray(netProps) && netProps.length > 0) {
-        for (const prop of netProps) {
-            const k = String(prop?.name || prop?.attrName || prop?.key || '').trim()
-            const v = String(prop?.value || prop?.attrValue || prop?.val || '').trim()
-            if (k && v && k.length <= 40 && v.length <= 200) {
-                if (!paramBlacklist.some(b => k.includes(b))) {
-                    attributes[k] = v
-                }
-            }
-        }
-        console.log(`[Tmall] 从网络拦截获取到 ${Object.keys(attributes).length} 个参数`)
-    }
-
-    // 策略0.5: 从 main-world 数据获取参数
-    if (mw?.params && typeof mw.params === 'object') {
-        for (const [k, v] of Object.entries(mw.params)) {
-            if (!attributes[k] && typeof v === 'string' && v.length <= 200) {
-                if (!paramBlacklist.some(b => k.includes(b))) {
-                    attributes[k] = v
-                }
-            }
-        }
-    }
-
-    // 策略1: 标准选择器（DOM 回退）
+    // 策略1: 标准选择器
     document.querySelectorAll([
         "#J_AttrUL li",
         ".tb-property-cont li",
@@ -874,53 +698,20 @@ function extractTmallHint(url: string, mw?: any, networkData?: Record<string, an
         detailImages.push(u)
     }
 
-    // 详情图选择器 - 包含新版天猫页面
-    const detailSelectors = [
-        // 新版天猫详情
-        ".desc-root img",
-        "[class*='descContent'] img",
-        "[class*='imageTextInfo'] img",
-        "[class*='descV8-singleImage'] img",
-        "[class*='ItemDescModule'] img",
-        // 老版天猫/淘宝详情
+    document.querySelectorAll([
         "#J_DivItemDesc img",
         ".tb-detail-content img",
         "#description img",
         ".detail-content img",
         "div[id*='desc'] img",
-        "div[id*='detail'] img",
-        // 懒加载容器
-        ".desc-lazyload-container img",
-        ".ke-post img",
-        // 通用详情图
-        "[class*='itemDesc'] img",
-        "[class*='item-desc'] img"
-    ]
-
-    document.querySelectorAll(detailSelectors.join(",")).forEach((node) => {
+        "div[id*='detail'] img"
+    ].join(",")).forEach((node) => {
         const img = node as HTMLImageElement
-        // 支持多种懒加载属性
-        addDetail(
-            img.getAttribute("data-ks-lazyload") ||
-            img.getAttribute("data-src") ||
-            img.getAttribute("data-lazyload-src") ||
-            img.getAttribute("src")
-        )
+        addDetail(img.getAttribute("data-ks-lazyload") || img.getAttribute("data-src") || img.getAttribute("src"))
     })
 
-    // 如果 DOM 中没有找到详情图，尝试从 main-world 数据获取详情图 URL
-    if (detailImages.length === 0 && mw) {
-        // 尝试获取详情图 URL 列表（如果 main-world 有提供）
-        const mwDetailImages = mw.detailImages || mw.descImages || []
-        if (Array.isArray(mwDetailImages)) {
-            mwDetailImages.forEach((url: string) => addDetail(url))
-        }
-        console.log(`[Tmall] 从 main-world 获取详情图: ${detailImages.length} 张`)
-    }
-
-    // SKU 规格组 - 优先使用网络拦截数据
-    const skuPropsSource = netSku?.props || netProduct?.skuProps || mw?.colorSize
-    const specGroups = extractTmallSpecGroups(skuPropsSource)
+    // SKU 规格组
+    const specGroups = extractTmallSpecGroups(mw?.colorSize)
 
     return {
         title: title || undefined,
@@ -954,14 +745,7 @@ function extractTmallSpecGroups(colorSize?: any[]): Array<{ name: string; values
     // DOM 回退
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
     const normalizeLabel = (s: string) => String(s || "").replace(/[:：]$/, "").trim()
-    // 规格组名称黑名单（这些不是有效的规格类型）
     const blacklistNames = ['券后', '优惠', '满减', '促销', '红包', '折扣', '立减', '包邮', '活动', '赠品', '补贴']
-    // 规格值黑名单（这些不是有效的 SKU 选项，而是营销标签或状态）
-    const blacklistValues = [
-        '多人加购', '即将售罄', '热销', '限时', '新品', '预售', '预订',
-        '仅剩', '库存', '售罄', '缺货', '补货', '下架', '暂无', '无货',
-        '到货通知', '加入购物车', '立即购买', '收藏', '分享'
-    ]
 
     document.querySelectorAll([
         ".tb-prop",
@@ -987,8 +771,7 @@ function extractTmallSpecGroups(colorSize?: any[]): Array<{ name: string; values
                 text(li)
             )
             if (!label || label.length > 50) return
-            // 使用规格值黑名单过滤营销标签
-            if (blacklistValues.some(b => label.includes(b))) return
+            if (blacklistNames.some(b => label.includes(b))) return
             const img = (li.querySelector("img") as HTMLImageElement)?.getAttribute("src") || undefined
             values.push({ name: label, image: img })
         })
@@ -1003,31 +786,16 @@ function extractTmallSpecGroups(colorSize?: any[]): Array<{ name: string; values
 
 // ========== 苏宁采集 ==========
 
-function extractSuningHint(url: string, mw?: any, networkData?: Record<string, any>): Record<string, any> {
+function extractSuningHint(url: string, mw?: any): Record<string, any> {
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
     const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
-
-    // 自动点击"包装及参数"标签页以加载完整参数（如 CCC 认证编号）
-    try {
-        const paramTab = Array.from(document.querySelectorAll('a, li, span')).find(
-            el => el.textContent?.includes('包装及参数')
-        ) as HTMLElement | undefined
-        if (paramTab && !paramTab.classList.contains('active')) {
-            paramTab.click()
-            console.log('[Suning] 自动点击"包装及参数"标签页')
-        }
-    } catch { }
 
     const skuId = (() => {
         const m = url.match(/\/(\d+)\/(\d+)\.html/i)
         return m ? m[2] : ""
     })()
 
-    // 优先级：网络拦截 > main-world > DOM
-    const netProduct = networkData?.suning_product_extracted
-
     const title =
-        netProduct?.title ||
         mw?.title ||
         getMetaContent("og:title") ||
         text(document.querySelector(".proinfo-title")) ||
@@ -1036,20 +804,12 @@ function extractSuningHint(url: string, mw?: any, networkData?: Record<string, a
         (document.title || "").split("-")[0]?.trim() ||
         ""
 
-    // 价格：优先使用网络拦截的实时价格
-    let price = ""
-    if (netProduct?.price) {
-        price = cleanPrice(String(netProduct.price))
-    } else if (mw?.price) {
-        price = cleanPrice(String(mw.price))
-    } else {
-        // 苏宁价格 DOM 优先 (.mainprice 更可靠)
-        price = cleanPrice(text(document.querySelector(".mainprice"))) ||
-            cleanPrice(text(document.querySelector(".price-promo .mainprice"))) ||
-            cleanPrice(text(document.querySelector("[class*='priceBox'] span"))) ||
-            cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
-            ""
-    }
+    const price =
+        mw?.price ||
+        cleanPrice(getMetaContent("product:price:amount") || getMetaContent("og:product:price:amount")) ||
+        cleanPrice(text(document.querySelector(".mainprice"))) ||
+        cleanPrice(text(document.querySelector("[class*='priceBox'] span"))) ||
+        ""
 
     const normalizeImg = (raw: string): string | null => {
         let u = String(raw || "").trim()
@@ -1078,70 +838,38 @@ function extractSuningHint(url: string, mw?: any, networkData?: Record<string, a
         images.push(u)
     }
 
-    // 优先级：网络拦截 > main-world > DOM
-    // 1. 网络拦截的图片
-    if (netProduct?.images && Array.isArray(netProduct.images)) {
-        for (const img of netProduct.images) {
-            addImg(typeof img === 'string' ? img : img?.url || img?.img)
-        }
-    }
-
-    // 2. main-world 的图片
+    // 优先使用 main-world 的图片
     if (mw?.images && Array.isArray(mw.images)) {
         for (const img of mw.images) {
             addImg(img)
         }
     }
 
-    // DOM 补充 - 只在 main-world 没有提供足够图片时才执行
-    // 苏宁的 zoom.thumbItems 已经很精准，如果已经有 >= 3 张图就不需要 DOM 补充
-    if (images.length < 3) {
-        console.log('[Suning] main-world 图片不足，降级为 DOM 解析')
-        const mainImageContainer = document.querySelector('#imageZoom, .imgzoom-wrap, .pro-img-main, .product-image')
+    // DOM 补充
+    document.querySelectorAll([
+        "#imageZoom img",
+        "#bigImg",
+        "img[id*='bigImg']",
+        ".imgzoom-thumb-main img",
+        "ul.imgzoom-thumb li img",
+        ".imgzoom-thumb img",
+        "img[src*='suning']",
+        "img[data-src*='suning']"
+    ].join(",")).forEach((node) => {
+        const img = node as HTMLImageElement
+        addImg(
+            img.getAttribute("src2") ||
+            img.getAttribute("data-src2") ||
+            img.getAttribute("src-large") ||
+            img.getAttribute("data-original") ||
+            img.getAttribute("data-src") ||
+            img.getAttribute("src")
+        )
+    })
 
-        if (mainImageContainer) {
-            mainImageContainer.querySelectorAll('img').forEach((node) => {
-                const img = node as HTMLImageElement
-                addImg(
-                    img.getAttribute("src2") ||
-                    img.getAttribute("data-src2") ||
-                    img.getAttribute("src-large") ||
-                    img.getAttribute("data-original") ||
-                    img.getAttribute("data-src") ||
-                    img.getAttribute("src")
-                )
-            })
-        } else {
-            // 使用更精确的选择器，移除过于宽泛的选择器
-            document.querySelectorAll([
-                "#imageZoom img",
-                "#bigImg",
-                "img[id*='bigImg']",
-                ".imgzoom-thumb-main img",
-                "ul.imgzoom-thumb li img",
-                ".imgzoom-thumb img"
-                // 移除: "img[src*='suning']", "img[data-src*='suning']"
-            ].join(",")).forEach((node) => {
-                const img = node as HTMLImageElement
-                addImg(
-                    img.getAttribute("src2") ||
-                    img.getAttribute("data-src2") ||
-                    img.getAttribute("src-large") ||
-                    img.getAttribute("data-original") ||
-                    img.getAttribute("data-src") ||
-                    img.getAttribute("src")
-                )
-            })
-        }
-    }
-
-    if (images.length === 0) {
-        addImg(getMetaContent("og:image"))
-    }
+    addImg(getMetaContent("og:image"))
 
     const attributes: Record<string, string> = {}
-
-    // 苏宁参数提取 - 列表结构
     document.querySelectorAll([
         ".pro-detail-parameter li",
         ".procon-param li",
@@ -1162,37 +890,6 @@ function extractSuningHint(url: string, mw?: any, networkData?: Record<string, a
         attributes[k] = v
     })
 
-    // 苏宁参数提取 - 表格结构（包装及参数页面）
-    const paramTableSelectors = [
-        "#J-procon-param table tr",
-        ".procon-param table tr",
-        "#pro_detail_tab_param table tr",
-        ".cnt-parm table tr",
-        ".pro-param-table tr",
-        ".pro-table tr"
-    ]
-    document.querySelectorAll(paramTableSelectors.join(",")).forEach((tr) => {
-        const cells = tr.querySelectorAll("td, th")
-        // 通常是 key-value 对，可能是多列
-        for (let i = 0; i < cells.length - 1; i += 2) {
-            const k = (cells[i]?.textContent || "").trim().replace(/[:：]$/, "")
-            const v = (cells[i + 1]?.textContent || "").trim()
-            if (k && v && k.length <= 40 && v.length <= 200) {
-                attributes[k] = v
-            }
-        }
-    })
-
-    // 特别提取 CCC 认证编号（政采云需要）
-    if (!attributes["CCC认证编号"]) {
-        const bodyText = document.body.innerText
-        const cccMatch = bodyText.match(/CCC[认证]*[编]*号[：:]\s*(\d{15,16})/)
-        if (cccMatch) {
-            attributes["CCC认证编号"] = cccMatch[1]
-            console.log("[Suning] 提取到 CCC 认证编号:", cccMatch[1])
-        }
-    }
-
     // 合并 main-world 参数
     if (mw?.params) {
         mergeParamsIntoAttributes(attributes, mw.params)
@@ -1207,45 +904,21 @@ function extractSuningHint(url: string, mw?: any, networkData?: Record<string, a
     const seenDetail = new Set<string>()
     const addDetail = (raw: string | null | undefined) => {
         if (!raw) return
-        // 过滤非商品图
-        const lower = (raw || '').toLowerCase()
-        // 二维码、占位符、logo
-        if (lower.includes('qrcode') || lower.includes('code.suning') ||
-            lower.includes('blank.gif') || lower.includes('loading') ||
-            lower.includes('logo') || lower.includes('icon')) {
-            return
-        }
-        // 苏宁静态资源服务器（loading 图）
-        if (lower.includes('ssr.suning.cn')) {
-            return
-        }
-        // 项目/活动资源（广告图、流程图）
-        if (lower.includes('res.suning.cn/proj') || lower.includes('/project/')) {
-            return
-        }
         const u = normalizeImg(raw)
         if (!u || seenDetail.has(u)) return
         seenDetail.add(u)
         detailImages.push(u)
     }
 
-    // 苏宁详情图使用 src2 属性绕过懒加载
     document.querySelectorAll([
         "#productDetail img",
         ".product-detail img",
         ".detail-content img",
         "div[id*='detail'] img",
-        "div[class*='proDetail'] img",
-        "#J-procon-desc img"
+        "div[class*='proDetail'] img"
     ].join(",")).forEach((node) => {
         const img = node as HTMLImageElement
-        // 优先使用 src2 属性（苏宁懒加载特殊处理）
-        addDetail(
-            img.getAttribute("src2") ||
-            img.getAttribute("data-src2") ||
-            img.getAttribute("data-src") ||
-            img.getAttribute("src")
-        )
+        addDetail(img.getAttribute("data-src") || img.getAttribute("src"))
     })
 
     // SKU 规格组
