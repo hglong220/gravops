@@ -139,23 +139,32 @@ export async function POST(request: NextRequest) {
     // - JD: 后端进行严格过滤（图片探测可靠）
     // - 天猫/淘宝: 跳过后端过滤，直接使用前端过滤后的图片（后端探测对阿里 CDN 不可靠）
     // - 苏宁: 同样跳过后端过滤
+
+    console.log('[plugin/copy] 图片数据:', {
+      hintImages: hintImages.length,
+      hintDetailImages: hintDetailImages.length,
+      scrapedImages: scrapedImages.length
+    })
+
     if (platform === 'jd') {
-      ;[mergedImages, mergedDetailImages] = await Promise.all([
-        filterImageUrlsForUpload(mergedImages, {
-          platform,
-          kind: 'main',
-          minSize: 500,
-          maxCount: 10,
-          targetSize: 900
-        }),
-        filterImageUrlsForUpload(mergedDetailImages, {
-          platform,
-          kind: 'detail',
-          minSize: 400,
-          maxCount: 60,
-          targetSize: 900
-        })
-      ])
+      // 主图仍然进行后端过滤
+      mergedImages = await filterImageUrlsForUpload(mergedImages, {
+        platform,
+        kind: 'main',
+        minSize: 500,
+        maxCount: 10,
+        targetSize: 900
+      })
+
+      // 🔴 详情图：暂时跳过后端过滤，直接使用前端数据（调试用）
+      // mergedDetailImages = await filterImageUrlsForUpload(mergedDetailImages, {
+      //   platform,
+      //   kind: 'detail',
+      //   minSize: 400,
+      //   maxCount: 60,
+      //   targetSize: 900
+      // })
+      console.log('[plugin/copy] 京东详情图直接使用前端数据:', mergedDetailImages.length)
     } else if (platform === 'tmall' || platform === 'taobao' || platform === 'suning') {
       // 对天猫/淘宝/苏宁，只做简单的 URL 过滤，不进行远程探测
       const filterTmallUrls = (urls: string[]) => {
@@ -183,7 +192,9 @@ export async function POST(request: NextRequest) {
       (typeof productData?.skuData?.price === 'string' && productData.skuData.price.trim()) ||
       ''
 
-    const finalPrice = scrapedPrice && scrapedPrice !== '0' ? scrapedPrice : hintPrice || scrapedPrice || '0'
+    // 价格优先级：前端 hintPrice (促销价) > 服务端 scrapedPrice (可能是原价)
+    // 因为前端能直接看到页面上显示的促销价，更准确
+    const finalPrice = hintPrice && hintPrice !== '0' ? hintPrice : scrapedPrice || '0'
 
     const scrapedAttrs =
       productData?.attributes && typeof productData.attributes === 'object' && !Array.isArray(productData.attributes)
