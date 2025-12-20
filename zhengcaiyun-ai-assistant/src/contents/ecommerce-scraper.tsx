@@ -122,14 +122,23 @@ const EcommerceScraperWidget = () => {
         setLoading(true)
         try {
             const currentUrl = window.location.href
-            const hint = extractEcommerceHint()
+
+            // 关键：如果页面已切换，清空旧的网络拦截数据
+            if (lastInterceptedPageUrl && lastInterceptedPageUrl !== currentUrl) {
+                console.log('[EcommerceScraper] 页面已切换，清空旧数据')
+                clearNetworkData()
+            }
+            lastInterceptedPageUrl = currentUrl
+
+            const hint = await extractEcommerceHint()
 
             // 调试：确认发送到后端的数据
             console.log('[EcommerceScraper] 发送到后端的 hint:', {
                 title: hint?.title?.substring(0, 30),
                 brand: hint?.brand,
                 model: hint?.model,
-                imagesCount: hint?.images?.length
+                imagesCount: hint?.images?.length,
+                detailImagesCount: hint?.detailImages?.length
             })
 
             const resp = await fetchWithAuth("/api/plugin/copy", {
@@ -201,21 +210,50 @@ let mainWorldData: any = null
 // 用于存储网络拦截的 API 数据（优先级更高）
 let networkInterceptedData: Record<string, any> = {}
 
+// 记录当前页面 URL，用于验证网络拦截数据是否属于当前页面
+let lastInterceptedPageUrl: string = ''
+
+// 清空网络拦截数据（页面切换时调用）
+function clearNetworkData() {
+    networkInterceptedData = {}
+    mainWorldData = null
+    console.log('[EcommerceScraper] 已清空网络拦截数据')
+}
+
 // ========== 消息监听 ==========
 
 if (typeof window !== 'undefined') {
+    // 监听 URL 变化（SPA 导航），自动清空旧数据
+    let lastUrl = window.location.href
+    const urlObserver = new MutationObserver(() => {
+        if (window.location.href !== lastUrl) {
+            console.log('[EcommerceScraper] 检测到页面切换:', lastUrl, '->', window.location.href)
+            lastUrl = window.location.href
+            clearNetworkData()
+        }
+    })
+    urlObserver.observe(document.body, { childList: true, subtree: true })
+
+    // 也监听 popstate 事件（浏览器前进后退）
+    window.addEventListener('popstate', () => {
+        console.log('[EcommerceScraper] popstate 事件，清空旧数据')
+        clearNetworkData()
+    })
+
     window.addEventListener('message', (event) => {
         // 原有的 main-world 全局变量数据
         if (event.data?.type === 'ECOMMERCE_PRODUCT_DATA') {
             mainWorldData = event.data
             // 正确统计图片数量：合并 imageAndVideoJson 和 images
             const imgCount = (mainWorldData.imageAndVideoJson?.length || 0) + (mainWorldData.images?.length || 0)
+            const detailCount = mainWorldData.detailImages?.length || 0
             console.log('[EcommerceScraper] 收到 main-world 全局变量数据:', {
                 platform: mainWorldData.platform,
                 title: mainWorldData.title?.substring(0, 30) || '(无)',
                 paramCount: Object.keys(mainWorldData.params || {}).length,
                 colorSizeCount: (mainWorldData.colorSize || []).length,
-                imageCount: imgCount
+                imageCount: imgCount,
+                detailImageCount: detailCount  // 新增
             })
         }
 
@@ -256,13 +294,58 @@ if (typeof window !== 'undefined') {
             } catch { }
         }, 2000) // 延迟 2 秒，等页面主体加载完成
     }
+
+    // 京东参数预加载：页面加载后自动点击"规格参数"标签页
+    if (window.location.hostname.includes('jd.com')) {
+        setTimeout(() => {
+            try {
+                const specTab = Array.from(document.querySelectorAll('.tab-main li, .tab-con li')).find(
+                    el => el.textContent?.includes('规格参数')
+                ) as HTMLElement | undefined
+                if (specTab && !specTab.classList.contains('curr') && !specTab.classList.contains('selected')) {
+                    specTab.click()
+                    console.log('[JD] 预加载：自动点击"规格参数"标签页')
+                }
+            } catch { }
+        }, 2000)
+    }
 }
 
 // ========== 数据提取入口 ==========
 
-function extractEcommerceHint(): Record<string, any> {
+async function extractEcommerceHint(): Promise<Record<string, any>> {
     const url = window.location.href
     const hostname = window.location.hostname
+
+    console.log('🟢🟢🟢 [extractEcommerceHint] 被调用, hostname:', hostname)
+
+    // 🔴 主动请求 main-world 刷新数据（确保详情图被采集）
+    console.log('🟢 请求 main-world 刷新数据...')
+    window.postMessage({ type: 'REQUEST_PRODUCT_DATA' }, '*')
+
+    // 等待 main-world 返回数据（最多等 3 秒）
+    await new Promise<void>((resolve) => {
+        let resolved = false
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true
+                console.log('🟢 等待 main-world 数据超时')
+                resolve()
+            }
+        }, 3000)
+
+        const listener = (event: MessageEvent) => {
+            if (event.data?.type === 'ECOMMERCE_PRODUCT_DATA' && !resolved) {
+                resolved = true
+                clearTimeout(timeout)
+                mainWorldData = event.data
+                console.log('🟢 收到 main-world 刷新数据, detailImages:', event.data.detailImages?.length ?? 0)
+                window.removeEventListener('message', listener)
+                resolve()
+            }
+        }
+        window.addEventListener('message', listener)
+    })
 
     // 合并数据源：网络拦截数据 + main-world 数据
     const mergedData = {
@@ -271,7 +354,7 @@ function extractEcommerceHint(): Record<string, any> {
     }
 
     if (hostname.includes("jd.com") || hostname.includes("jd.hk")) {
-        return extractJdHint(url, mainWorldData, networkInterceptedData)
+        return await extractJdHint(url, mainWorldData, networkInterceptedData)
     }
     if (hostname.includes("tmall.com") || hostname.includes("tmall.hk") || hostname.includes("taobao.com")) {
         return extractTmallHint(url, mainWorldData, networkInterceptedData)
@@ -319,9 +402,168 @@ function mergeParamsIntoAttributes(attributes: Record<string, string>, params: R
 
 // ========== 京东采集 ==========
 
-function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>): Record<string, any> {
+/**
+ * 解析详情图 HTML 内容，提取图片 URL
+ */
+function parseDescriptionImages(htmlContent: string): string[] {
+    const images: string[] = []
+    const seen = new Set<string>()
+
+    // 匹配 data-lazyload 属性（京东懒加载）
+    const lazyloadReg = /data-lazyload=["']([^"']+)["']/gi
+    let match
+    while ((match = lazyloadReg.exec(htmlContent)) !== null) {
+        if (match[1]) images.push(match[1])
+    }
+
+    // 匹配 src 属性（360buyimg.com 域名下的图片）
+    const srcReg = /src=["']([^"']*360buyimg\.com[^"']+)["']/gi
+    while ((match = srcReg.exec(htmlContent)) !== null) {
+        if (match[1] && match[1].includes('jfs')) images.push(match[1])
+    }
+
+    // 过滤和清洗
+    const cleanImages: string[] = []
+    for (const rawUrl of images) {
+        let url = rawUrl.trim()
+
+        // 补全协议
+        if (url.startsWith('//')) url = 'https:' + url
+
+        // 过滤规则
+        const lower = url.toLowerCase()
+        if (lower.includes('/sku/')) continue        // 促销横幅
+        if (lower.includes('/shaidan/')) continue    // 买家秀
+        if (lower.includes('/s50x50')) continue      // 太小
+        if (lower.includes('/s100x100')) continue    // 太小
+        if (lower.includes('loading')) continue      // 占位图
+        if (lower.includes('logo')) continue         // Logo
+        if (lower.includes('qrcode')) continue       // 二维码
+
+        // 转为无水印路径
+        url = url.replace(/\/n\d+\//g, '/pcpubliccms/')
+        url = url.replace(/\/pop\//g, '/pcpubliccms/')
+        url = url.replace(/\.(avif|webp)$/i, '')
+
+        // 去重
+        if (!seen.has(url)) {
+            seen.add(url)
+            cleanImages.push(url)
+        }
+    }
+
+    return cleanImages
+}
+
+/**
+ * 截取京东详情区域作为详情图
+ * 
+ * 【策略说明】
+ * - 自动滚动到详情区域
+ * - 使用 chrome.tabs.captureVisibleTab 截取屏幕
+ * - 截图就是当前看到的内容，100% 不会串货
+ */
+async function fetchJDDescriptionActive(skuId: string): Promise<string[]> {
+    try {
+        console.log(`[JD Scraper] 开始截取详情区域，skuId=${skuId}`)
+
+        // 1. 找到详情区域
+        const detailSection = document.querySelector('#detail, .detail-content, #J-detail-content, .ssd-module-detail')
+
+        if (!detailSection) {
+            console.log('[JD Scraper] 未找到详情区域，无法截图')
+            return []
+        }
+
+        console.log('[JD Scraper] 找到详情区域，准备截图')
+
+        // 2. 滚动到详情区域
+        detailSection.scrollIntoView({ behavior: 'instant', block: 'start' })
+
+        // 等待渲染
+        await new Promise(resolve => setTimeout(resolve, 800))
+
+        // 3. 截取当前可见区域
+        const screenshots: string[] = []
+
+        // 截取第一屏
+        console.log('[JD Scraper] 截取第1张...')
+        const screenshot1 = await captureVisibleArea()
+        if (screenshot1) {
+            screenshots.push(screenshot1)
+            console.log('[JD Scraper] 截取详情图第1张成功')
+        } else {
+            console.log('[JD Scraper] 第1张截图失败')
+        }
+
+        // 滚动并截取更多（共4张）
+        for (let i = 0; i < 3; i++) {
+            window.scrollBy(0, window.innerHeight * 0.8)
+            await new Promise(resolve => setTimeout(resolve, 500))
+
+            console.log(`[JD Scraper] 截取第${i + 2}张...`)
+            const screenshot = await captureVisibleArea()
+            if (screenshot) {
+                screenshots.push(screenshot)
+                console.log(`[JD Scraper] 截取详情图第${i + 2}张成功`)
+            }
+        }
+
+        console.log(`[JD Scraper] 共截取 ${screenshots.length} 张详情图`)
+        return screenshots
+
+    } catch (error) {
+        console.error('[JD Scraper] 截图失败:', error)
+        return []
+    }
+}
+
+/**
+ * 截取当前可见区域
+ */
+async function captureVisibleArea(): Promise<string | null> {
+    console.log('[JD Scraper] 开始调用截图 API...')
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'capturePage' }, (response) => {
+            console.log('[JD Scraper] 截图 API 响应:', response ? 'ok' : 'null', response?.error)
+            if (chrome.runtime.lastError) {
+                console.error('[JD Scraper] chrome.runtime.lastError:', chrome.runtime.lastError.message)
+                resolve(null)
+            } else if (response?.error) {
+                console.error('[JD Scraper] 截图错误:', response.error)
+                resolve(null)
+            } else if (response?.imageBase64) {
+                // 转换为 data URL
+                const dataUrl = `data:image/png;base64,${response.imageBase64}`
+                console.log('[JD Scraper] 截图成功，长度:', dataUrl.length)
+                resolve(dataUrl)
+            } else {
+                console.log('[JD Scraper] 截图响应为空')
+                resolve(null)
+            }
+        })
+    })
+}
+
+
+async function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>): Promise<Record<string, any>> {
+    // 时间戳强制重编译: 2024-12-20 23:10
+    console.log('🔵🔵🔵 [extractJdHint] 函数被调用 🔵🔵🔵', url)
+    console.log('🔵 mw 参数内容:', mw ? JSON.stringify(Object.keys(mw)) : 'null/undefined')
+    console.log('🔵 mw.detailImages:', mw?.detailImages ? `${mw.detailImages.length} 张` : 'undefined')
     const text = (el: Element | null | undefined) => (el?.textContent || "").trim()
     const cleanPrice = (raw: string) => String(raw || "").replace(/[^\d.]/g, "").trim()
+
+    // 自动点击"规格参数"标签页预加载完整参数
+    try {
+        const specTab = Array.from(document.querySelectorAll('.tab-main li, .tab-con li')).find(
+            el => el.textContent?.includes('规格参数')
+        ) as HTMLElement | undefined
+        if (specTab && !specTab.classList.contains('curr') && !specTab.classList.contains('selected')) {
+            specTab.click()
+            console.log('[JD] 自动点击"规格参数"标签页')
+        }
+    } catch { }
 
     const skuId = (() => {
         const m = url.match(/\/(\d+)\.html/i)
@@ -329,7 +571,6 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
     })()
 
     // 优先级：网络拦截 > main-world > DOM
-    // 从网络拦截数据获取商品信息
     const netProduct = networkData?.jd_product_extracted
     const netPrice = networkData?.jd_price_extracted
 
@@ -342,36 +583,79 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
         (document.title || "").split("-")[0]?.trim() ||
         ""
 
-    // 价格：优先使用网络拦截的实时价格
+    // 价格：多来源提取（京东价格异步加载）
     let price = ""
     if (netPrice?.prices?.[0]?.price) {
         price = cleanPrice(String(netPrice.prices[0].price))
     } else if (netProduct?.price) {
         price = cleanPrice(String(netProduct.price))
-    } else {
-        const priceEl =
-            document.querySelector(".p-price .price") ||
-            (skuId ? document.querySelector(`.price.J-p-${skuId}`) : null) ||
-            document.querySelector("[class*='J-p-']")
-        price = cleanPrice(text(priceEl))
+    }
+    // DOM 兜底 - 多选择器
+    if (!price) {
+        const priceSelectors = [
+            ".p-price .price",
+            ".J-p-price",
+            `.price.J-p-${skuId}`,
+            "[class*='J-p-']",
+            ".summary-price .price"
+        ]
+        for (const sel of priceSelectors) {
+            const priceEl = document.querySelector(sel)
+            if (priceEl) {
+                const p = cleanPrice(text(priceEl))
+                if (p) {
+                    price = p
+                    break
+                }
+            }
+        }
     }
 
+    // 主图高清化函数 - 使用 /pcpubliccms/ 路径获取无水印高清图
+    // 重要：/n0/ 路径会触发京东水印，/pcpubliccms/ 路径无水印
     const normalizeImg = (raw: string) => {
-        let u = String(raw || "").trim()
-        if (!u) return null
-        if (u.startsWith("data:")) return null
-        if (u.startsWith("//")) u = `https:${u}`
-        if (u.startsWith("/jfs/")) u = `https://img10.360buyimg.com/n1${u}`
-        if (u.startsWith("/")) u = `https://item.jd.com${u}`
-        if (u.startsWith("jfs/")) u = `https://img10.360buyimg.com/n1/${u}`
-        u = u
-            .replace("/n5/", "/n1/")
-            .replace("/n7/", "/n1/")
-            .replace("/n9/", "/n1/")
-            .replace("/s54x54_jfs/", "/n1/")
-            .replace("/s60x60_jfs/", "/n1/")
-        if (!u.includes("360buyimg.com")) return null
-        return u
+        try {
+            let u = String(raw || "").trim()
+            if (!u) return null
+            if (u.startsWith("data:")) return null
+
+            // 使用 new URL() 正确处理相对路径，避免 Invalid URL 错误
+            try {
+                u = new URL(u, location.href).href
+            } catch {
+                // 如果还是失败，尝试手动补全
+                if (u.startsWith("//")) u = `https:${u}`
+                else if (u.startsWith("/jfs/")) u = `https://img10.360buyimg.com/pcpubliccms${u}`
+                else if (u.startsWith("jfs/")) u = `https://img10.360buyimg.com/pcpubliccms/${u}`
+                else if (u.startsWith("/")) u = `https://item.jd.com${u}`
+            }
+
+            // 移除 .avif/.webp 后缀（获取原始格式）
+            u = u.replace(/\.(avif|webp)$/i, '')
+
+            // 高清图转换 - 统一转为 /pcpubliccms/jfs/ 格式（无水印）
+            u = u
+                // 移除尺寸前缀但保留 pcpubliccms 路径
+                .replace(/\/pcpubliccms\/s\d+x\d+_jfs\//g, "/pcpubliccms/jfs/")
+                .replace(/\/imgzone\/s\d+x\d+_jfs\//g, "/pcpubliccms/jfs/")
+                // 任意路径下的 sXXXxXXX_jfs -> jfs
+                .replace(/\/s\d+x\d+_jfs\//g, "/pcpubliccms/jfs/")
+                .replace(/s\d+x\d+_jfs/g, "jfs")
+                // 直接 sXXXxXXX_ 前缀（非 jfs）
+                .replace(/\/s\d+x\d+_/g, "/")
+                // 将有水印的 nX (n0, n1, n5, n12等) 全部转为无水印的 pcpubliccms
+                .replace(/\/n\d+\//g, "/pcpubliccms/")
+                // pop 路径也转为 pcpubliccms
+                .replace(/\/pop\//g, "/pcpubliccms/")
+                // imgzone 也转为 pcpubliccms
+                .replace(/\/imgzone\/jfs\//g, "/pcpubliccms/jfs/")
+
+            if (!u.includes("360buyimg.com")) return null
+            return u
+        } catch (e) {
+            console.warn('[JD Scraper] URL 处理失败:', raw, e)
+            return null
+        }
     }
 
     const images: string[] = []
@@ -384,7 +668,7 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
         images.push(u)
     }
 
-    // 优先级：网络拦截 > main-world > DOM
+    // 主图提取优先级：网络拦截 > main-world > DOM
     // 1. 网络拦截的图片
     if (netProduct?.images && Array.isArray(netProduct.images)) {
         for (const img of netProduct.images) {
@@ -392,54 +676,80 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
         }
     }
 
-    // 2. main-world 的图片
+    // 2. main-world 的 imageAndVideoJson
     if (mw?.imageAndVideoJson && Array.isArray(mw.imageAndVideoJson)) {
+        console.log(`[JD] main-world imageAndVideoJson 有 ${mw.imageAndVideoJson.length} 项`)
         for (const item of mw.imageAndVideoJson) {
             if (item.type === 1 && item.img) {
                 addImg(item.img)
             }
         }
+        console.log(`[JD] 添加后主图数量: ${images.length}`)
     }
 
-    // DOM 补充
-    document
-        .querySelectorAll("#spec-list img, #spec-n1 img, .spec-items img, .lh img")
-        .forEach((node) => {
+    // 3. DOM 兜底 - 限制图片数量避免采集过多
+    if (images.length < 5) {
+        document.querySelectorAll("#spec-list img, #spec-n1 img, .spec-items img").forEach((node) => {
             const img = node as HTMLImageElement
             addImg(
-                img.getAttribute("data-origin") ||
                 img.getAttribute("data-url") ||
+                img.getAttribute("data-origin") ||
                 img.getAttribute("data-src") ||
                 img.getAttribute("data-lazy-img") ||
-                img.getAttribute("data-lazyload") ||
                 img.getAttribute("src")
             )
         })
+    }
 
+    // 规格参数提取 - 简单参数列表
     const attributes: Record<string, string> = {}
-    document
-        .querySelectorAll(
-            [
-                "#parameter-brand li",
-                "#parameter2 li",
-                ".parameter2 li",
-                ".p-parameter-list li",
-                ".p-parameter li",
-                ".Ptable-item",
-                ".Ptable-item dl",
-                ".Ptable-item li"
-            ].join(",")
-        )
-        .forEach((row) => {
-            const t = text(row)
-            const m = t.match(/^(.+?)[:：]\s*(.+)$/)
-            if (!m) return
-            const k = m[1].trim()
-            const v = m[2].trim()
-            if (!k || !v) return
-            if (k.length > 40 || v.length > 200) return
-            attributes[k] = v
+    document.querySelectorAll([
+        "#parameter-brand li",
+        "#parameter2 li",
+        ".parameter2 li",
+        ".p-parameter-list li",
+        ".p-parameter li"
+    ].join(",")).forEach((row) => {
+        const t = text(row)
+        const m = t.match(/^(.+?)[:：]\s*(.+)$/)
+        if (!m) return
+        const k = m[1].trim()
+        const v = m[2].trim()
+        if (!k || !v || k.length > 40 || v.length > 200) return
+        attributes[k] = v
+    })
+
+    // 规格参数提取 - 完整参数表格（Ptable）- 传统布局
+    document.querySelectorAll(".Ptable .Ptable-item").forEach((item) => {
+        const group = text(item.querySelector("h3"))
+        item.querySelectorAll("dl").forEach((dl) => {
+            const dt = text(dl.querySelector("dt"))
+            const dd = text(dl.querySelector("dd:not(.Ptable-tips)"))
+            if (dt && dd && dt.length <= 40 && dd.length <= 200) {
+                // 带分组前缀（如有重复键）
+                const key = group && !attributes[dt] ? dt : (group ? `${group}-${dt}` : dt)
+                if (!attributes[dt]) attributes[dt] = dd
+            }
         })
+    })
+
+    // 规格参数提取 - 新版布局 .attribute .list .item
+    document.querySelectorAll(".attribute .list .item").forEach((item) => {
+        const label = text(item.querySelector(".label .text") || item.querySelector(".label"))
+        const value = text(item.querySelector(".value .text") || item.querySelector(".value"))
+        if (label && value && label.length <= 40 && value.length <= 200) {
+            if (!attributes[label]) attributes[label] = value
+        }
+    })
+
+    // 规格参数提取 - 另一种新版布局 #detail 内的 dl/dt/dd
+    document.querySelectorAll("#detail dl, .detail-list dl").forEach((dl) => {
+        const dt = text(dl.querySelector("dt"))
+        const dd = text(dl.querySelector("dd"))
+        if (dt && dd && dt.length <= 40 && dd.length <= 200) {
+            if (!attributes[dt]) attributes[dt] = dd
+        }
+    })
 
     // 合并 main-world 参数
     if (mw?.params) {
@@ -450,39 +760,94 @@ function extractJdHint(url: string, mw?: any, networkData?: Record<string, any>)
     const model = attributes["型号"] || attributes["产品型号"] || attributes["规格型号"] || ""
     const derived = deriveBrandModelFromTitle(title || "")
 
+    // 详情图提取
     const detailImages: string[] = []
     const seenDetail = new Set<string>()
+
+    // 过滤非商品详情图（二维码、促销图、链接图等）
+    const isValidDetailImage = (url: string): boolean => {
+        if (!url) return false
+        const lower = url.toLowerCase()
+
+        // ========== 路径黑名单 ==========
+        // 常见的非商品图
+        if (lower.includes('qrcode') || lower.includes('qr_code') || lower.includes('erweima')) return false
+        if (lower.includes('banner') || lower.includes('promo') || lower.includes('activity')) return false
+        if (lower.includes('logo') || lower.includes('icon') || lower.includes('btn')) return false
+        if (lower.includes('gif')) return false  // 动画图通常不是商品图
+
+        // 京东特定路径过滤（只排除确定不是商品图的）
+        if (lower.includes('/shaidan/')) return false      // 买家秀
+        if (lower.includes('imagetools')) return false     // 工具图标
+        if (lower.includes('storage.360buyimg')) return false  // 存储图通常是促销
+        if (lower.includes('i.loli.net')) return false     // 第三方图床
+        if (lower.includes('alicdn')) return false         // 跨平台图
+
+        // ========== 尺寸过滤（缩略图） ==========
+        // 小尺寸图通常是推荐商品缩略图
+        if (lower.includes('/s50x50')) return false
+        if (lower.includes('/s60x60')) return false
+        if (lower.includes('/s100x100')) return false
+        if (lower.includes('/s150x150')) return false
+        if (lower.includes('/s200x200')) return false
+        if (lower.includes('/s300x300')) return false
+        if (lower.includes('/s400x400')) return false
+        // 带 _ 的尺寸前缀
+        if (/\/s\d+x\d+_/.test(lower)) return false
+
+        // ========== 必须是有效的京东图片 ==========
+        // 只要是 360buyimg.com 就可以（放宽条件，不再要求 /jfs/）
+        if (!lower.includes('360buyimg.com')) return false
+
+        // 通过以上过滤后，基本就是有效的商品图了
+        return true
+    }
+
     const addDetail = (raw: string | null | undefined) => {
         if (!raw) return
         const u = normalizeImg(raw)
         if (!u || seenDetail.has(u)) return
+        if (!isValidDetailImage(u)) return  // 过滤异常图片
         seenDetail.add(u)
         detailImages.push(u)
     }
 
-    document
-        .querySelectorAll(
-            [
-                "#J-detail-content img",
-                "#detail img",
-                ".detail-content img",
-                ".product-detail img",
-                "div[id*='detail'] img"
-            ].join(",")
-        )
-        .forEach((node) => {
-            const img = node as HTMLImageElement
-            addDetail(
-                img.getAttribute("data-origin") ||
-                img.getAttribute("data-url") ||
-                img.getAttribute("data-src") ||
-                img.getAttribute("data-lazy-img") ||
-                img.getAttribute("data-lazyload") ||
-                img.getAttribute("src")
-            )
-        })
+    // ========== 详情图：直接从 #graphic-content 采集 ==========
+    // 注意：#graphic-content 包含图片，#sx-product-detail 可能是空的
+    const detailContainer = document.querySelector('#graphic-content') || document.querySelector('#sx-product-detail')
+    console.log(`[JD] 详情容器:`, detailContainer?.id || '不存在')
 
-    // SKU 规格组 - 优先使用网络拦截数据
+    if (detailContainer) {
+        const allImgs = detailContainer.querySelectorAll('img')
+        console.log(`[JD] 详情容器内 img 数量: ${allImgs.length}`)
+        allImgs.forEach((img, i) => {
+            const imgEl = img as HTMLImageElement
+            const src = imgEl.src
+            console.log(`[JD] 详情图[${i}]: ${src?.substring(0, 60)}...`)
+            addDetail(src)
+        })
+        console.log(`[JD] 过滤后详情图数量: ${detailImages.length} 张`)
+    } else {
+        console.log(`[JD] 未找到详情容器，尝试其他选择器...`)
+        // 尝试更多选择器
+        const altContainers = ['#detail', '.detail-content', '#J-detail-content', '.ssd-module-detail']
+        for (const sel of altContainers) {
+            const c = document.querySelector(sel)
+            if (c) {
+                console.log(`[JD] 找到替代容器: ${sel}, img数量: ${c.querySelectorAll('img').length}`)
+            }
+        }
+    }
+
+    // 回退：使用 main-world 提供的数据
+    if (detailImages.length === 0 && mw?.detailImages && Array.isArray(mw.detailImages)) {
+        for (const imgUrl of mw.detailImages) {
+            addDetail(imgUrl)
+        }
+        console.log(`[JD] 从 main-world 获取详情图: ${detailImages.length} 张`)
+    }
+
+    // SKU 规格组 - 优先使用网络拦截/main-world 数据
     const netSku = networkData?.jd_sku_extracted
     const colorSizeSource = netSku?.colorSize || netProduct?.colorSize || mw?.colorSize
     const specGroups = extractJdSpecGroups(normalizeImg, colorSizeSource)
