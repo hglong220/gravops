@@ -590,14 +590,21 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
     } else if (netProduct?.price) {
         price = cleanPrice(String(netProduct.price))
     }
-    // DOM 兜底 - 多选择器
+    // DOM 兜底 - 多选择器（优先获取促销价/政府补贴价）
     if (!price) {
         const priceSelectors = [
-            ".p-price .price",
+            // 促销价/政府补贴价（优先）
             ".J-p-price",
+            ".p-price .price",
+            ".price-box .price",
+            ".summary-price-wrap .price",
+            // SKU 专属价格
             `.price.J-p-${skuId}`,
             "[class*='J-p-']",
-            ".summary-price .price"
+            // 通用价格
+            ".summary-price .price",
+            ".itemPrice-wrap .J-actPrice",
+            ".actPrice"
         ]
         for (const sel of priceSelectors) {
             const priceEl = document.querySelector(sel)
@@ -605,6 +612,7 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
                 const p = cleanPrice(text(priceEl))
                 if (p) {
                     price = p
+                    console.log(`[JD] 从 DOM 获取价格: ${sel} = ${p}`)
                     break
                 }
             }
