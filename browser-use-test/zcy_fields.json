@@ -1,0 +1,13 @@
+{
+  "url": "https://www.zcygov.cn/",
+  "fields": [
+    {
+      "label": "打印机",
+      "selector": "#input__wrapper-in",
+      "type": "input",
+      "name": "",
+      "id": "input__wrapper-in",
+      "required": false
+    }
+  ]
+}

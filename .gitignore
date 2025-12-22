@@ -59,3 +59,12 @@ zcy_categories_complete.json
 # 其他
 .DS_Store
 Thumbs.db
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
