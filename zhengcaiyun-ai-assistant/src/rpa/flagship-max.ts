@@ -501,25 +501,45 @@ const BrandModelFiller = {
             return false
         }
 
-        // 点击打开下拉
+        // 滚动到可见区域
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        await Util.sleep(200)
+
+        // 点击激活输入框
         input.click()
         input.focus()
         await Util.sleep(300)
 
-        // 输入品牌名称
+        // 清空并输入品牌名称
+        input.value = ''
         this.setInputValue(input, brand)
-        await Util.sleep(800)
+        Logger.log(`  已输入: "${brand}"，等待下拉选项...`)
+        await Util.sleep(1200)  // 等待搜索结果加载
 
-        // 查找匹配的选项
+        // 查找并点击匹配的选项
         const selected = await this.selectDropdownOption(brand)
         if (selected) {
             Logger.log(`✓ 品牌选择成功: ${brand}`)
             return true
         }
 
-        Logger.log(`📝 无匹配选项，使用输入值: ${brand}`)
+        // 如果没找到精确匹配，尝试只用英文品牌名搜索
+        const englishBrand = brand.match(/[A-Za-z]+/)?.[0]
+        if (englishBrand && englishBrand !== brand) {
+            Logger.log(`  尝试英文品牌名: "${englishBrand}"`)
+            input.value = ''
+            this.setInputValue(input, englishBrand)
+            await Util.sleep(1200)
+            const selected2 = await this.selectDropdownOption(englishBrand)
+            if (selected2) {
+                Logger.log(`✓ 品牌选择成功: ${englishBrand}`)
+                return true
+            }
+        }
+
+        Logger.warn(`⚠️ 未找到品牌选项，保留输入值: ${brand}`)
         input.blur()
-        return true
+        return false
     },
 
     async selectModel(model: string): Promise<boolean> {
@@ -537,21 +557,29 @@ const BrandModelFiller = {
             return false
         }
 
-        input.click()
-        input.focus()
+        // 滚动到可见区域
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' })
         await Util.sleep(200)
 
+        input.click()
+        input.focus()
+        await Util.sleep(300)
+
+        // 清空并输入型号
+        input.value = ''
         this.setInputValue(input, model)
-        await Util.sleep(600)
+        Logger.log(`  已输入: "${model}"，等待下拉选项...`)
+        await Util.sleep(1200)
 
         const selected = await this.selectDropdownOption(model)
         if (selected) {
             Logger.log(`✓ 型号选择成功: ${model}`)
-        } else {
-            Logger.log(`📝 使用输入值: ${model}`)
-            input.blur()
+            return true
         }
 
+        // 型号没有匹配时保留输入值即可
+        Logger.log(`📝 型号无匹配选项，保留输入值: ${model}`)
+        input.blur()
         return true
     },
 
@@ -581,30 +609,72 @@ const BrandModelFiller = {
     },
 
     async selectDropdownOption(target: string): Promise<boolean> {
+        Logger.log(`🔍 搜索下拉选项: "${target}"`)
         const targetNorm = Util.normalize(target)
-        const dropdowns = document.querySelectorAll<HTMLElement>(
-            ".el-select-dropdown, .el-autocomplete-suggestion, .el-scrollbar, [class*='dropdown']"
-        )
 
-        for (const dropdown of Array.from(dropdowns)) {
-            const rect = dropdown.getBoundingClientRect()
-            if (rect.height === 0 || rect.width === 0) continue
+        // 等待下拉选项出现（最多 3 秒）
+        for (let wait = 0; wait < 15; wait++) {
+            // 政采云的下拉选项选择器（更全面）
+            const dropdownSelectors = [
+                ".el-select-dropdown:not([style*='display: none'])",
+                ".el-autocomplete-suggestion:not([style*='display: none'])",
+                ".doraemon-select-dropdown-menu",
+                ".el-scrollbar__view",
+                "[class*='dropdown']:not([style*='display: none'])",
+                "[class*='suggestion']:not([style*='display: none'])",
+                ".el-popper[role='tooltip']"
+            ]
 
-            const options = dropdown.querySelectorAll<HTMLElement>("li, [class*='item'], [class*='option']")
-            for (const opt of Array.from(options)) {
-                const optText = opt.innerText?.trim()
-                if (!optText) continue
+            for (const selector of dropdownSelectors) {
+                const dropdowns = document.querySelectorAll<HTMLElement>(selector)
 
-                const optNorm = Util.normalize(optText)
-                const parts = optText.split('/').map(p => Util.normalize(p))
+                for (const dropdown of Array.from(dropdowns)) {
+                    const rect = dropdown.getBoundingClientRect()
+                    // 确保下拉框可见
+                    if (rect.height === 0 || rect.width === 0) continue
 
-                if (optNorm === targetNorm || optNorm.includes(targetNorm) || parts.includes(targetNorm)) {
-                    opt.click()
-                    await Util.sleep(300)
-                    return true
+                    // 查找所有选项
+                    const options = dropdown.querySelectorAll<HTMLElement>(
+                        "li:not(.el-select-dropdown__empty), " +
+                        ".el-select-dropdown__item, " +
+                        ".doraemon-select-dropdown-menu-item, " +
+                        "[class*='item']:not(:empty), " +
+                        "[class*='option']:not(:empty)"
+                    )
+
+                    Logger.log(`  发现 ${options.length} 个选项 (选择器: ${selector})`)
+
+                    for (const opt of Array.from(options)) {
+                        const optText = opt.innerText?.trim()
+                        if (!optText || optText === '无匹配数据') continue
+
+                        const optNorm = Util.normalize(optText)
+                        const parts = optText.split('/').map(p => Util.normalize(p.trim()))
+
+                        // 匹配逻辑：精确匹配 > 包含匹配
+                        const isMatch =
+                            optNorm === targetNorm ||
+                            optNorm.includes(targetNorm) ||
+                            targetNorm.includes(optNorm) ||
+                            parts.includes(targetNorm) ||
+                            parts.some(p => p.includes(targetNorm) || targetNorm.includes(p))
+
+                        if (isMatch) {
+                            Logger.log(`  ✓ 找到匹配项: "${optText}"`)
+                            opt.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            await Util.sleep(100)
+                            opt.click()
+                            await Util.sleep(300)
+                            return true
+                        }
+                    }
                 }
             }
+
+            await Util.sleep(200)
         }
+
+        Logger.warn(`  ✗ 未找到匹配 "${target}" 的选项`)
         return false
     }
 }

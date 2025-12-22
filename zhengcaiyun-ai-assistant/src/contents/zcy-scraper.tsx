@@ -189,6 +189,45 @@ const ZcyScraperWidget = () => {
       })
     })
 
+  // 推送完整商品数据（包含图片、规格等）
+  const pushProductsWithDetails = async (
+    items: Array<{
+      url: string;
+      title: string;
+      images: string[];
+      detailImages: string[];
+      attributes: Record<string, string>;
+      price: string;
+      brand: string;
+      model: string;
+    }>,
+    shopUrl?: string
+  ) => {
+    const response = await fetchWithAuth("/api/push-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "batch-full",  // 新类型：完整数据
+        items: items.map(item => ({
+          url: item.url,
+          title: item.title,
+          images: item.images,
+          detailImages: item.detailImages,
+          attributes: item.attributes,
+          price: item.price,
+          brand: item.brand,
+          model: item.model
+        })),
+        shopUrl: shopUrl || window.location.href
+      })
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || `请求失败 (${response.status})`)
+    }
+    return response
+  }
+
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   const deriveItemId = (u: string) => {
@@ -436,37 +475,146 @@ const ZcyScraperWidget = () => {
     return Array.from(map.values())
   }
 
-  const enrichTitlesFromDetail = async (items: Array<{ url: string; title?: string }>) => {
-    const needFetch = items.filter((i) => !i.title || /^\d+$/.test(i.title))
-    const result = [...items]
-    const concurrency = 5
+  // 批量采集：从每个商品详情页获取完整信息（图片、规格、价格等）
+  const enrichProductDetails = async (
+    items: Array<{ url: string; title?: string }>,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<Array<{
+    url: string;
+    title: string;
+    images: string[];
+    detailImages: string[];
+    attributes: Record<string, string>;
+    price: string;
+    brand: string;
+    model: string;
+  }>> => {
+    const results: Array<any> = []
+    const concurrency = 1  // 串行请求，避免触发验证
     let index = 0
 
-    const fetchOne = async (item: { url: string; title?: string }) => {
+    const fetchProductDetail = async (item: { url: string; title?: string }) => {
       try {
-        const res = await fetch(item.url, { credentials: "include" })
-        const html = await res.text()
-        const matchTitle =
-          html.match(/<title>\s*([^<]+)\s*<\/title>/i)?.[1] ||
-          html.match(/"itemTitle"\s*:\s*"([^"]+)"/i)?.[1] ||
-          html.match(/"title"\s*:\s*"([^"]+)"/i)?.[1] ||
-          html.match(/class="item-name"[^>]*>([^<]+)</i)?.[1]
-        if (matchTitle) {
-          item.title = matchTitle.trim()
+        // 提取商品ID
+        const itemIdMatch = item.url.match(/\/items\/(\d+)/)
+        const itemId = itemIdMatch ? itemIdMatch[1] : null
+        if (!itemId) {
+          console.warn('[ZCY Batch] 无法提取商品ID:', item.url)
+          return null
+        }
+
+        const ts = Date.now()
+        const baseUrl = 'https://www.zcygov.cn'
+
+        // 并行请求商品详情和参数（使用完整 URL）
+        const [itemRes, paramRes] = await Promise.all([
+          fetch(`${baseUrl}/front/detail/item/${itemId}?timestamp=${ts}&zjxwcFlag=true`, { credentials: 'include' })
+            .then(r => r.json()).catch(e => { console.warn('[ZCY Batch] item API 失败:', e); return null }),
+          fetch(`${baseUrl}/front/detail/item/param?timestamp=${ts}&itemId=${itemId}`, { credentials: 'include' })
+            .then(r => r.json()).catch(e => { console.warn('[ZCY Batch] param API 失败:', e); return null })
+        ])
+
+        // ========== 调试日志（详细） ==========
+        console.log(`[ZCY Batch] itemId=${itemId} API 响应:`, {
+          itemRes: itemRes ? Object.keys(itemRes) : 'null',
+          itemData: itemRes?.data ? Object.keys(itemRes.data) : 'null',
+          paramRes: paramRes ? Object.keys(paramRes) : 'null',
+          paramData: paramRes?.data ? (Array.isArray(paramRes.data) ? 'array' : Object.keys(paramRes.data)) : 'null'
+        })
+
+        // 显示更多细节
+        if (itemRes?.data) {
+          console.log(`[ZCY Batch] itemData 细节:`, {
+            title: itemRes.data.title || itemRes.data.itemTitle,
+            imgs: itemRes.data.imgs ? `array(${itemRes.data.imgs.length})` : 'undefined',
+            mainImage: itemRes.data.mainImage,
+            detailInfo: itemRes.data.detailInfo ? `html(${itemRes.data.detailInfo.length} chars)` : 'undefined'
+          })
+        }
+
+        const itemData = itemRes?.data || {}
+        const paramData = paramRes?.data || {}
+
+        // 提取标题
+        const title = itemData.title || itemData.itemTitle || item.title || ''
+
+        // 提取图片
+        const images: string[] = []
+        if (Array.isArray(itemData.imgs)) {
+          images.push(...itemData.imgs.filter((u: string) => u && typeof u === 'string'))
+        } else if (itemData.mainImage) {
+          images.push(itemData.mainImage)
+        }
+
+        // 提取详情图（从 detailInfo HTML 中解析）
+        const detailImages: string[] = []
+        const detailHtml = itemData.detailInfo || ''
+        const imgMatches = detailHtml.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)
+        for (const m of imgMatches) {
+          if (m[1] && m[1].startsWith('http')) {
+            detailImages.push(m[1])
+          }
+        }
+
+        // 提取规格参数
+        const attributes: Record<string, string> = {}
+        if (Array.isArray(paramData.specs)) {
+          for (const spec of paramData.specs) {
+            if (spec?.key && spec?.value) {
+              attributes[spec.key] = String(spec.value)
+            }
+          }
+        }
+
+        // 提取价格
+        const price = String(itemData.price || itemData.salePrice || '')
+
+        // 提取品牌和型号
+        const brand = itemData.brandName || attributes['品牌'] || ''
+        const model = attributes['型号'] || attributes['规格型号'] || ''
+
+        console.log(`[ZCY Batch] 采集成功: ${title?.substring(0, 20)}..., 图片: ${images.length}, 详情图: ${detailImages.length}, 参数: ${Object.keys(attributes).length}`)
+
+        return {
+          url: item.url,
+          title,
+          images: images.slice(0, 10),
+          detailImages: detailImages.slice(0, 30),
+          attributes,
+          price,
+          brand,
+          model
         }
       } catch (e) {
-        // ignore fetch errors, keep old title
+        console.warn('[ZCY Batch] 采集失败:', item.url, e)
+        return {
+          url: item.url,
+          title: item.title || '',
+          images: [],
+          detailImages: [],
+          attributes: {},
+          price: '',
+          brand: '',
+          model: ''
+        }
       }
     }
 
     const workers = Array.from({ length: concurrency }).map(async () => {
-      while (index < needFetch.length) {
-        const current = needFetch[index++]
-        await fetchOne(current)
+      while (index < items.length) {
+        const currentIndex = index++
+        const item = items[currentIndex]
+        const result = await fetchProductDetail(item)
+        if (result) {
+          results[currentIndex] = result
+        }
+        onProgress?.(currentIndex + 1, items.length)
+        await new Promise(r => setTimeout(r, 1500))  // 每个请求间隔1.5秒，避免触发验证
       }
     })
+
     await Promise.all(workers)
-    return result
+    return results.filter(Boolean)
   }
 
   const handleCopy = async () => {
@@ -475,14 +623,21 @@ const ZcyScraperWidget = () => {
     setPushSuccess(false)
     try {
       if (isBatch) {
+        setSuccessMsg("正在收集商品链接...")
         const rawItems = await collectAllProductItems()
         const items = dedupeValidItems(rawItems)
-        await enrichTitlesFromDetail(items)
         if (!items.length) throw new Error("未找到商品链接")
-        await pushProducts(items, window.location.href)
+
+        setSuccessMsg(`正在采集 ${items.length} 个商品详情...`)
+        const enrichedItems = await enrichProductDetails(items, (current, total) => {
+          setSuccessMsg(`正在采集 ${current}/${total}...`)
+        })
+
+        setSuccessMsg("正在提交...")
+        await pushProductsWithDetails(enrichedItems, window.location.href)
         setPushSuccess(true)
         setFabColor(COLOR_BLUE)
-        setSuccessMsg(`批量提交成功，共${items.length}个商品`)
+        setSuccessMsg(`批量采集成功，共${enrichedItems.length}个商品`)
       } else {
         // 使用新的Pro采集引擎
         console.log('[ZCY Scraper] 使用Pro采集引擎...')

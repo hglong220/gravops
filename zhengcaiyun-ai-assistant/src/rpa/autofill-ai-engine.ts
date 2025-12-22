@@ -51,7 +51,7 @@ interface FieldSchema {
 
 interface FillPlan {
     id: string
-    action: 'input' | 'select' | 'skip'
+    action: 'input' | 'select' | 'skip' | 'searchAndClick'  // searchAndClick: 品牌/型号专用
     value: string
 }
 
@@ -202,6 +202,208 @@ export const AutoFillAIEngine = {
 
     warn(...args: any[]) {
         console.warn("[AUTO_FILL_AI]", ...args)
+    },
+
+    // 从字符串中提取关键词（用于模糊匹配）
+    extractKeywords(value: string): string[] {
+        if (!value) return []
+
+        const keywords: string[] = []
+
+        // 常见品牌关键词
+        const brandPatterns = [
+            /惠普|HP/gi, /联想|Lenovo/gi, /戴尔|Dell/gi,
+            /华为|Huawei/gi, /小米|Xiaomi/gi, /三星|Samsung/gi,
+            /佳能|Canon/gi, /爱普生|Epson/gi, /兄弟|Brother/gi,
+            /华硕|ASUS/gi, /宏碁|Acer/gi, /索尼|Sony/gi,
+            /松下|Panasonic/gi, /理光|Ricoh/gi, /柯尼卡|Konica/gi,
+            /东芝|Toshiba/gi, /希捷|Seagate/gi, /西数|WD/gi,
+            /奔图|Pantum/gi, /得力|Deli/gi, /震旦|Aurora/gi
+        ]
+
+        for (const pattern of brandPatterns) {
+            const match = value.match(pattern)
+            if (match) {
+                keywords.push(match[0])
+            }
+        }
+
+        // 提取中文词汇（2-4个字的词）
+        const chineseWords = value.match(/[\u4e00-\u9fa5]{2,4}/g) || []
+        // 过滤掉常见无意义词
+        const stopWords = ['中国', '有限', '公司', '股份', '集团', '科技', '电子', '信息', '技术']
+        for (const word of chineseWords) {
+            if (!stopWords.includes(word) && !keywords.includes(word)) {
+                keywords.push(word)
+            }
+        }
+
+        // 提取英文品牌词（全大写或首字母大写）
+        const englishWords = value.match(/[A-Z][A-Za-z]+|[A-Z]{2,}/g) || []
+        for (const word of englishWords) {
+            if (!keywords.includes(word)) {
+                keywords.push(word)
+            }
+        }
+
+        return keywords.slice(0, 5) // 最多返回5个关键词
+    },
+
+    // ===================== 品牌/型号专用选择器 =====================
+    // 输入 → 等待下拉 → 点击选择（确保 100% 正确）
+
+    /**
+     * 填写品牌（带搜索的下拉框）
+     * @param brandValue 品牌名称，如 "惠普/HP"
+     */
+    async fillBrand(brandValue: string): Promise<boolean> {
+        this.log("🏷️ [品牌选择] 开始填写品牌:", brandValue)
+        return await this.fillSearchableDropdown("品牌", brandValue)
+    },
+
+    /**
+     * 填写型号（带搜索的下拉框）
+     * @param modelValue 型号名称，如 "M233dw"
+     */
+    async fillModel(modelValue: string): Promise<boolean> {
+        this.log("🔖 [型号选择] 开始填写型号:", modelValue)
+        return await this.fillSearchableDropdown("型号", modelValue)
+    },
+
+    /**
+     * 通用的带搜索下拉框填写
+     * @param fieldLabel 字段标签（品牌/型号）
+     * @param value 要填写的值
+     */
+    async fillSearchableDropdown(fieldLabel: string, value: string): Promise<boolean> {
+        if (!value) {
+            this.warn(`[${fieldLabel}] 值为空，跳过`)
+            return false
+        }
+
+        // 1. 找到字段的输入框
+        const labelEls = document.querySelectorAll('.doraemon-form-item-label, .el-form-item__label, label')
+        let targetRow: HTMLElement | null = null
+
+        for (const label of labelEls) {
+            if (label.textContent?.includes(fieldLabel)) {
+                targetRow = label.closest('.doraemon-form-item, .el-form-item, .doraemon-row') as HTMLElement
+                break
+            }
+        }
+
+        if (!targetRow) {
+            this.warn(`[${fieldLabel}] 未找到字段，尝试全局搜索...`)
+            // 尝试用 placeholder 搜索
+            const input = document.querySelector(`input[placeholder*="${fieldLabel}"], input[placeholder*="${fieldLabel === '品牌' ? '请选择' : '请输入'}"]`) as HTMLInputElement
+            if (input) {
+                targetRow = input.closest('.doraemon-form-item, .el-form-item') as HTMLElement
+            }
+        }
+
+        if (!targetRow) {
+            this.warn(`[${fieldLabel}] 未找到字段行`)
+            return false
+        }
+
+        // 2. 找到输入框
+        const input = targetRow.querySelector('input:not([type="hidden"]):not([type="file"])') as HTMLInputElement
+        if (!input) {
+            this.warn(`[${fieldLabel}] 未找到输入框`)
+            return false
+        }
+
+        this.log(`[${fieldLabel}] 找到输入框:`, input.placeholder)
+
+        // 3. 点击激活输入框
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        await sleep(200)
+        input.click()
+        input.focus()
+        await sleep(200)
+
+        // 4. 清空并输入值
+        input.value = ''
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+        if (nativeSetter) {
+            nativeSetter.call(input, value)
+        } else {
+            input.value = value
+        }
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }))
+
+        this.log(`[${fieldLabel}] 已输入: ${value}，等待下拉列表...`)
+        await sleep(800)  // 等待搜索结果加载
+
+        // 5. 等待下拉列表出现并点击匹配项
+        let clicked = false
+        for (let attempt = 0; attempt < 10; attempt++) {
+            // 查找下拉列表选项
+            const dropdownItems = document.querySelectorAll(
+                '.el-select-dropdown__item, ' +
+                '.doraemon-select-dropdown-menu-item, ' +
+                '.el-autocomplete-suggestion li, ' +
+                '.el-scrollbar__view li'
+            )
+
+            for (const item of dropdownItems) {
+                const itemText = (item as HTMLElement).innerText.trim()
+                // 模糊匹配：选项包含输入值，或输入值包含选项
+                if (itemText && (itemText.includes(value) || value.includes(itemText) ||
+                    itemText.toUpperCase().includes(value.toUpperCase()))) {
+                    this.log(`[${fieldLabel}] ✓ 找到匹配项: ${itemText}`)
+                        ; (item as HTMLElement).click()
+                    clicked = true
+                    break
+                }
+            }
+
+            if (clicked) break
+            await sleep(300)
+        }
+
+        if (!clicked) {
+            // 尝试直接选择第一个有效选项
+            const firstOption = document.querySelector(
+                '.el-select-dropdown__item:not(.is-disabled), ' +
+                '.doraemon-select-dropdown-menu-item:not(.is-disabled)'
+            ) as HTMLElement
+
+            if (firstOption && firstOption.innerText.trim()) {
+                this.log(`[${fieldLabel}] ⚠️ 未找到精确匹配，选择第一个选项: ${firstOption.innerText.trim()}`)
+                firstOption.click()
+                clicked = true
+            }
+        }
+
+        if (!clicked) {
+            this.warn(`[${fieldLabel}] ✗ 未找到下拉选项，可能需要手动选择`)
+            // 关闭下拉框
+            document.body.click()
+            return false
+        }
+
+        await sleep(300)
+        this.log(`[${fieldLabel}] ✓ 选择完成`)
+        return true
+    },
+
+    /**
+     * 填写品牌和型号（一键完成）
+     */
+    async fillBrandAndModel(brand: string, model: string): Promise<{ brandOk: boolean; modelOk: boolean }> {
+        this.log("🎯 ========== 开始填写品牌和型号 ==========")
+
+        const brandOk = await this.fillBrand(brand)
+        await sleep(500)
+        const modelOk = await this.fillModel(model)
+
+        this.log("🎯 ========== 品牌/型号填写完成 ==========")
+        this.log(`   品牌: ${brandOk ? '✓' : '✗'} | 型号: ${modelOk ? '✓' : '✗'}`)
+
+        return { brandOk, modelOk }
     },
 
     // ===================== 1. 最终版字段扫描器 =====================
@@ -458,7 +660,12 @@ export const AutoFillAIEngine = {
         // 输出统计
         const requiredCount = fields.filter(f => f.required).length
         this.log(`🎉 最终字段扫描完成，共 ${fields.length} 个字段, ${requiredCount} 个必填项`)
-        this.log("必填字段:", fields.filter(f => f.required).map(f => f.label).join(", "))
+
+        // ⭐⭐ 输出所有必填字段详情（调试用）⭐⭐
+        this.log("📋 必填字段列表:")
+        fields.filter(f => f.required).forEach((f, i) => {
+            this.log(`  [${i + 1}] ${f.label} (${f.controlType})${f.optionsPreview.length ? ' 选项:' + f.optionsPreview.slice(0, 3).join('/') : ''}`)
+        })
 
         return fields
     },
@@ -801,6 +1008,24 @@ export const AutoFillAIEngine = {
             }
 
             try {
+                // ⭐ searchAndClick: 品牌/型号等带搜索的下拉框（AI 返回的 action）
+                if (plan.action === 'searchAndClick' && plan.value) {
+                    this.log(`🔍 执行 searchAndClick: ${field.label} = ${plan.value}`)
+                    const ok = await this.fillSearchableDropdown(field.label, plan.value)
+                    if (ok) success++
+                    else fail++
+                    continue
+                }
+
+                // ⭐ 兼容旧逻辑：品牌/型号字段即使 AI 返回 input/select，也使用 searchAndClick
+                if ((/^品牌$/.test(field.label) || /^型号$/.test(field.label)) && plan.value) {
+                    this.log(`🏷️ 检测到 ${field.label} 字段，强制使用 searchAndClick`)
+                    const ok = await this.fillSearchableDropdown(field.label, plan.value)
+                    if (ok) success++
+                    else fail++
+                    continue
+                }
+
                 const ok = await this.executeOnField(row, field, plan)
                 if (ok) success++
                 else fail++
@@ -940,23 +1165,33 @@ export const AutoFillAIEngine = {
             }
 
             // 找下拉菜单项（政采云的下拉面板是全局渲染的）
-            // 支持多种选择器
+            // 支持多种选择器 - 但要避免选到导航菜单
             let allOptions = document.querySelectorAll(
                 ".el-select-dropdown__item:not(.is-disabled), " +
-                ".doraemon-select-dropdown-menu-item, " +
-                ".el-scrollbar__view li, " +
-                "[class*='select-dropdown'] li, " +
-                "[class*='dropdown-menu'] li"
+                ".doraemon-select-dropdown-menu-item:not(.is-disabled), " +
+                ".el-scrollbar__view li:not([class*='nav']):not([class*='menu-item'])"
             )
 
-            // 如果找不到，尝试更宽泛的选择器
+            // 如果找不到，尝试更宽泛但仍然安全的选择器
             if (allOptions.length === 0) {
                 allOptions = document.querySelectorAll(
                     ".el-select-dropdown li, " +
-                    "[class*='popper'] li, " +
-                    "[class*='dropdown'] li"
+                    ".el-popper li, " +
+                    ".doraemon-select-dropdown li"
                 )
             }
+
+            // ⚠️ 过滤掉可能是链接的选项
+            allOptions = Array.from(allOptions).filter(opt => {
+                const el = opt as HTMLElement
+                const text = el.innerText.trim()
+                // 排除包含"中心"、"管理"等可能是导航链接的选项
+                const dangerousKeywords = ['中心', '管理', '面板', '概览', '首页', 'dashboard']
+                const isDangerous = dangerousKeywords.some(k => text.toLowerCase().includes(k))
+                // 排除包含链接的选项
+                const hasLink = el.querySelector('a') !== null
+                return !isDangerous && !hasLink
+            }) as unknown as NodeListOf<Element>
 
             this.log("下拉选项数量：", allOptions.length)
 
@@ -975,7 +1210,7 @@ export const AutoFillAIEngine = {
                 }
             }
 
-            // 包含匹配
+            // 包含匹配（双向）
             if (!optionEl) {
                 for (const opt of allOptions) {
                     const t = (opt as HTMLElement).innerText.trim()
@@ -986,9 +1221,60 @@ export const AutoFillAIEngine = {
                 }
             }
 
-            // ⚠️ 已移除"选第一个有效选项"的兜底逻辑
-            // 这个逻辑可能错误选择"协议中心"等无关选项，导致页面跳转
-            // 如果找不到匹配的选项，直接跳过该字段
+            // ⭐⭐ 增强：关键词匹配 ⭐⭐
+            // 提取 value 中的关键词进行匹配
+            if (!optionEl && value) {
+                // 提取品牌关键词（如"中国惠普有限公司" -> "惠普"）
+                const keywords = this.extractKeywords(value)
+                this.log("关键词提取:", value, "->", keywords)
+
+                for (const keyword of keywords) {
+                    for (const opt of allOptions) {
+                        const t = (opt as HTMLElement).innerText.trim()
+                        if (t.includes(keyword)) {
+                            optionEl = opt as HTMLElement
+                            this.log("关键词匹配成功:", keyword, "->", t)
+                            break
+                        }
+                    }
+                    if (optionEl) break
+                }
+            }
+
+            // ⭐⭐ 增强：智能选择第一个非空选项（仅限必填字段） ⭐⭐
+            if (!optionEl && field.required && optTexts.length > 0) {
+                // 对于制造商/生产厂商类字段，尝试智能匹配
+                if (/制造商|生产厂商|厂商|供应商/.test(field.label)) {
+                    // 优先选择包含品牌关键词的选项
+                    const brandKeywords = ['惠普', 'HP', '联想', 'Lenovo', '戴尔', 'Dell', '华为', '小米', '三星', '佳能', '爱普生', '兄弟', 'Brother']
+                    for (const keyword of brandKeywords) {
+                        if (value.includes(keyword)) {
+                            for (const opt of allOptions) {
+                                const t = (opt as HTMLElement).innerText.trim()
+                                if (t.includes(keyword)) {
+                                    optionEl = opt as HTMLElement
+                                    this.log("品牌匹配:", keyword, "->", t)
+                                    break
+                                }
+                            }
+                            if (optionEl) break
+                        }
+                    }
+                }
+
+                // ⚠️ 禁用兜底选择 - 之前这里选到了链接导致页面跳转
+                // 如果没有匹配到任何选项，直接跳过该字段，不要随意选择
+                // if (!optionEl) {
+                //     for (const opt of allOptions) {
+                //         const t = (opt as HTMLElement).innerText.trim()
+                //         if (t && t !== '请选择' && t !== '--' && t !== '' && !t.includes('协议中心')) {
+                //             optionEl = opt as HTMLElement
+                //             this.log("兜底选择第一个有效选项:", t)
+                //             break
+                //         }
+                //     }
+                // }
+            }
 
             if (!optionEl) {
                 this.warn("❌ 下拉未找到匹配选项，跳过：", field.label, "期望值：", value)
@@ -1771,24 +2057,39 @@ export const AutoFillAIEngine = {
         return selected;
     },
 
-    // 打开富文本详情图上传弹窗（UEditor 的单图上传）
+    // 打开富文本详情图上传弹窗（尝试多种方式）
     async openDetailUploadModal(): Promise<HTMLElement | null> {
-        const btns: HTMLElement[] = [
-            document.querySelector(".edui-for-simpleuploadgoodsdetail .edui-button-body") as HTMLElement,
-            document.querySelector("#edui154_body") as HTMLElement,
-            document.querySelector(".edui-for-simpleuploadgoodsdetail") as HTMLElement,
-        ].filter(Boolean) as HTMLElement[];
+        this.log("[DETAIL_IMG] 尝试打开详情图上传弹窗...");
 
-        if (!btns.length) {
-            this.warn("[DETAIL_IMG] 未找到富文本上传按钮");
+        // 政采云详情图上传按钮选择器（按优先级排列）
+        const buttonSelectors = [
+            "#edui154_body",                                      // 直接用 ID（最可靠）
+            ".edui-for-simpleuploadgoodsdetail .edui-button-body",
+            ".edui-for-simpleuploadgoodsdetail",
+            "[title='单图上传'] .edui-button-body",
+            "[title='单图上传']"
+        ];
+
+        let clicked = false;
+        for (const selector of buttonSelectors) {
+            const btn = document.querySelector(selector) as HTMLElement;
+            if (btn) {
+                this.log(`[DETAIL_IMG] 找到按钮: ${selector}`);
+                btn.click();
+                clicked = true;
+                this.log("[DETAIL_IMG] 已点击上传按钮，等待弹窗...");
+                break;
+            }
+        }
+
+        if (!clicked) {
+            this.warn("[DETAIL_IMG] 未找到详情图上传按钮");
             return null;
         }
 
-        btns[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        this.log("[DETAIL_IMG] 已点击富文本上传按钮，等待弹窗...");
-
+        // 等待弹窗出现
         for (let i = 0; i < 50; i++) {
-            const modal = document.querySelector(".doraemon-modal") as HTMLElement | null;
+            const modal = document.querySelector(".doraemon-modal, .ant-modal") as HTMLElement | null;
             if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
                 await sleep(300);
                 return modal;
@@ -1800,11 +2101,13 @@ export const AutoFillAIEngine = {
         return null;
     },
 
-    // ========== 详情图上传到富文本（上传剩余 7 张）==========
+    // ========== 详情图上传到富文本（上传全部详情图）==========
     async uploadDetailImages(imageUrls: string[], skipCount = 0): Promise<number> {
         this.log("[DETAIL_IMG] 开始上传详情图...");
 
-        const detailUrls = imageUrls.slice(skipCount, skipCount + 7);
+        // 取跳过主图后的所有图片作为详情图（不再限制 7 张）
+        const detailUrls = imageUrls.slice(skipCount);
+        this.log(`[DETAIL_IMG] 详情图数量: ${detailUrls.length} 张（跳过主图 ${skipCount} 张）`);
         if (!detailUrls.length) {
             this.log("[DETAIL_IMG] 无详情图需要上传");
             return 0;

@@ -38,6 +38,8 @@
       "https://www.zcygov.cn/*",
       "https://*.zcygov.cn/*",
       "https://*.jd.com/*",
+      "https://cd.jd.com/*",
+      "https://*.360buyimg.com/*",
       "https://*.taobao.com/*",
       "https://*.tmall.com/*",
       "https://*.suning.com/*"
@@ -50,7 +52,8 @@
       "scripting",
       "storage",
       "activeTab",
-      "permissions"
+      "permissions",
+      "<all_urls>"
     ],
     "background": {
       "service_worker": "src/background.ts"

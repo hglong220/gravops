@@ -1770,7 +1770,7 @@ async function extractProductData() {
 
             if (skuId) {
                 console.log('[MainWorld] PC desc 为空，调用 m 端 API...')
-                detailImages = await fetchJDDescriptionImagesFromAPI(skuId)
+                detailImages = await fetchJDDescriptionImages(skuId)
             }
         }
 

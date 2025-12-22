@@ -131,6 +131,7 @@ export async function PUT(
         const {
             title,
             price,
+            marketPrice,
             stock,
             detailHtml,
             attributes,
@@ -195,6 +196,17 @@ export async function PUT(
             }
 
             updateData.skuData = JSON.stringify(skuData);
+        }
+
+        // 处理市场价
+        if (marketPrice !== undefined) {
+            const parsedMarketPrice =
+                typeof marketPrice === 'number'
+                    ? marketPrice
+                    : Number.parseFloat(String(marketPrice).replace(/[^0-9.]/g, ''));
+            if (Number.isFinite(parsedMarketPrice)) {
+                updateData.marketPrice = parsedMarketPrice;
+            }
         }
 
         const updatedDraft = await prisma.productDraft.update({

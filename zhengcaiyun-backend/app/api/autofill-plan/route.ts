@@ -13,6 +13,11 @@ const deepseek = new OpenAI({
     baseURL: 'https://api.deepseek.com/v1'
 })
 
+// GPT 客户端（作为 DeepSeek 的后备）
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+})
+
 interface FieldSchema {
     id: string
     label: string
@@ -110,6 +115,14 @@ function buildPrompt(productInfo: ProductInfo, fields: FieldSchema[]): string {
 6. input/textarea 从 productInfo 推理填写
 7. 若无法确定值，使用行业常识默认值
 
+⭐⭐⭐ 品牌和型号特殊处理（非常重要）⭐⭐⭐
+品牌和型号是「带搜索的下拉框」，填写逻辑：
+1. 品牌：使用 action="searchAndClick"，value 填写品牌名（如 "惠普/HP" 或 "HP"）
+2. 型号：使用 action="searchAndClick"，value 填写型号名（如 "P1106" 或 "LaserJet Pro P1106"）
+   - 优先使用短型号名（如 P1106），更容易匹配下拉选项
+   - 如果 productInfo.model 是 "HP LaserJet Pro P1106"，提取核心型号 "P1106"
+系统会自动：输入值 → 等待下拉列表 → 点击匹配的选项
+
 ⚠️⚠️⚠️ 最重要：返回的 id 必须使用 fields 中传入的原始 id（如 "afield_1"），不能自己编造！
 
 常用默认值：
@@ -134,6 +147,8 @@ ${JSON.stringify(fields, null, 2)}
 [
   {"id":"${fields[0]?.id || 'afield_1'}","action":"input","value":"xxx"},
   {"id":"${fields[1]?.id || 'afield_2'}","action":"select","value":"xxx"},
+  {"id":"品牌字段id","action":"searchAndClick","value":"品牌名"},
+  {"id":"型号字段id","action":"searchAndClick","value":"型号名"},
   ...
 ]`
 }
@@ -143,6 +158,8 @@ async function callDeepSeek(prompt: string, fields: FieldSchema[]): Promise<Fill
         console.warn('[AutoFill AI] 未配置 DEEPSEEK_API_KEY，使用规则引擎')
         return fallbackRules(fields)
     }
+
+    let plans: FillPlan[] = []
 
     try {
         const response = await deepseek.chat.completions.create({
@@ -161,17 +178,81 @@ async function callDeepSeek(prompt: string, fields: FieldSchema[]): Promise<Fill
         // 解析 JSON
         const jsonMatch = content.match(/\[[\s\S]*\]/)
         if (jsonMatch) {
-            const plans = JSON.parse(jsonMatch[0]) as FillPlan[]
-            return plans
+            plans = JSON.parse(jsonMatch[0]) as FillPlan[]
+        } else {
+            console.warn('[AutoFill AI] 无法解析DeepSeek返回，使用规则引擎')
+            return fallbackRules(fields)
         }
-
-        console.warn('[AutoFill AI] 无法解析AI返回，使用规则引擎')
-        return fallbackRules(fields)
 
     } catch (error) {
         console.error('[AutoFill AI] DeepSeek 调用失败:', error)
         return fallbackRules(fields)
     }
+
+    // ⭐ GPT 后备：对于 DeepSeek 返回 skip 的必填字段，用 GPT 重试
+    const skippedRequiredFields = fields.filter(f =>
+        f.required && plans.find(p => p.id === f.id)?.action === 'skip'
+    )
+
+    if (skippedRequiredFields.length > 0 && process.env.OPENAI_API_KEY) {
+        console.log(`[AutoFill AI] GPT 后备：${skippedRequiredFields.length} 个必填字段未填写，调用 GPT...`)
+
+        const gptPlans = await callGPT(skippedRequiredFields)
+
+        // 合并 GPT 返回的计划
+        for (const gptPlan of gptPlans) {
+            const idx = plans.findIndex(p => p.id === gptPlan.id)
+            if (idx >= 0 && gptPlan.action !== 'skip') {
+                plans[idx] = gptPlan
+                console.log(`[AutoFill AI] GPT 填充: ${skippedRequiredFields.find(f => f.id === gptPlan.id)?.label} => ${gptPlan.value}`)
+            }
+        }
+    }
+
+    return plans
+}
+
+// GPT 后备调用（处理 DeepSeek 无法解决的字段）
+async function callGPT(fields: FieldSchema[]): Promise<FillPlan[]> {
+    if (!process.env.OPENAI_API_KEY) return []
+
+    const prompt = `你是政采云商品发布专家。以下字段是必填项，但 DeepSeek 无法确定如何填写。
+请根据字段名称和选项，给出最合理的填写方案。
+
+字段列表：
+${JSON.stringify(fields, null, 2)}
+
+填写原则：
+1. 有选项的字段（select/radio），从 optionsPreview 中选择最常见/合理的值
+2. 没有选项的字段（input），使用行业通用默认值
+3. 不确定的情况，宁可填写一个合理默认值，也不要 skip
+
+返回格式（只输出 JSON 数组）：
+[{"id":"xxx","action":"select","value":"xxx"},...]`
+
+    try {
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',  // 使用更便宜的 mini 版本
+            messages: [
+                { role: 'system', content: '你是一个智能表单填写专家，只输出JSON。' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.1,
+            max_tokens: 1000
+        })
+
+        const content = response.choices[0]?.message?.content || ''
+        console.log('[AutoFill AI] GPT 返回:', content.substring(0, 200))
+
+        const jsonMatch = content.match(/\[[\s\S]*\]/)
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]) as FillPlan[]
+        }
+    } catch (error) {
+        console.error('[AutoFill AI] GPT 调用失败:', error)
+    }
+
+    return []
 }
 
 // 规则引擎兜底（只处理必填项）

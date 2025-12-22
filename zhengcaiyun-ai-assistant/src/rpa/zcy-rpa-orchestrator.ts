@@ -477,18 +477,7 @@ async function stepAutoFillAttributes(state: OrchestratorState): Promise<void> {
     const result = await AutoFillAIEngine.run(productInfo)
     logRPA(`属性填写完成：成功 ${result.success}，失败 ${result.fail}`)
 
-    // 额外填写品牌和型号（如果需要的话）
-    const BrandModelFiller = (window as any).BrandModelFiller
-    if (BrandModelFiller) {
-        if (productInfo.brand) {
-            await BrandModelFiller.selectBrand(productInfo.brand)
-        }
-        if (productInfo.model) {
-            await BrandModelFiller.selectModel(productInfo.model)
-        }
-    }
-
-    ; (window as any).__ZCY_ATTR_FILLED__ = true
+        ; (window as any).__ZCY_ATTR_FILLED__ = true
     logRPA("✓ 属性自动填写完成")
 }
 
@@ -502,9 +491,9 @@ async function stepUploadImages(state: OrchestratorState): Promise<void> {
     // 一键上传全部图片（主图+详情图）
     const allImages = [...(state.images || []), ...(state.detailImages || [])]
     if (allImages.length > 0) {
-        const limitedImages = allImages.slice(0, 15)  // 最多15张
-        logRPA(`一键上传图片 ${limitedImages.length} 张（主图+详情图）...`)
-        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(limitedImages)
+        // 不再限制数量，上传全部图片
+        logRPA(`一键上传图片 ${allImages.length} 张（主图+详情图）...`)
+        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(allImages)
         logRPA(`图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
     }
 

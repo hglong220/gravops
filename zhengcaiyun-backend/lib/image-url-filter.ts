@@ -20,12 +20,42 @@ function uniqKeepOrder(items: string[]): string[] {
   return out
 }
 
-function safeUrlString(url: string): string {
-  try {
-    return new URL(url).toString()
-  } catch {
-    return url
+/**
+ * 规范化图片 URL（止血级代码）
+ * 处理：协议相对 URL、base64、javascript、空字符串等
+ */
+function normalizeImageUrlSafe(raw: string): string | null {
+  if (!raw || typeof raw !== 'string') return null
+
+  let url = raw.trim()
+
+  // 丢弃明显非法的
+  if (url === '' || url === '#' || url.startsWith('data:') || url.startsWith('javascript:')) {
+    return null
   }
+
+  // 协议相对 URL -> https
+  if (url.startsWith('//')) {
+    url = 'https:' + url
+  }
+
+  // 必须是 http(s) 开头
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return null
+  }
+
+  // 最终校验
+  try {
+    new URL(url)
+    return url
+  } catch {
+    return null
+  }
+}
+
+function safeUrlString(url: string): string {
+  const normalized = normalizeImageUrlSafe(url)
+  return normalized || url
 }
 
 function normalizeJdImageUrl(url: string, target: number): string {
@@ -177,11 +207,13 @@ export async function filterImageUrlsForUpload(inputUrls: string[], options: Fil
     targetSize = 900
   } = options
 
+  // 先规范化所有 URL，过滤掉无效的（协议相对、base64 等）
+  const normalizedUrls = (Array.isArray(inputUrls) ? inputUrls : [])
+    .map(x => typeof x === 'string' ? normalizeImageUrlSafe(x) : null)
+    .filter((x): x is string => x !== null)
+
   const cleaned = uniqKeepOrder(
-    (Array.isArray(inputUrls) ? inputUrls : [])
-      .filter((x): x is string => typeof x === 'string')
-      .map((x) => x.trim())
-      .filter(Boolean)
+    normalizedUrls
       .slice(0, Math.max(maxCount * 3, 30))
       .map(safeUrlString)
   )

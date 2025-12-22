@@ -65,13 +65,14 @@ export async function GET(request: NextRequest) {
         const recentActivity = await prisma.productDraft.findMany({
             where: { userId: user.userId },
             orderBy: { createdAt: 'desc' },
-            take: 5,
+            take: 15,
             select: {
                 id: true,
                 title: true,
                 status: true,
                 createdAt: true,
-                categoryPath: true
+                categoryPath: true,
+                images: true
             }
         });
 

@@ -88,6 +88,82 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
         })();
         return true; // Keep channel open for async response
+    } else if (message.type === 'JD_DESCRIPTION_PROXY') {
+        // 专门用于京东详情图 API，绕过 CORS 限制
+        // Content Script 无法直接调用 cd.jd.com，但 Background Script 可以
+        (async () => {
+            try {
+                const { skuId } = message;
+                console.log('[Background] JD_DESCRIPTION_PROXY:', skuId);
+
+                // 使用正确的 API 格式
+                const apiUrl = `https://cd.jd.com/description/channel?skuId=${skuId}&channel=pc`;
+                console.log('[Background] 请求 URL:', apiUrl);
+
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Referer': `https://item.jd.com/${skuId}.html`,
+                        'Origin': 'https://item.jd.com'
+                    },
+                    credentials: 'omit'  // 不发送 cookies，避免权限问题
+                });
+
+                console.log('[Background] 响应状态:', response.status);
+
+                if (!response.ok) {
+                    sendResponse({ ok: false, error: `HTTP ${response.status}` });
+                    return;
+                }
+
+                // API 返回的是 JSONP 或纯 JSON 或 HTML
+                const text = await response.text();
+                console.log('[Background] 响应长度:', text.length, '前100字符:', text.substring(0, 100));
+
+                // 尝试解析 JSON
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    // 可能是 JSONP 格式，尝试提取
+                    const jsonMatch = text.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        try {
+                            data = JSON.parse(jsonMatch[0]);
+                        } catch {
+                            // 直接返回 HTML 内容
+                            data = { content: text };
+                        }
+                    } else {
+                        // 直接返回 HTML 内容
+                        data = { content: text };
+                    }
+                }
+
+                sendResponse({ ok: true, data });
+            } catch (error: any) {
+                console.error('[Background] JD_DESCRIPTION_PROXY error:', error);
+                sendResponse({ ok: false, error: error.message || 'Network error' });
+            }
+        })();
+        return true;
+    } else if (message.type === 'GET_CURRENT_PRODUCT') {
+        // 返回当前待填写的商品数据
+        (async () => {
+            try {
+                const result = await chrome.storage.local.get(['currentProduct', 'pendingProduct']);
+                const productData = result.pendingProduct || result.currentProduct;
+                console.log('[Background] GET_CURRENT_PRODUCT:', productData?.title || 'none');
+                sendResponse({ productData });
+            } catch (e) {
+                console.error('[Background] GET_CURRENT_PRODUCT error:', e);
+                sendResponse({ productData: null });
+            }
+        })();
+        return true;
     }
 });
 
@@ -159,11 +235,20 @@ async function handlePublishRequest(productData: any) {
 
         console.log('[Background] Using config:', config);
 
-        // 2. 构造发布页面URL
+        // 2. 保存商品数据到 storage，供 auto-publisher 读取
+        await chrome.storage.local.set({
+            pendingProduct: {
+                ...productData,
+                config
+            }
+        });
+        console.log('[Background] Saved pending product to storage');
+
+        // 3. 构造发布页面URL
         const publishUrl = buildPublishUrl(productData, config);
         console.log('[Background] Publish URL:', publishUrl);
 
-        // 3. 创建新Tab
+        // 4. 创建新Tab
         const tab = await chrome.tabs.create({
             url: publishUrl,
             active: true // 前台打开，确保用户看到

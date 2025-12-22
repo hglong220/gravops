@@ -16,33 +16,47 @@ export async function OPTIONS() {
 
 // BullMQ v4 连接 Redis 队列
 // 懒加载：避免构建期/未配置 Redis 时直接连接
+// 优雅降级：Redis 不可用时返回 null，跳过队列
 let queues: { publishQueue: Queue; collectQueue: Queue } | null = null
+let queuesInitialized = false
 
-function getQueues() {
-  if (queues) return queues
+function getQueues(): { publishQueue: Queue; collectQueue: Queue } | null {
+  if (queuesInitialized) return queues
 
-  const redisUrl = process.env.REDIS_URL
-  const redisHost = process.env.REDIS_HOST || "localhost"
-  const redisPort = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379
+  try {
+    const redisUrl = process.env.REDIS_URL
+    const redisHost = process.env.REDIS_HOST || "localhost"
+    const redisPort = process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379
 
-  const connection = redisUrl
-    ? new Redis(redisUrl, {
-      maxRetriesPerRequest: null,
-      retryStrategy: () => null
-    })
-    : new Redis({
-      host: redisHost,
-      port: redisPort,
-      maxRetriesPerRequest: null,
-      retryStrategy: () => null
-    })
+    const connection = redisUrl
+      ? new Redis(redisUrl, {
+        maxRetriesPerRequest: null,
+        retryStrategy: () => null,
+        lazyConnect: true,
+        connectTimeout: 3000
+      })
+      : new Redis({
+        host: redisHost,
+        port: redisPort,
+        maxRetriesPerRequest: null,
+        retryStrategy: () => null,
+        lazyConnect: true,
+        connectTimeout: 3000
+      })
 
-  queues = {
-    publishQueue: new Queue("zcy-publish", { connection }),
-    collectQueue: new Queue("zcy-collect", { connection })
+    queues = {
+      publishQueue: new Queue("zcy-publish", { connection }),
+      collectQueue: new Queue("zcy-collect", { connection })
+    }
+    queuesInitialized = true
+    console.log("[push-tasks] Redis 队列初始化成功")
+    return queues
+  } catch (error) {
+    console.warn("[push-tasks] Redis 不可用，队列功能已禁用:", (error as Error).message)
+    queuesInitialized = true
+    queues = null
+    return null
   }
-
-  return queues
 }
 
 export async function POST(request: NextRequest) {
@@ -193,20 +207,96 @@ export async function POST(request: NextRequest) {
         })
       )
 
-      const { collectQueue } = getQueues()
-
-      await Promise.all(
-        drafts
-          .filter(Boolean)
-          .map((draft) =>
-            collectQueue.add(
-              "collect",
-              { draftId: draft!.id, url: draft!.originalUrl, userId: draft!.userId },
-              { jobId: `collect-${draft!.id}`, priority: 1 }
-            )
+      // 尝试加入后台处理队列（Redis 可用时）
+      const queueResult = getQueues()
+      if (queueResult?.collectQueue) {
+        try {
+          await Promise.all(
+            drafts
+              .filter(Boolean)
+              .map((draft) =>
+                queueResult.collectQueue.add(
+                  "collect",
+                  { draftId: draft!.id, url: draft!.originalUrl, userId: draft!.userId },
+                  { jobId: `collect-${draft!.id}`, priority: 1 }
+                )
+              )
           )
+          console.log(`[push-tasks] ${drafts.length} 个任务已加入队列`)
+        } catch (queueError) {
+          console.warn("[push-tasks] 加入队列失败，跳过:", (queueError as Error).message)
+        }
+      } else {
+        console.log(`[push-tasks] Redis 不可用，${drafts.length} 个草稿已创建（无队列处理）`)
+      }
+
+      return NextResponse.json({ success: true, taskId: task.id, count: drafts.length }, { headers: corsHeaders })
+    }
+
+
+    // 批量完整数据：插件已采集完整信息，直接创建草稿
+    if (type === "batch-full") {
+      const fullItems: Array<{
+        url: string;
+        title: string;
+        images: string[];
+        detailImages: string[];
+        attributes: Record<string, string>;
+        price: string;
+        brand: string;
+        model: string;
+      }> = Array.isArray(items) ? items : []
+
+      if (!fullItems.length) {
+        return NextResponse.json({ error: "No items provided" }, { status: 400, headers: corsHeaders })
+      }
+
+      const task = await prisma.copyTask.create({
+        data: {
+          userId,
+          shopName: "政采云整店采集",
+          shopUrl: shopUrl || "",
+          totalCount: fullItems.length,
+          successCount: fullItems.length,
+          failedCount: 0,
+          status: "completed"
+        }
+      })
+
+      // 批量创建草稿（包含完整数据）
+      const drafts = await Promise.all(
+        fullItems.map(async (item) => {
+          const skuData = {
+            price: item.price || "",
+            stock: 99,
+            images: item.images || [],
+            attributes: item.attributes || {},
+            specGroups: [],
+            skuPrices: []
+          }
+
+          return prisma.productDraft.create({
+            data: {
+              userId,
+              title: item.title || "未知商品",
+              originalUrl: item.url,
+              shopName: "政采云",
+              status: "scraped",
+              copyTaskId: task.id,
+              images: JSON.stringify(item.images || []),
+              detailImages: JSON.stringify(item.detailImages || []),
+              attributes: JSON.stringify(item.attributes || {}),
+              brand: item.brand || "",
+              model: item.model || "",
+              price: item.price ? parseFloat(item.price) : undefined,
+              skuData: JSON.stringify(skuData),
+              detailHtml: ""
+            }
+          })
+        })
       )
 
+      console.log(`[push-tasks] batch-full: 创建 ${drafts.length} 个完整草稿`)
       return NextResponse.json({ success: true, taskId: task.id, count: drafts.length }, { headers: corsHeaders })
     }
 

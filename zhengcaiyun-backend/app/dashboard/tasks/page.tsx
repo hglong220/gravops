@@ -21,6 +21,7 @@ type ProductDraft = {
   brand?: string
   categoryPath?: string
   price?: number | string
+  marketPrice?: number | string
   stock?: number | string
 }
 
@@ -241,9 +242,34 @@ export default function TaskPage() {
     if (product.skuData) {
       try {
         const skuObj = JSON.parse(product.skuData)
-        productWithPrice.price = skuObj.price || ''
+        // 把采集到的价格作为市场价
+        const originalPrice = skuObj.price || product.price || ''
+        productWithPrice.marketPrice = product.marketPrice || originalPrice
         productWithPrice.stock = skuObj.stock || 99
+
+        // 销售价自动计算逻辑：
+        // 1. 如果没有销售价，或销售价等于市场价（说明没有单独设置过），就自动计算为市场价的90%
+        const currentPrice = product.price || skuObj.price || ''
+        const marketPriceNum = parseFloat(productWithPrice.marketPrice) || 0
+        const currentPriceNum = parseFloat(String(currentPrice)) || 0
+
+        if (marketPriceNum > 0 && (!currentPriceNum || currentPriceNum === marketPriceNum)) {
+          productWithPrice.price = Math.round(marketPriceNum * 0.9 * 100) / 100
+        } else {
+          productWithPrice.price = currentPrice
+        }
       } catch { }
+    } else {
+      // 没有 skuData 时也处理价格
+      const originalPrice = product.price || ''
+      productWithPrice.marketPrice = product.marketPrice || originalPrice
+
+      const marketPriceNum = parseFloat(productWithPrice.marketPrice) || 0
+      const currentPriceNum = parseFloat(String(originalPrice)) || 0
+
+      if (marketPriceNum > 0 && (!currentPriceNum || currentPriceNum === marketPriceNum)) {
+        productWithPrice.price = Math.round(marketPriceNum * 0.9 * 100) / 100
+      }
     }
 
     setEditingProduct(productWithPrice)
@@ -277,6 +303,12 @@ export default function TaskPage() {
       rawStock === undefined || rawStock === null || String(rawStock).trim() === ''
         ? undefined
         : Number.parseInt(String(rawStock), 10)
+    const rawMarketPrice = (editingProduct as any).marketPrice
+    const parsedMarketPrice =
+      rawMarketPrice === undefined || rawMarketPrice === null || String(rawMarketPrice).trim() === ''
+        ? undefined
+        : Number.parseFloat(String(rawMarketPrice))
+    const marketPrice = Number.isFinite(parsedMarketPrice) ? parsedMarketPrice : undefined
 
     const stock = Number.isFinite(parsedStock) ? parsedStock : undefined
     try {
@@ -285,6 +317,7 @@ export default function TaskPage() {
         body: JSON.stringify({
           title: editingProduct.title,
           price,
+          marketPrice,
           stock,
           detailHtml: editingProduct.detailHtml || '',
           categoryPath,
@@ -332,133 +365,126 @@ export default function TaskPage() {
   }
 
   return (
-    <div className="h-full flex flex-col relative p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">任务中心</h1>
-          <p className="text-gray-500 text-sm mt-1">统一管理采集和发布任务</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleBatchPublish}
-            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-          >
-            批量发布
-          </button>
-          <button
-            onClick={handleBatchDelete}
-            className="px-3 py-2 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-sm"
-          >
-            批量删除
-          </button>
-        </div>
+    <div className="flex flex-col h-[calc(100vh-120px)]">
+      {/* 标题 */}
+      <div className="flex-shrink-0 mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">任务中心</h1>
+        <p className="text-gray-500 text-sm mt-1">统一管理采集和发布任务</p>
       </div>
 
-      <div className="flex gap-6 flex-1 overflow-hidden">
-        <div className="w-72 bg-white rounded-lg border border-gray-200 overflow-y-auto">
-          <div className="p-3 border-b border-gray-200 font-semibold text-gray-800">任务列表</div>
-          <div className="p-2 space-y-1">
-            {taskGroups.map((g) => {
-              const active = selectedTask === g.id
-              return (
-                <button
-                  key={g.id}
-                  onClick={() => setSelectedTask(g.id)}
-                  className={`w-full text-left p-3 rounded-lg ${active ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-900">{g.name}</span>
-                    <span className="text-sm text-gray-500">{g.count}</span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
+      {/* 批量操作按钮 */}
+      <div className="flex justify-end gap-2 flex-shrink-0 mb-4">
+        <button
+          onClick={handleBatchPublish}
+          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+        >
+          批量发布
+        </button>
+        <button
+          onClick={handleBatchDelete}
+          className="px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-xs"
+        >
+          批量删除
+        </button>
+      </div>
 
-        <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
-          <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm text-gray-600">
-              <span>共 {products.length} 条</span>
-              {loading && <span className="text-gray-400">加载中…</span>}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                className="h-4 w-4"
-                title="全选"
-              />
-              <span className="text-sm text-gray-500">全选</span>
-            </div>
-          </div>
-          <div className="overflow-y-auto overflow-x-hidden">
-            <table className="w-full text-sm table-fixed">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-10 px-2 py-2 text-left whitespace-nowrap">选择</th>
-                  <th className="px-2 py-2 text-center">标题</th>
-                  <th className="w-16 px-2 py-2 text-center whitespace-nowrap" style={{ paddingRight: '300px' }}>来源</th>
-                  <th className="w-16 px-2 py-2 text-center whitespace-nowrap">状态</th>
-                  <th className="w-28 px-2 py-2 text-center whitespace-nowrap">时间</th>
-                  <th className="w-24 px-2 py-2 text-center whitespace-nowrap">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((p) => {
-                  const badge = statusBadge(p.status)
-                  return (
-                    <tr key={p.id} className="border-b last:border-0">
-                      <td className="px-2 py-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(p.id)}
-                          onChange={() => toggleSelect(p.id)}
-                          className="h-4 w-4"
-                        />
-                      </td>
-                      <td className="px-2 py-2 overflow-hidden">
-                        <div className="truncate" title={p.title}>
-                          <span className="text-gray-900 font-medium">{p.title}</span>
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 text-gray-600 text-center whitespace-nowrap" style={{ paddingRight: '300px' }}>{sourceLabel(p.originalUrl)}</td>
-                      <td className="px-2 py-2 text-center whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>
-                      </td>
-                      <td className="px-2 py-2 text-gray-500 text-center whitespace-nowrap text-xs">
-                        {new Date(p.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-2 py-2 text-center whitespace-nowrap">
-                        <div className="flex justify-center gap-1">
+      {/* 商品列表 - 占满全宽 */}
+      <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
+        <div className="overflow-y-auto overflow-x-hidden flex-1">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="w-12 px-4 py-3 text-left whitespace-nowrap">选择</th>
+                <th className="px-4 py-3 text-left">标题</th>
+                <th className="w-20 px-4 py-3 text-center whitespace-nowrap">来源</th>
+                <th className="w-20 px-4 py-3 text-center whitespace-nowrap">状态</th>
+                <th className="w-32 px-4 py-3 text-center whitespace-nowrap">时间</th>
+                <th className="w-48 px-4 py-3 text-right whitespace-nowrap">
+                  <div className="flex items-center justify-end gap-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4"
+                        title="全选"
+                      />
+                      <span className="text-sm text-gray-500 font-normal">全选</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {taskGroups.filter(g => g.id !== 'all').map((g) => {
+                        const active = selectedTask === g.id
+                        return (
                           <button
-                            onClick={() => handlePublish(p.id)}
-                            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                            key={g.id}
+                            onClick={() => setSelectedTask(g.id)}
+                            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${active
+                              ? 'bg-blue-600 text-white'
+                              : 'text-gray-500 hover:bg-gray-100'
+                              }`}
                           >
-                            发布
+                            {g.name}({g.count})
                           </button>
-                          <button
-                            onClick={() => openEditModal(p)}
-                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
-                          >
-                            编辑
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {!products.length && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                      暂无数据
+                        )
+                      })}
+                    </div>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map((p) => {
+                const badge = statusBadge(p.status)
+                return (
+                  <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(p.id)}
+                        onChange={() => toggleSelect(p.id)}
+                        className="h-4 w-4"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="truncate max-w-md" title={p.title}>
+                        <span className="text-gray-900 font-medium">{p.title}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-center whitespace-nowrap">{sourceLabel(p.originalUrl)}</td>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-center whitespace-nowrap text-xs">
+                      {new Date(p.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="w-48 px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handlePublish(p.id)}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                        >
+                          发布
+                        </button>
+                        <button
+                          onClick={() => openEditModal(p)}
+                          className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                        >
+                          编辑
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                )
+              })}
+              {!products.length && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                    暂无数据
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -512,20 +538,32 @@ export default function TaskPage() {
                 </div>
               </div>
 
-              {/* 原始链接 */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
-                <input
-                  type="text"
-                  className="w-full border border-gray-200 bg-gray-50 rounded px-3 py-2 text-sm"
-                  value={editingProduct.originalUrl || ''}
-                  readOnly
-                />
+              {/* 原始链接 + 市场价 */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-200 bg-gray-50 rounded px-3 py-2 text-sm"
+                    value={editingProduct.originalUrl || ''}
+                    readOnly
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">市场价 (元)</label>
+                  <input
+                    type="number"
+                    className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={(editingProduct as any).marketPrice || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, marketPrice: e.target.value as any })}
+                    placeholder="原价/市场价"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">价格 (元)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">销售价 (元)</label>
                   <input
                     type="number"
                     className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"

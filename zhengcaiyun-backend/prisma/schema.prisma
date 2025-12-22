@@ -162,6 +162,7 @@ model ProductDraft {
   detailImages String?
   errorMessage String?
   price        Float?
+  marketPrice  Float?
   publishedAt  DateTime?
   stock        Int?      @default(99)
   copyTask     CopyTask? @relation(fields: [copyTaskId], references: [id])
@@ -302,4 +303,32 @@ model ZcyPublishTemplate {
   @@unique([userId, name], name: "userId_name")
   @@index([userId])
   @@index([market])
+}
+
+/// AI 学习到的表单字段映射 - 用于方案一快速填表
+model FormFieldMapping {
+  id            String   @id @default(cuid())
+  /// 模板ID（政采云 templateId 参数）
+  templateId    String
+  /// 类目ID（政采云 categoryId 参数）
+  categoryId    String
+  /// 类目路径，如"办公设备/打印设备/激光打印机"
+  categoryPath  String?
+  /// 页面 URL 模式
+  urlPattern    String?
+  /// 字段映射 JSON: { fields: [{ label, selector, dataKey, required, type }] }
+  fieldMapping  String
+  /// 学习成功次数
+  successCount  Int      @default(1)
+  /// 最后使用时间
+  lastUsedAt    DateTime @default(now())
+  /// 创建时间
+  createdAt     DateTime @default(now())
+  /// 更新时间
+  updatedAt     DateTime @updatedAt
+
+  @@unique([templateId, categoryId])
+  @@index([templateId])
+  @@index([categoryId])
+  @@index([successCount])
 }

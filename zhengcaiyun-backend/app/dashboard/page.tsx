@@ -60,15 +60,15 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col h-[calc(100vh-120px)]">
             {/* Header */}
-            <div>
+            <div className="flex-shrink-0 mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">总览</h1>
                 <p className="text-sm text-gray-500 mt-1">欢迎回来，这里是您的自动化控制中心。</p>
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-shrink-0 mb-6">
                 <StatsCard
                     title="今日上传"
                     value={stats?.todayUploads?.toString() || '0'}
@@ -104,27 +104,36 @@ export default function DashboardPage() {
                 />
             </div>
 
-            {/* Recent Activity */}
-            <div className={`bg-white rounded-2xl border border-gray-200 overflow-hidden transition-all duration-500 ease-in-out flex flex-col ${showAllActivity ? 'h-[600px]' : 'h-auto'}`}>
+            {/* Recent Activity - 自动填充剩余高度 */}
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden flex flex-col flex-1">
                 <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center flex-shrink-0 bg-white z-10">
                     <h3 className="font-bold text-gray-900">最近活动</h3>
-                    <button
-                        onClick={() => setShowAllActivity(!showAllActivity)}
-                        className="text-sm text-gray-500 hover:text-black transition-colors"
-                    >
-                        {showAllActivity ? '收起' : '查看全部'}
-                    </button>
                 </div>
                 <div className="divide-y divide-gray-100 overflow-y-auto flex-1">
                     {stats?.recentActivity?.length > 0 ? (
                         stats.recentActivity.map((item: any) => (
                             <div key={item.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                    </div>
+                                    {(() => {
+                                        const images = item.images ? (typeof item.images === 'string' ? JSON.parse(item.images) : item.images) : [];
+                                        const firstImage = Array.isArray(images) && images.length > 0 ? images[0] : null;
+                                        return firstImage ? (
+                                            <img
+                                                src={firstImage}
+                                                alt=""
+                                                className="w-10 h-10 rounded-lg object-cover"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                            </div>
+                                        );
+                                    })()}
                                     <div>
                                         <p className="text-sm font-medium text-gray-900">上传商品：{item.title}</p>
                                         <p className="text-xs text-gray-500">
@@ -133,8 +142,8 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
                                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${item.status === 'published' ? 'bg-green-100 text-green-700' :
-                                        item.status === 'failed' ? 'bg-red-100 text-red-700' :
-                                            'bg-blue-100 text-blue-700'
+                                    item.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                        'bg-blue-100 text-blue-700'
                                     }`}>
                                     {item.status === 'published' ? '成功' : item.status === 'failed' ? '失败' : '处理中'}
                                 </span>

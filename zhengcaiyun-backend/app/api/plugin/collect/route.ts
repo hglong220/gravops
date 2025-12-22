@@ -59,7 +59,9 @@ export async function POST(request: NextRequest) {
         const draft = await prisma.productDraft.create({
             data: {
                 userId,
-                originalUrl: originalUrl || sourceUrl || zcyItemUrl || 'plugin-upload',
+                // 如果有 zcyItemUrl（从政采云采集），优先使用它作为 originalUrl
+                // 这样来源显示会是"政采云"而不是"京东"
+                originalUrl: zcyItemUrl || originalUrl || sourceUrl || 'plugin-upload',
                 title: title || '未知商品',
                 brand: brand || null,
                 model: model || null,

@@ -313,15 +313,25 @@ function isValidSpecValue(label: string, value: string): boolean {
     if (v === '¥' || v === '￥') return false
 
     // 过滤纯数字（可能是价格）
-    if (/^\d+\.\d{2}$/.test(v)) return false
+    if (/^\d+\.?\d*$/.test(v)) return false
 
-    // 过滤导航类文本
-    const badPatterns = ['用户评价', '成交记录', '服务承诺', '查看更多', '详情']
+    // 过滤"查看XX价格"等导航类文本
+    const badPatterns = [
+        '用户评价', '成交记录', '服务承诺', '查看更多', '详情',
+        '查看', '价格', '立即购买', '加入购物车', '收藏',
+        '分享', '举报', '客服', '咨询'
+    ]
     if (badPatterns.some(p => v.includes(p))) return false
 
-    // Label不能是价格相关
-    const badLabels = ['销售价', '市场价', '电商平台价', '优惠', '折扣']
+    // Label 不能是价格相关或无效字段
+    const badLabels = [
+        '销售价', '市场价', '电商平台价', '优惠', '折扣',
+        '企业资质', '日志ID', '日志', '操作', '链接'
+    ]
     if (badLabels.some(l => label.includes(l))) return false
+
+    // 值太短或太长
+    if (v.length < 1 || v.length > 100) return false
 
     return true
 }
