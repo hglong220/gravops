@@ -1,243 +1,334 @@
 {
-    "version": "1.0.0",
-    "updatedAt": "2024-12-12",
-    "rules": [
-        {
-            "id": "rule_001",
-            "label": "是否需要安装",
-            "controlType": "radio",
-            "action": "select",
-            "value": "不需要",
-            "alternatives": [
-                "否",
-                "不需要安装"
-            ],
-            "priority": 100,
-            "source": "manual",
-            "category": "常规属性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_002",
-            "label": "计量单位",
-            "controlType": "select",
-            "action": "select",
-            "value": "件",
-            "alternatives": [
-                "台",
-                "个",
-                "套"
-            ],
-            "priority": 100,
-            "source": "manual",
-            "category": "常规属性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_003",
-            "label": "产地",
-            "controlType": "radio",
-            "action": "select",
-            "value": "境内",
-            "alternatives": [
-                "中国",
-                "国产"
-            ],
-            "priority": 100,
-            "source": "manual",
-            "category": "产地信息",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_004",
-            "label": "制造商所在区域",
-            "controlType": "radio",
-            "action": "select",
-            "value": "境内",
-            "alternatives": [
-                "中国"
-            ],
-            "priority": 100,
-            "source": "manual",
-            "category": "产地信息",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_005",
-            "label": "是否中小企业制造产品",
-            "controlType": "radio",
-            "action": "select",
-            "value": "否",
-            "alternatives": [],
-            "priority": 100,
-            "source": "manual",
-            "category": "企业信息",
-            "note": "选'是'需要上传证明文件",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_006",
-            "label": "是否本地产品",
-            "controlType": "radio",
-            "action": "select",
-            "value": "否",
-            "alternatives": [],
-            "priority": 100,
-            "source": "manual",
-            "category": "常规属性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_007",
-            "label": "制造商规模",
-            "controlType": "select",
-            "action": "select",
-            "value": "大型",
-            "alternatives": [
-                "中型",
-                "小型"
-            ],
-            "priority": 80,
-            "source": "manual",
-            "category": "企业信息",
-            "note": "默认大型，品牌库有数据时优先使用品牌库",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_008",
-            "label": "售后服务",
-            "controlType": "textarea",
-            "action": "input",
-            "value": "执行国家三包政策",
-            "alternatives": [],
-            "priority": 90,
-            "source": "manual",
-            "category": "售后信息",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_009",
-            "label": "质保期",
-            "controlType": "input",
-            "action": "input",
-            "value": "1年",
-            "alternatives": [
-                "12个月",
-                "一年"
-            ],
-            "priority": 90,
-            "source": "manual",
-            "category": "售后信息",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_010",
-            "label": "库存",
-            "controlType": "input",
-            "action": "input",
-            "value": "999",
-            "alternatives": [],
-            "priority": 100,
-            "source": "manual",
-            "category": "价格库存",
-            "note": "从商品信息获取，无则默认999",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_011",
-            "label": "市场价",
-            "controlType": "input",
-            "action": "input",
-            "value": "",
-            "alternatives": [],
-            "priority": 100,
-            "source": "manual",
-            "category": "价格库存",
-            "note": "从商品信息获取采集价格",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_012",
-            "label": "销售价",
-            "controlType": "input",
-            "action": "input",
-            "value": "",
-            "alternatives": [],
-            "priority": 100,
-            "source": "manual",
-            "category": "价格库存",
-            "note": "市场价×0.92（下浮8%）",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_013",
-            "label": "是否过热保护",
-            "controlType": "radio",
-            "action": "select",
-            "value": "是",
-            "alternatives": [],
-            "priority": 80,
-            "source": "manual",
-            "category": "产品特性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_014",
-            "label": "是否支持远程办公",
-            "controlType": "radio",
-            "action": "select",
-            "value": "是",
-            "alternatives": [],
-            "priority": 80,
-            "source": "manual",
-            "category": "产品特性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_015",
-            "label": "能效等级",
-            "controlType": "select",
-            "action": "select",
-            "value": "一级",
-            "alternatives": [
-                "1级",
-                "一级能效"
-            ],
-            "priority": 70,
-            "source": "manual",
-            "category": "产品特性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        },
-        {
-            "id": "rule_016",
-            "label": "包装方式",
-            "controlType": "select",
-            "action": "select",
-            "value": "纸箱包装",
-            "alternatives": [
-                "原厂包装",
-                "纸盒包装"
-            ],
-            "priority": 60,
-            "source": "manual",
-            "category": "常规属性",
-            "createdAt": "2024-12-12",
-            "usageCount": 0
-        }
-    ]
+  "version": "1.0.0",
+  "updatedAt": "2025-12-29",
+  "rules": [
+    {
+      "id": "rule_001",
+      "label": "是否需要安装",
+      "controlType": "radio",
+      "action": "select",
+      "value": "不需要",
+      "alternatives": [
+        "否",
+        "不需要安装"
+      ],
+      "priority": 100,
+      "source": "manual",
+      "category": "常规属性",
+      "createdAt": "2024-12-12",
+      "usageCount": 1
+    },
+    {
+      "id": "rule_002",
+      "label": "计量单位",
+      "controlType": "select",
+      "action": "select",
+      "value": "件",
+      "alternatives": [
+        "台",
+        "个",
+        "套"
+      ],
+      "priority": 100,
+      "source": "manual",
+      "category": "常规属性",
+      "createdAt": "2024-12-12",
+      "usageCount": 5
+    },
+    {
+      "id": "rule_003",
+      "label": "产地",
+      "controlType": "radio",
+      "action": "select",
+      "value": "境内",
+      "alternatives": [
+        "中国",
+        "国产"
+      ],
+      "priority": 100,
+      "source": "manual",
+      "category": "产地信息",
+      "createdAt": "2024-12-12",
+      "usageCount": 5
+    },
+    {
+      "id": "rule_004",
+      "label": "制造商所在区域",
+      "controlType": "radio",
+      "action": "select",
+      "value": "境内",
+      "alternatives": [
+        "中国"
+      ],
+      "priority": 100,
+      "source": "manual",
+      "category": "产地信息",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_005",
+      "label": "是否中小企业制造产品",
+      "controlType": "radio",
+      "action": "select",
+      "value": "否",
+      "alternatives": [],
+      "priority": 100,
+      "source": "manual",
+      "category": "企业信息",
+      "note": "选'是'需要上传证明文件",
+      "createdAt": "2024-12-12",
+      "usageCount": 1
+    },
+    {
+      "id": "rule_006",
+      "label": "是否本地产品",
+      "controlType": "radio",
+      "action": "select",
+      "value": "否",
+      "alternatives": [],
+      "priority": 100,
+      "source": "manual",
+      "category": "常规属性",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_010",
+      "label": "库存",
+      "controlType": "input",
+      "action": "input",
+      "value": "999",
+      "alternatives": [],
+      "priority": 100,
+      "source": "manual",
+      "category": "价格库存",
+      "note": "从商品信息获取，无则默认999",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_011",
+      "label": "市场价",
+      "controlType": "input",
+      "action": "input",
+      "value": "",
+      "alternatives": [],
+      "priority": 100,
+      "source": "manual",
+      "category": "价格库存",
+      "note": "从商品信息获取采集价格",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_012",
+      "label": "销售价",
+      "controlType": "input",
+      "action": "input",
+      "value": "",
+      "alternatives": [],
+      "priority": 100,
+      "source": "manual",
+      "category": "价格库存",
+      "note": "市场价×0.92（下浮8%）",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_008",
+      "label": "售后服务",
+      "controlType": "textarea",
+      "action": "input",
+      "value": "执行国家三包政策",
+      "alternatives": [],
+      "priority": 90,
+      "source": "manual",
+      "category": "售后信息",
+      "createdAt": "2024-12-12",
+      "usageCount": 1
+    },
+    {
+      "id": "rule_009",
+      "label": "质保期",
+      "controlType": "input",
+      "action": "input",
+      "value": "1年",
+      "alternatives": [
+        "12个月",
+        "一年"
+      ],
+      "priority": 90,
+      "source": "manual",
+      "category": "售后信息",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_007",
+      "label": "制造商规模",
+      "controlType": "select",
+      "action": "select",
+      "value": "大型",
+      "alternatives": [
+        "中型",
+        "小型"
+      ],
+      "priority": 80,
+      "source": "manual",
+      "category": "企业信息",
+      "note": "默认大型，品牌库有数据时优先使用品牌库",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_013",
+      "label": "是否过热保护",
+      "controlType": "radio",
+      "action": "select",
+      "value": "是",
+      "alternatives": [],
+      "priority": 80,
+      "source": "manual",
+      "category": "产品特性",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_014",
+      "label": "是否支持远程办公",
+      "controlType": "radio",
+      "action": "select",
+      "value": "是",
+      "alternatives": [],
+      "priority": 80,
+      "source": "manual",
+      "category": "产品特性",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_015",
+      "label": "能效等级",
+      "controlType": "select",
+      "action": "select",
+      "value": "一级",
+      "alternatives": [
+        "1级",
+        "一级能效"
+      ],
+      "priority": 70,
+      "source": "manual",
+      "category": "产品特性",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_016",
+      "label": "包装方式",
+      "controlType": "select",
+      "action": "select",
+      "value": "纸箱包装",
+      "alternatives": [
+        "原厂包装",
+        "纸盒包装"
+      ],
+      "priority": 60,
+      "source": "manual",
+      "category": "常规属性",
+      "createdAt": "2024-12-12",
+      "usageCount": 0
+    },
+    {
+      "id": "rule_1767032356698",
+      "label": "品牌",
+      "controlType": "unknown",
+      "action": "searchAndClick",
+      "value": "HP/惠普",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356755",
+      "label": "型号",
+      "controlType": "unknown",
+      "action": "searchAndClick",
+      "value": "W2080A",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356792",
+      "label": "电商平台链接",
+      "controlType": "unknown",
+      "action": "input",
+      "value": "https://detail.tmall.com/item.htm?id=596081608099",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356831",
+      "label": "生产厂商",
+      "controlType": "unknown",
+      "action": "input",
+      "value": "HP 惠普",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356870",
+      "label": "产品详情",
+      "controlType": "unknown",
+      "action": "input",
+      "value": "本产品执行国家三包政策",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356911",
+      "label": "运费模板",
+      "controlType": "unknown",
+      "action": "select",
+      "value": "无需运费模板",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    },
+    {
+      "id": "rule_1767032356950",
+      "label": "上架时间",
+      "controlType": "unknown",
+      "action": "select",
+      "value": "立即上架",
+      "alternatives": [],
+      "priority": 50,
+      "source": "ai",
+      "category": "自动收录",
+      "createdAt": "2025-12-29",
+      "usageCount": 4
+    }
+  ]
 }

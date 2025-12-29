@@ -18,6 +18,9 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 })
 
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 interface FieldSchema {
     id: string
     label: string
@@ -76,8 +79,12 @@ export async function POST(request: NextRequest) {
         // 构建 prompt
         const prompt = buildPrompt(productInfo, fields)
 
-        // 调用 DeepSeek
-        const plans = await callDeepSeek(prompt, fields)
+        // ⭐ 切换到 Gemini 进行测试
+        console.log('[AutoFill AI] 使用 Gemini 进行推理...');
+        const plans = await callGemini(prompt, fields);
+
+        // 原 DeepSeek 逻辑保留（备用）
+        // const plans = await callDeepSeek(prompt, fields)
 
         console.log('[AutoFill AI] 生成计划:', plans.filter(p => p.action !== 'skip').length, '个')
 
@@ -140,6 +147,13 @@ ${JSON.stringify(productInfo, null, 2)}
 ${JSON.stringify(fields, null, 2)}
 
 ------------------------------------
+⚠️【特殊行业指令：打印耗材（墨盒/硒鼓/碳粉）】
+如果检测到商品是墨盒、硒鼓、色带等耗材：
+1. 「型号」必须填写耗材自身的型号（如 CC388A, 110A, TN-2325），绝对不能填写一长串的适用打印机型号！
+2. 如果标题或参数中有类似 "适用 178nw / 179fnw / 150a" 的描述，那些是支持设备，不是商品型号。
+3. 请优先从 productInfo.specs 的「型号」或「货号」中提取最精准的那个。
+4. 如果有多个看起来像型号的词，选择那个短小精悍的（如 80A 优于 LaserJet Pro M401dw）。
+
 请基于字段语义 + 商品信息，为每个 field 生成填写方案。
 返回的 id 必须与 fields 中的 id 完全一致！
 
@@ -150,7 +164,54 @@ ${JSON.stringify(fields, null, 2)}
   {"id":"品牌字段id","action":"searchAndClick","value":"品牌名"},
   {"id":"型号字段id","action":"searchAndClick","value":"型号名"},
   ...
-]`
+] \n\n 只返回 JSON 数组本身。`
+}
+
+async function callGemini(prompt: string, fields: FieldSchema[]): Promise<FillPlan[]> {
+    if (!GOOGLE_API_KEY) {
+        console.warn('[AutoFill AI] 未配置 GOOGLE_API_KEY，回退到 DeepSeek');
+        return callDeepSeek(prompt, fields);
+    }
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 2000,
+                    responseMimeType: "application/json"
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Gemini API error: ${response.status} ${err}`);
+        }
+
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('[AutoFill AI] Gemini 返回:', content.substring(0, 200));
+
+        // 解析 JSON
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]) as FillPlan[];
+        } else {
+            // 尝试直接解析
+            return JSON.parse(content) as FillPlan[];
+        }
+    } catch (error) {
+        console.error('[AutoFill AI] Gemini 调用失败:', error);
+        return callDeepSeek(prompt, fields); // 失败时回退到 DeepSeek
+    }
 }
 
 async function callDeepSeek(prompt: string, fields: FieldSchema[]): Promise<FillPlan[]> {

@@ -330,6 +330,8 @@ interface MatchResult {
     depth: number;
     confidence: 'high' | 'medium' | 'low';
     leafCategory?: Category;
+    brand?: string; // ⭐ Added: AI-extracted brand
+    model?: string; // ⭐ Added: AI-extracted model
 }
 
 // 深度类目匹配：在类目树中搜索最匹配的完整路径
@@ -569,37 +571,35 @@ export async function POST(request: NextRequest) {
 
         console.log(`[类目匹配] 关键词匹配结果: 深度${matchResult.depth}, 路径: ${matchResult.categoryPath.join(' > ')}`)
 
-        // ⭐ 第四步：如果关键词匹配效果不好，使用真正的AI匹配
+        // ⭐ 第四步：AI 增强匹配
+        // 如果开启了 full 模式，或者关键词匹配效果不好，就使用真正的 AI 匹配
         let usedAI = false;
-        let aiBid: string | undefined;  // ⭐ 保存标项
+        let aiBid: string | undefined;
 
-        if (matchResult.confidence === 'low' || matchResult.depth < 3) {
-            console.log(`[类目匹配] 关键词匹配置信度低，调用AI增强...`);
+        const forceAI = body.mode === 'full';
+
+        if (forceAI || matchResult.confidence === 'low' || matchResult.depth < 3) {
+            console.log(`[类目匹配] ${forceAI ? '强制开启' : '低置信度'}AI增强匹配, bid: ${bid || '未指定'}`);
 
             try {
-                // ⭐ 传入 bid 参数，限制 AI 只从当前标项的类目中匹配
-                console.log(`[类目匹配] 调用AI匹配, bid: ${bid || '未指定'}`);
-                const aiResult = await matchCategoryWithAI(productTitle, allowedCategories, bid);
+                const aiResult = await matchCategoryWithAI(productTitle, allowedCategories, bid, body.liveOptions);
 
-                if (aiResult.confidence !== 'low' && aiResult.path.length >= 2) {
-                    console.log(`[类目匹配] AI匹配结果: ${aiResult.path.join(' > ')} (${aiResult.confidence})`);
-                    if (aiResult.bid) {
-                        console.log(`[类目匹配] AI确定标项: ${aiResult.bid}`);
-                        aiBid = aiResult.bid;
-                    }
+                if (aiResult && aiResult.path && aiResult.path.length >= 2) {
+                    console.log(`[类目匹配] AI匹配成功: ${aiResult.path.join(' > ')}`);
+                    if (aiResult.bid) aiBid = aiResult.bid;
 
-                    // 使用AI的结果
+                    // 即使类目已经通过关键词匹配到了，我们也采纳 AI 的品牌和型号
                     matchResult = {
+                        ...matchResult, // 保留原有的 ID 等信息
                         categoryPath: aiResult.path,
-                        categoryIds: [], // AI不返回ID，后续可以根据路径查找
-                        matchedKeywords: [],
-                        depth: aiResult.path.length,
-                        confidence: aiResult.confidence
+                        confidence: aiResult.confidence || 'medium',
+                        brand: aiResult.brand,
+                        model: aiResult.model
                     };
                     usedAI = true;
                 }
             } catch (aiError) {
-                console.error('[类目匹配] AI匹配失败，使用关键词结果:', aiError);
+                console.error('[类目匹配] AI匹配失败:', aiError);
             }
         }
 
@@ -620,9 +620,31 @@ export async function POST(request: NextRequest) {
         }
         console.log(`[类目匹配] 最终标项: ${finalBid}`)
 
+        // ⭐⭐⭐ 型号清洗助手：确保 AI 返回的不是乱码或列表 ⭐⭐⭐
+        const cleanModel = (m: string | null | undefined): string | null => {
+            if (!m || m === '未知' || m.length < 2) return null;
+            const normalized = m.trim();
+
+            // 统计分隔符
+            const sepCount = (normalized.match(/[\s\/\\\+,，]/g) || []).length;
+
+            // 1. 如果包含 2 个或更多分隔符，基本判定为列表
+            if (sepCount >= 2) return null;
+
+            // 2. 如果包含 1 个分隔符且总长度较长，也极大概率是描述性内容而非纯型号
+            if (sepCount >= 1 && normalized.length > 12) return null;
+
+            // 3. 排除“适用于”字样
+            if (normalized.includes('适用')) return null;
+
+            return normalized;
+        };
+
         // ★★★ 提取品牌和型号 ★★★
-        const extractedBrand = extractBrand(productTitle)
-        const extractedModel = extractModel(productTitle)
+        // 优先级：AI 提取的结果 (经过清洗) > 正则匹配结果
+        const aiModel = cleanModel((matchResult as any).model);
+        const extractedBrand = (matchResult as any).brand || extractBrand(productTitle);
+        const extractedModel = aiModel || extractModel(productTitle);
 
         console.log(`[类目匹配] 提取品牌: ${extractedBrand || '未识别'}, 型号: ${extractedModel || '未识别'}`)
 
@@ -709,43 +731,101 @@ function extractBrand(title: string): string | null {
 // ========== 型号提取 ==========
 
 function extractModel(title: string): string | null {
-    // 匹配常见型号格式（按优先级排序，长型号优先）
-    const patterns = [
-        // ⭐ 纯数字+字母型号（如 33302S, 7361, 33725）
-        /(\d{4,6}[A-Z]{0,2})/gi,
+    const lowerTitle = title.toLowerCase();
 
-        // 字母+数字型号（如 HP123, M2000A）
-        /([A-Z]{1,4}\d{3,6}[A-Z]?)/gi,
-
-        // 字母-数字型号（如 HP-1234）
-        /([A-Z]{2,5}-\d{2,5})/gi,
-
-        // 短型号（如 70G, 80G）
-        /(\d{2,4}[gG克])/gi,
-
-        // A3/A4 纸张规格
-        /(A[34])/gi,
-    ];
-
-    // 收集所有匹配的型号
-    const candidates: string[] = [];
-
-    for (const pattern of patterns) {
-        let match;
-        while ((match = pattern.exec(title)) !== null) {
-            const model = match[1];
-            // 排除一些常见的非型号数字
-            if (model.length >= 2 && !['2025', '2024', '2023'].includes(model)) {
-                candidates.push(model);
-            }
+    // 1. 预处理：如果是耗材类商品，标题中“适用”、“兼容”之后的内容极大概率是打印机型号，应排除或降权
+    const splitKeywords = ['适用', '兼容', '支持', 'for', 'support', 'fits'];
+    let primaryPart = title;
+    for (const kw of splitKeywords) {
+        if (lowerTitle.includes(kw)) {
+            primaryPart = title.substring(0, lowerTitle.indexOf(kw));
+            break;
         }
     }
 
-    // 按长度排序，优先返回最长的型号
-    if (candidates.length > 0) {
-        candidates.sort((a, b) => b.length - a.length);
-        console.log(`[型号提取] 候选型号: ${candidates.join(', ')}，选择: ${candidates[0]}`);
-        return candidates[0];
+    // 匹配常见型号格式
+    const patterns = [
+        // ⭐ 字母+数字（耗材最常见：CF217A, TN2325, W1110A, 110A）
+        /([A-Z]{0,3}\d{3,6}[A-Z]{0,3})/gi,
+
+        // 字母-数字（如 HP-1234, M-2000）
+        /([A-Z]{1,5}-\d{2,6}[A-Z]{0,2})/gi,
+
+        // 纯数字（长型号：33302, 7361）
+        /(\d{4,6})/gi
+    ];
+
+    const getCandidates = (text: string) => {
+        const list: { val: string, index: number }[] = [];
+        for (const pattern of patterns) {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+                const val = match[1];
+                // 排除年份和无意义短数字
+                if (val.length >= 2 && !['2025', '2024', '2023', '2022'].includes(val)) {
+                    // 排除像 "500张" 这种规格
+                    if (/\d+张|\d+页|\d+ml|\d+g/i.test(text.substring(match.index, match.index + val.length + 2))) {
+                        continue;
+                    }
+                    list.push({ val, index: match.index });
+                }
+            }
+        }
+        return list;
+    };
+
+    // 2. 优先在前半部分（非适用部分）查找
+    const primaryCandidates = getCandidates(primaryPart);
+    if (primaryCandidates.length > 0) {
+        // 在前半部分，通常第一个出现的更像是真实型号
+        primaryCandidates.sort((a, b) => a.index - b.index);
+        console.log(`[型号提取] 在主标题发现型号: ${primaryCandidates[0].val}`);
+        return primaryCandidates[0].val;
+    }
+
+    // 3. 全局查找
+    const allCandidates = getCandidates(title);
+    if (allCandidates.length > 0) {
+        // 过滤掉包含多机型的写法（如 178/179/150）以及过长的干扰项
+        const filtered = allCandidates.filter(c => {
+            const val = c.val;
+            // 如果长度超过 15 位，且包含多个空格或特殊字符，大概率不是单一型号
+            if (val.length > 15 && (val.match(/[\s\/\\\+,]/g) || []).length > 2) return false;
+
+            const surrounding = title.substring(Math.max(0, c.index - 2), c.index + val.length + 5);
+            // 排除被斜杠/反斜杠/连字符/逗号 包裹的序列（大概率是列表中的一部分）
+            if (surrounding.includes('/') || surrounding.includes('\\') || surrounding.includes(',') || surrounding.includes('，')) {
+                // 如果周围有这些字符，检查是否只是一个单独的型号
+                const segment = title.substring(Math.max(0, c.index - 5), c.index + val.length + 5);
+                if ((segment.match(/[\s\/\\\+,]/g) || []).length > 3) return false;
+            }
+            return true;
+        });
+
+        if (filtered.length > 0) {
+            // 优先选择更复杂的（字母+数字组合），如果都一样，优先选择靠前的
+            filtered.sort((a, b) => {
+                const aHasAlpha = /[A-Z]/.test(a.val);
+                const bHasAlpha = /[A-Z]/.test(b.val);
+                if (aHasAlpha && !bHasAlpha) return -1;
+                if (!aHasAlpha && bHasAlpha) return 1;
+
+                //同类型选靠前的
+                return a.index - b.index;
+            });
+            console.log(`[型号提取] 全局识别型号: ${filtered[0].val}`);
+            return filtered[0].val;
+        }
+    }
+
+    // 4. ⭐ 兜底补丁：如果还是没找到，但标题有“适用于”，取“适用于”前面的最后一个连续字母数字
+    if (lowerTitle.includes('适用')) {
+        const prePart = title.substring(0, lowerTitle.indexOf('适用')).trim();
+        const lastMatch = prePart.match(/([A-Z]*\d+[A-Z]*)/gi);
+        if (lastMatch) {
+            const val = lastMatch[lastMatch.length - 1];
+            if (val.length >= 3) return val;
+        }
     }
 
     return null;

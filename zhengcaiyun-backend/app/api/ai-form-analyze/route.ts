@@ -38,8 +38,10 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (!DEEPSEEK_API_KEY) {
-            console.warn('[AI分析] 无 DeepSeek API Key，使用规则匹配');
+        const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+
+        if (!GOOGLE_API_KEY) {
+            console.warn('[AI分析] 无 Gemini API Key，使用规则匹配');
             const mapping = ruleBasedMapping(fields);
             return NextResponse.json({ mapping, method: 'rule' });
         }
@@ -84,27 +86,31 @@ ${fieldList}
 2. 如果无法确定对应关系，dataKey 设为空字符串
 3. 只返回 JSON，不要其他内容`;
 
-        // 调用 DeepSeek
-        const response = await fetch(DEEPSEEK_API_URL, {
+        // 调用 Gemini
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
+
+        const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'deepseek-chat',
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: 2000,
-                temperature: 0
+                contents: [{
+                    role: 'user',
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0,
+                    responseMimeType: "application/json"
+                }
             })
         });
 
         if (!response.ok) {
-            throw new Error(`DeepSeek API error: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Gemini API error: ${response.status} ${JSON.stringify(errorData)}`);
         }
 
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
         // 解析 JSON
         let mapping: FieldMapping[] = [];

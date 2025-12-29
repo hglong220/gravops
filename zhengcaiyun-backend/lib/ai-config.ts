@@ -31,24 +31,24 @@ export const DEFAULT_CONFIG: AIConfig = {
     },
     providers: [
         {
-            id: 'openai-primary',
-            name: 'OpenAI (GPT-4o)',
-            provider: 'openai',
-            enabled: true,
-            priority: 1,
-            baseUrl: 'https://api.openai.com/v1',
-            apiKeyPool: [process.env.OPENAI_API_KEY || ''],
-            model: 'gpt-4o'
-        },
-        {
             id: 'gemini-backup',
             name: 'Google Gemini',
             provider: 'gemini',
             enabled: true,
-            priority: 2,
+            priority: 1,
             baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-            apiKeyPool: [],
-            model: 'gemini-pro'
+            apiKeyPool: [process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ''],
+            model: 'gemini-2.0-flash'
+        },
+        {
+            id: 'openai-primary',
+            name: 'OpenAI (GPT-4o)',
+            provider: 'openai',
+            enabled: true,
+            priority: 2,
+            baseUrl: 'https://api.openai.com/v1',
+            apiKeyPool: [process.env.OPENAI_API_KEY || ''],
+            model: 'gpt-4o'
         },
         {
             id: 'deepseek-domestic',
@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: AIConfig = {
             enabled: true,
             priority: 3,
             baseUrl: 'https://api.deepseek.com/v1',
-            apiKeyPool: [],
+            apiKeyPool: [process.env.DEEPSEEK_API_KEY || ''],
             model: 'deepseek-chat'
         },
         {

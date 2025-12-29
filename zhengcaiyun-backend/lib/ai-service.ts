@@ -238,3 +238,52 @@ export async function analyzeScreenshot(base64Image: string, contextText?: strin
     throw error;
   }
 }
+
+export async function visualAgentAction(base64Image: string, task: string, context?: string): Promise<any> {
+  console.log(`[AI Service] Visual Agent Task: ${task}`);
+
+  try {
+    const config = getAIConfig();
+    const imageUrl = base64Image.startsWith('data:image') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
+
+    const systemPrompt = `你是一个专业的网页自动化助手。
+请根据提供的网页截图和任务描述，找到需要点击或操作的目标。
+
+任务描述: ${task}
+当前上下文: ${context || '无'}
+
+请分析图中元素的位置，并返回 JSON 格式：
+{
+    "target": "目标元素描述",
+    "action": "click" | "input" | "wait",
+    "point": { "x": 0.5, "y": 0.5 }, // 元素的中心坐标，使用 0-1 的百分比
+    "reason": "为什么要操作这个元素",
+    "confidence": 0.95
+}
+
+注意：
+1. 坐标 x 和 y 必须是 0 到 1 之间的浮点数，代表在图片中的相对位置。
+2. 绝对不要返回 JSON 以外的任何文字。`;
+
+    return await executeWithFailover(async (provider, apiKey) => {
+      const userContent = [
+        { type: "text", text: "请分析此页面并给出操作建议。" },
+        { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
+      ];
+
+      if (provider.provider === 'gemini') {
+        return await callGemini(provider, apiKey, systemPrompt, userContent, 0, 800);
+      } else {
+        const messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ];
+        return await callOpenAICompatible(provider, apiKey, messages, 0, 800);
+      }
+    });
+
+  } catch (error) {
+    console.error('[AI Service] Visual Agent Error:', error);
+    throw error;
+  }
+}

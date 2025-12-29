@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -26,8 +29,12 @@ export async function POST(request: NextRequest) {
         // 构建 prompt
         const prompt = buildPrompt(field, productInfo);
 
-        // 调用 DeepSeek API
-        const value = await callDeepSeek(prompt, field);
+        // ⭐ 切换到 Gemini 进行测试
+        console.log(`[Field AI] 使用 Gemini 进行推理: ${field.label}`);
+        const value = await callGemini(prompt, field);
+
+        // 原 DeepSeek 逻辑保留（备用）
+        // const value = await callDeepSeek(prompt, field);
 
         console.log(`[Field AI] 推理结果: ${field.label} -> ${value}`);
 
@@ -71,6 +78,50 @@ function buildPrompt(field: any, productInfo: any): string {
 4. 如果实在无法推理，返回最合理的默认值
 
 请直接返回应填的值:`;
+}
+
+async function callGemini(prompt: string, field: any): Promise<string> {
+    if (!GOOGLE_API_KEY) {
+        console.warn('[Field AI] 无 GOOGLE_API_KEY，回退到 DeepSeek');
+        return callDeepSeek(prompt, field);
+    }
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    maxOutputTokens: 100
+                }
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (content) {
+                // 如果有选项，验证返回值
+                if (field.options?.length > 0) {
+                    const matched = field.options.find((o: string) =>
+                        o === content || o.includes(content) || content.includes(o)
+                    );
+                    return matched || field.options[0];
+                }
+                return content;
+            }
+        }
+    } catch (e) {
+        console.error('[Field AI] Gemini 调用失败:', e);
+    }
+
+    return callDeepSeek(prompt, field);
 }
 
 async function callDeepSeek(prompt: string, field: any): Promise<string> {

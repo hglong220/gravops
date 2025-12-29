@@ -19,7 +19,7 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 })
 
-const AI_PROVIDER = process.env.AI_PROVIDER || 'deepseek'
+const AI_PROVIDER = process.env.AI_PROVIDER || 'gemini'
 
 interface CategoryNode {
     id: number
@@ -34,7 +34,9 @@ interface CategoryMatchResult {
     path: string[]
     confidence: 'high' | 'medium' | 'low'
     reason: string
-    bid?: string  // ⭐ 新增：标项名称
+    bid?: string  // ⭐ 标项名称
+    brand?: string // ⭐ 提取的品牌
+    model?: string // ⭐ 提取的型号
 }
 
 // ⭐ 新增：标项映射结构
@@ -219,7 +221,8 @@ function extractKeywords(title: string): string[] {
 export async function matchCategoryWithAI(
     productTitle: string,
     allowedCategories: string[] = [],
-    bid?: string  // ⭐ 新增：当前标项
+    bid?: string,
+    liveOptions: string[] = [] // ⭐ 新增：页面实时选项
 ): Promise<CategoryMatchResult> {
 
     console.log('[AI Category] 开始AI类目匹配:', productTitle)
@@ -246,6 +249,42 @@ export async function matchCategoryWithAI(
     // 过滤类目树（只保留指定的一级类目）
     let tree = fullTree
     if (effectiveCategories.length > 0) {
+        // ⭐ [Rigid Termination] 刚性终止逻辑：先预判该商品的“物理类目”
+        // 比如：椅子 -> 家居建材。如果当前标项（比如办公用品）里没有家居建材，直接报错停止。
+        const productKeywords = extractKeywords(productTitle);
+        const lowerTitle = productTitle.toLowerCase();
+
+        // 查找该商品最可能属于的物理一级类目（全局查找）
+        let idealLevel1: string | null = null;
+        for (const node of fullTree) {
+            const nodeKeywords = node.name.split('/').flatMap(s => [s, s.substring(0, 2)]);
+            if (nodeKeywords.some(k => k.length >= 2 && lowerTitle.includes(k.toLowerCase()))) {
+                idealLevel1 = node.name;
+                break;
+            }
+        }
+
+        // 特殊补丁：椅子、桌子、沙发 -> 家居建材
+        if (/椅|桌|沙发|床|柜|架/.test(lowerTitle) && !/办公设备|耗材/.test(lowerTitle)) {
+            idealLevel1 = "家居建材";
+        }
+
+        if (idealLevel1) {
+            const isAllowed = effectiveCategories.some(cat =>
+                cat.includes(idealLevel1!) || idealLevel1!.includes(cat)
+            );
+
+            if (!isAllowed) {
+                console.log(`[AI Category] 🔴 [刚性终止] 商品 "${productTitle}" 理想类目为 "${idealLevel1}"，但当前标项 "${bid || '未指定'}" 权限仅允许: ${effectiveCategories.join(', ')}`);
+                return {
+                    path: [],
+                    confidence: 'low',
+                    reason: `【刚性终止】检测到商品属于「${idealLevel1}」，但您当前选择的标项「${bid || '默认'}」没有该类目的权限。为防止错误发布，程序已停止。请更换标项或确认账号权限。`,
+                    bid
+                };
+            }
+        }
+
         tree = fullTree.filter(node => {
             // 检查一级类目名称是否在允许列表中
             const nodeName = node.name.toLowerCase()
@@ -279,6 +318,14 @@ export async function matchCategoryWithAI(
     // 4. 过滤相关类目（从用户有权限的类目中过滤）
     let relevantPaths = filterRelevantCategories(tree, keywords)
 
+    // ⭐⭐⭐ 核心补丁：如果传入了页面实时选项，强制把它们加入候选列表的第一优先级 ⭐⭐⭐
+    if (liveOptions.length > 0) {
+        console.log('[AI Category] 注入实时选项:', liveOptions)
+        // 将实时看到的一级类目名作为重点候选
+        const livePaths = liveOptions.map(opt => `${opt} > ... (待AI补全后续层级)`)
+        relevantPaths = [...new Set([...livePaths, ...relevantPaths])]
+    }
+
     // 如果过滤后太少，补充一些常用类目
     if (relevantPaths.length < 20) {
         const defaultPaths = buildCategoryPathList(tree, 50)
@@ -300,38 +347,85 @@ ${categoryList}
 你的任务：
 1. 分析商品标题
 2. 从上面的列表中选择最匹配的一个类目路径
-3. 必须100%使用列表中的原始名称，一个字都不能改`
+3. 必须100%使用列表中的原始名称，一个字都不能改
+4. 【重点】提取商品自己的「品牌」名（如：得力、惠普/HP）。
+5. 【重点】提取商品本身的「型号」（如：7361、CC388A、TN2325）。
+   ⚠️ 耗材模型准则：严禁提取“适用于 XXX”、“支持 XXX”等兼容性机型列表。
+   ❌ 错误示例：型号="178nw 179fnw 150a\\nw" (这是打印机列表)
+   ✅ 正确示例：型号="W1110A" (这是耗材本身型号)
+   只保留耗材自身的简洁型号。如果找不到，请返回 "未知"。
+
+输出 JSON 格式：
+{
+  "path": ["一级", "二级", "三级"],
+  "confidence": "high/medium/low",
+  "reason": "选择理由",
+  "brand": "品牌名",
+  "model": "型号名"
+}`
 
     const userPrompt = `商品标题：${productTitle}
 
-请从可选类目列表中选择最匹配的类目路径。
-
-返回格式（只返回JSON，不要其他文字）：
-{
-  "path": ["一级类目", "二级类目", "三级类目"],
-  "confidence": "high/medium/low",
-  "reason": "选择理由"
-}
-
+请从可选类目列表中选择最匹配的类目路径，并提取品牌和型号。
 注意：path 中的每个类目名称必须与可选列表中的完全一致！`
 
     try {
-        const client = AI_PROVIDER === 'deepseek' ? deepseek : openai
-        const model = AI_PROVIDER === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'
+        let content = ''
 
-        console.log(`[AI Category] 使用 ${AI_PROVIDER} (${model})`)
+        if (AI_PROVIDER === 'gemini') {
+            const rawKey = (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '').trim()
+            if (!rawKey) throw new Error('GOOGLE_API_KEY is missing')
 
-        const response = await client.chat.completions.create({
-            model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.1,  // 低温度，确保输出稳定
-            max_tokens: 300
-        })
+            // ⭐ 优先使用稳定的 1.5 Pro，这也是目前上下文理解最强的版本
+            // 用户提到的 gemini-3-pro 如果是非公开 ID 可能会导致 404
+            const modelName = 'gemini-1.5-pro';
+            console.log(`[AI Category] 正在调用 Gemini 模型: ${modelName} ...`)
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${rawKey}`
 
-        const content = response.choices[0]?.message?.content || ''
+            console.log(`[AI Category] 调用 Gemini: ${modelName}`)
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        role: 'user',
+                        parts: [{ text: systemPrompt + "\n\n" + userPrompt }]
+                    }],
+                    generationConfig: {
+                        temperature: 0.1,
+                        maxOutputTokens: 800,
+                        responseMimeType: "application/json"
+                    }
+                })
+            })
+
+            const responseText = await response.text();
+            if (!response.ok) {
+                console.error(`[AI Category] Gemini API 错误: ${response.status}`, responseText);
+                throw new Error(`Gemini API Error: ${response.status} ${responseText}`)
+            }
+
+            const data = JSON.parse(responseText);
+            content = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+            console.log('[AI Category] Gemini 原始回复:', content)
+        } else {
+            const client = AI_PROVIDER === 'deepseek' ? deepseek : openai
+            const model = AI_PROVIDER === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'
+
+            console.log(`[AI Category] 使用 ${AI_PROVIDER} (${model})`)
+
+            const response = await client.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                temperature: 0.1,
+                max_tokens: 500
+            })
+            content = response.choices[0]?.message?.content || ''
+        }
+
         console.log('[AI Category] AI 返回:', content)
 
         // 解析JSON
@@ -348,7 +442,6 @@ ${categoryList}
 
         if (!isValid) {
             console.log('[AI Category] ⚠️ AI返回的类目不在候选列表中，尝试模糊匹配...')
-            // 尝试找到最相似的
             const similar = relevantPaths.find(p =>
                 result.path.some(part => p.includes(part))
             )
@@ -359,18 +452,11 @@ ${categoryList}
         }
 
         // ⭐ 设置标项
-        // 如果调用时指定了 bid，直接使用；否则根据一级类目反查
         if (bid) {
             result.bid = bid
-            console.log(`[AI Category] 使用调用指定的标项: ${bid}`)
         } else if (result.path.length > 0) {
             const foundBid = findBidByLevel1Category(result.path[0])
-            if (foundBid) {
-                result.bid = foundBid
-                console.log(`[AI Category] 根据一级类目确定标项: ${foundBid}`)
-            } else {
-                console.log(`[AI Category] ⚠️ 未找到一级类目 "${result.path[0]}" 对应的标项`)
-            }
+            if (foundBid) result.bid = foundBid
         }
 
         console.log('[AI Category] 最终结果:', result.path.join(' > '), result.bid ? `(标项: ${result.bid})` : '')
@@ -378,8 +464,6 @@ ${categoryList}
 
     } catch (error) {
         console.error('[AI Category] AI匹配失败:', error)
-
-        // 失败时尝试用关键词匹配
         if (relevantPaths.length > 0) {
             const fallbackPath = relevantPaths[0].split(' > ')
             return {
@@ -388,7 +472,6 @@ ${categoryList}
                 reason: 'AI匹配失败，使用关键词匹配结果'
             }
         }
-
         return {
             path: ['文化用品', '其他文化用品', '其他'],
             confidence: 'low',
