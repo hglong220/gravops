@@ -165,6 +165,7 @@ async function handleCategoryPage(draftId: string) {
   let aiResult
   try {
     const { baseUrl, token } = await getApiConfig()
+    console.log('%c[旗舰MAX] 🛰️ 正在请求后端分析 (mode: full)...', 'background: #2196f3; color: white; padding: 2px 4px; border-radius: 4px;')
     const resp = await apiProxy<any>(`${baseUrl}/api/category-match`, {
       method: "POST",
       headers: {
@@ -191,21 +192,17 @@ async function handleCategoryPage(draftId: string) {
 
   if (!aiResult.success) {
     showError(aiResult.error || 'AI 匹配失败')
-    console.error('[旗舰MAX] AI 匹配失败:', aiResult)
+    console.error('[旗舰MAX] ❌ AI 匹配异常:', aiResult)
     return
   }
 
-  const { categoryPath, brand, model, bid, suggestedLevel1 } = aiResult.data
+  const { categoryPath, brand, model, bid, suggestedLevel1, usedAI } = aiResult.data
 
-  if (!categoryPath || categoryPath.length === 0) {
-    showError('类目路径不完整')
-    return
-  }
-
-  console.log('[旗舰MAX] AI 返回:', {
+  console.log(`%c[旗舰MAX] 📥 后端返回结果 (AI: ${usedAI ? '✅' : '❌'})`, 'background: #4caf50; color: white; padding: 2px 4px; border-radius: 4px;')
+  console.log('[旗舰MAX] 详情:', {
     categoryPath: categoryPath.join(' > '),
     brand,
-    model,
+    model: model || '(未提取)',
     bid
   })
 
@@ -215,24 +212,43 @@ async function handleCategoryPage(draftId: string) {
   const specs = draft.attributes || {}
   const price = draft.price ? parseFloat(draft.price) : undefined
 
-  // ⭐ 品牌清洗：优先使用 specs 中的品牌
+  // ⭐ 品牌清洗：优先使用 AI 提取的品牌（Gemini Pro 更智能），specs 作为兜底
   let finalBrand = ''
-  if (specs && specs['品牌']) {
-    finalBrand = specs['品牌']
-    console.log('[旗舰MAX] 📌 从 specs 获取品牌:', finalBrand)
-  } else if (brand && brand.length <= 10) {
+  if (brand && brand !== '未知' && brand.length <= 15) {
     finalBrand = brand
-    console.log('[旗舰MAX] 📌 从 AI 获取品牌:', finalBrand)
+    console.log('%c[旗舰MAX] 🤖 采用 Gemini 3 Pro 深度分析品牌:', 'color: #4caf50; font-weight: bold; font-size: 12px;', finalBrand)
+  } else if (specs && specs['品牌']) {
+    finalBrand = specs['品牌']
+    console.log('%c[旗舰MAX] ⚠️ AI 品牌未识别，回退至原始抓取品牌:', 'color: #ff9800;', finalBrand)
   }
 
-  // ⭐ 型号清洗：优先使用 specs 中的型号
-  let finalModel = ''
-  if (specs && (specs['型号'] || specs['商品型号'])) {
-    finalModel = specs['型号'] || specs['商品型号']
-    console.log('[旗舰MAX] 📌 从 specs 获取型号:', finalModel)
-  } else if (model) {
-    finalModel = model
-    console.log('[旗舰MAX] 📌 从 AI 获取型号:', finalModel)
+  // ⭐ 型号清洗：极其重要！防止描述性文本或列表被识别为型号
+  const validateModel = (m: string | null | undefined): string | null => {
+    if (!m || m === '未知') return null;
+    const norm = m.trim();
+    // 包含太多分隔符或是包含“适用于”字样的，通通毙掉
+    const sepCount = (norm.match(/[\s\/\\\+,，]/g) || []).length;
+    if (sepCount >= 2 || (sepCount >= 1 && norm.length > 15) || norm.includes('适用')) {
+      console.log(`[旗舰MAX] 🚫 拒绝不合规型号: "${norm}"`);
+      return null;
+    }
+    return norm;
+  };
+
+  let finalModel = validateModel(model);
+  if (finalModel) {
+    console.log('%c[旗舰MAX] 🤖 采用 Gemini 深度清洗型号:', 'color: #4caf50; font-weight: bold; font-size: 12px;', finalModel)
+  } else {
+    // 回退到 specs，但同样需要清洗
+    const rawModel = specs['型号'] || specs['商品型号'];
+    finalModel = validateModel(rawModel);
+    if (finalModel) {
+      console.log('%c[旗舰MAX] ⚠️ AI 无效，但成功清洗原始型号:', 'color: #ff9800;', finalModel)
+    } else {
+      // 如果都洗不出来，先置空，让引擎尝试 title 提取或留给用户
+      finalModel = '';
+      console.warn('[旗舰MAX] ❌ 型号提取彻底失败（全是干扰信息），已置空待手动确认');
+    }
   }
 
   // 5. 构造 TaskContext
@@ -245,8 +261,13 @@ async function handleCategoryPage(draftId: string) {
     specs: specs,
     categoryPath: categoryPath,
     categoryName: categoryPath[categoryPath.length - 1],
+    bid: bid, // ⭐ 这里的 bid 是 AI 分析得到的标项名称，非常关键
     sourceUrl: draft.originalUrl,
-    images: draft.images || []
+    images: draft.images || [],
+    detailImages: draft.detailImages || [], // ⭐ 详情图
+    skuImages: draft.skuImages || {},        // ⭐ SKU图片
+    skuSpecs: draft.skuSpecs || [],          // ⭐ SKU规格
+    skuData: draft.skuData || []             // ⭐ SKU数据
   }
 
   const ctx: TaskContext = {
@@ -299,7 +320,11 @@ async function handlePublishPage(draftId: string) {
     price: draft.price ? parseFloat(draft.price) : undefined,
     specs: specs,
     sourceUrl: draft.originalUrl,
-    images: draft.images || []
+    images: draft.images || [],
+    detailImages: draft.detailImages || [],
+    skuImages: draft.skuImages || {},
+    skuSpecs: draft.skuSpecs || [],
+    skuData: draft.skuData || []
   }
 
   const ctx: TaskContext = {

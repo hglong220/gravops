@@ -6,6 +6,9 @@
  */
 
 import { AutoFillAIEngine, type ProductInfo as AutoFillProductInfo } from './autofill-ai-engine'
+import { VisionBridge } from '../lib/vision-bridge'
+import { fetchWithAuth } from '../utils/api'
+import { KnowledgeEngine } from './knowledge-engine'
 
 // ===================== 类型定义 =====================
 
@@ -18,6 +21,7 @@ export interface ScrapedData {
     specs?: Record<string, string>
     categoryPath?: string[]
     categoryName?: string
+    bid?: string                // ⭐ 标项名称 (重要)
     sourceUrl?: string
     // 图片
     images?: string[]           // 主图 URL 列表
@@ -46,26 +50,12 @@ export interface TaskContext {
     pageUrl: string
     scraped: ScrapedData
     licenseKey?: string
+    // 异步预判结果缓存
+    cachedAttributes?: Record<string, string>
 }
 
 // ===================== 日志系统 =====================
-
-const Logger = {
-    log(...args: any[]) {
-        console.log("[旗舰MAX]", ...args)
-    },
-    section(title: string) {
-        console.log("[旗舰MAX]", "\n" + "═".repeat(60))
-        console.log("[旗舰MAX]", title)
-        console.log("[旗舰MAX]", "═".repeat(60))
-    },
-    warn(...args: any[]) {
-        console.warn("[旗舰MAX]", ...args)
-    },
-    error(...args: any[]) {
-        console.error("[旗舰MAX]", ...args)
-    }
-}
+import { Logger } from "../lib/logger"
 
 // ===================== 工具函数 =====================
 
@@ -286,8 +276,20 @@ const CategorySelectorMax = {
             }
 
             if (!found) {
-                this.log(`✗ 类目选择失败: "${name}"`)
-                return false
+                this.log(`⚠️ Level ${level + 1} 选择器失败，尝试视觉补救...`)
+                const success = await VisionBridge.performTask(
+                    `在第 ${level + 1} 列中点击类目: "${name}"`,
+                    `这是类目选择路径的第 ${level + 1} 步，完整路径是: ${path.join(' > ')}`
+                )
+
+                if (success) {
+                    found = true
+                    this.log(`Level ${level + 1}: ✓ 视觉补救成功`)
+                    await Util.sleep(1000) // 视觉点击后需要更长的等待
+                } else {
+                    this.log(`✗ 类目选择失败: "${name}"`)
+                    return false
+                }
             }
         }
 
@@ -295,6 +297,25 @@ const CategorySelectorMax = {
         this.log("✓ 类目选择完成:", path.join(" > "))
         this.log("════════════════════════════════════════")
         return true
+    },
+
+    getCurrentCategoryId(): string | null {
+        // 尝试从 URL 获取
+        const urlParams = new URLSearchParams(window.location.search)
+        const catId = urlParams.get("categoryId") || urlParams.get("category_id")
+        if (catId) return catId
+
+        // 尝试从已经选择的最后一个节点获取
+        const columns = this.getColumns()
+        if (columns.length > 0) {
+            const lastCol = columns[columns.length - 1]
+            const activeItem = lastCol.querySelector(".is-active, .active, [class*='active']") as HTMLElement
+            if (activeItem) {
+                // 有些页面 ID 存在 data-id 属性中
+                return activeItem.getAttribute("data-id") || activeItem.getAttribute("id") || activeItem.innerText.trim()
+            }
+        }
+        return null
     }
 }
 
@@ -958,29 +979,50 @@ export const FlagshipMax = {
         const projectType = PageDetector.detectProjectType()
         Logger.log("📍 项目类型:", projectType)
 
+        // 1. 初始化基础状态
         const ai: AiCategoryResult = {
             categoryPath: ctx.scraped.categoryPath || [],
             brand: ctx.scraped.brand || '',
             model: ctx.scraped.model || '',
-            bid: ctx.scraped.categoryPath?.[0] || '办公设备',
+            bid: ctx.scraped.bid || ctx.scraped.categoryPath?.[0] || '办公设备',
             attrs: []
         }
+
         Logger.log("📍 类目路径:", ai.categoryPath)
+        Logger.log("📍 标项(Bid):", ai.bid)
         Logger.log("📍 品牌:", ai.brand, "型号:", ai.model)
 
         if (projectType === 'legacy') {
-            await LegacyBidPreflow.run(ai.bid || '办公设备')
+            await LegacyBidPreflow.run(ai.bid)
         }
 
-        const categoryPath = [...ai.categoryPath]
         Logger.log("📍 开始选择类目...")
-        const catOk = await CategorySelectorMax.selectPath(categoryPath)
+        const catOk = await CategorySelectorMax.selectPath(ai.categoryPath)
         Logger.log("📍 类目选择结果:", catOk)
 
         if (!catOk) {
             Logger.warn("❌ 类目选择失败，停止执行")
             return
         }
+
+        // ⭐ 极致提速：异步预判机制
+        // 在类目确认后，立即去服务器查找是否有该商品的填写记录
+        try {
+            const categoryId = CategorySelectorMax.getCurrentCategoryId();
+            if (categoryId && ai.brand && ai.model) {
+                Logger.log(`🔍 [提速预判] 正在检查记录: ${ai.brand} / ${ai.model} ...`)
+                const knowledge = await KnowledgeEngine.queryProductKnowledge(categoryId, ai.brand, ai.model);
+                if (knowledge) {
+                    ctx.cachedAttributes = knowledge;
+                    Logger.log("🚀 [提速预判] 发现历史记录，进入发布页后将开启 [RPA 闪速模式]")
+                } else {
+                    Logger.log("ℹ️ [提速预判] 无历史记录，进入发布页后将开启 [AI 探索模式]")
+                }
+            }
+        } catch (e) {
+            Logger.warn("[提速预判] 异常:", e)
+        }
+
         await Util.sleep(2000)
 
         const isRealAttrPage = () => location.pathname.includes("/goods/publish")
@@ -1007,24 +1049,42 @@ export const FlagshipMax = {
         }
 
         if (!isRealAttrPage()) {
-            Logger.warn("❌ 未进入属性编辑页，停止执行")
-            return
+            Logger.warn("❌ 未进入属性编辑页，尝试视觉补救点击[下一步]")
+            const moved = await VisionBridge.performTask(
+                "点击页面上的蓝色[下一步]按钮",
+                "当前处于类目确认页，由于常规脚本无法进到下一页，需要通过视觉寻找下一步按钮进行跳转"
+            )
+
+            if (moved) {
+                await Util.sleep(3000)
+                if (!isRealAttrPage()) {
+                    Logger.error("❌ 视觉补救后仍未进入属性页，停止执行")
+                    return
+                }
+            } else {
+                Logger.error("❌ 未进入属性编辑页，且视觉补救失败，停止执行")
+                return
+            }
         }
 
         Logger.log("⏳ 等待表单加载...")
         await Util.sleep(3000)
-        Logger.log("✅ 开始填写")
+        await this.fillPublishPage(ctx)
+    },
+
+    /**
+     * 进入发布页后的核心填写逻辑
+     * 实现一键填表、上传主图、详情图、SKU等
+     */
+    async fillPublishPage(ctx: TaskContext): Promise<void> {
+        (window as any).scraped = ctx.scraped;
+        Logger.log("⏳ 等待表单加载...")
+        await Util.sleep(3000)
+        Logger.log("✅ 开始填写发布信息")
 
         let imgs = ctx.scraped.images || []
-        Logger.log("📸 图片数组:", imgs.length, "张", imgs.length > 0 ? imgs[0].substring(0, 50) + "..." : "(空)")
-        if (imgs.length < 5) {
-            Logger.warn("主图不足 5 张，继续执行但可能需要手动补充")
-        }
+        Logger.log("📸 图片数组:", imgs.length, "张")
         if (imgs.length > 15) imgs = imgs.slice(0, 15)
-
-        // ⭐⭐ 暂停并行上传，改为顺序执行 ⭐⭐
-        // 之前: let uploadTask = AutoFillAIEngine.uploadMainImages(imgs)
-        // 现在: 先填表，再上传
 
         const productInfo: AutoFillProductInfo = {
             title: ctx.scraped.title,
@@ -1038,82 +1098,69 @@ export const FlagshipMax = {
             specs: ctx.scraped.specs
         }
 
-        // 1️⃣ 先填写表单
-        Logger.log("📝 步骤1: 开始填写表单...")
-        await AutoFillAIEngine.run(productInfo)
-        Logger.log("✅ 表单填写完成")
+        // 1️⃣ 填写表单（自动分析或使用缓存）
+        Logger.log("📝 步骤1: 开始填写表单属性...")
+        const fillResult = await AutoFillAIEngine.run(productInfo, ctx.cachedAttributes)
+        Logger.log("✅ 表单填写完成", fillResult)
 
-        // 2️⃣ 一键上传全部图片（主图+详情图）
-        // uploadAllImages 会自动处理：前8张作为主图，之后7张作为详情图
-        const allImages = [...imgs, ...(ctx.scraped.detailImages || [])]
-        Logger.log("📸 步骤2: 开始一键上传全部图片...", allImages.length, "张")
-        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(allImages)
+        // ⭐ 知识沉淀
+        if (!ctx.cachedAttributes && fillResult.attributes && Object.keys(fillResult.attributes).length > 0) {
+            try {
+                const categoryId = CategorySelectorMax.getCurrentCategoryId() || "";
+                const categoryPath = ctx.scraped.categoryPath || [];
+                await KnowledgeEngine.saveProductKnowledge(
+                    categoryId,
+                    categoryPath,
+                    ctx.scraped.brand || "",
+                    ctx.scraped.model || "",
+                    fillResult.attributes
+                );
+            } catch (e) {
+                Logger.warn("[知识沉淀] 保存异常:", e);
+            }
+        }
+
+        // 2️⃣ 一键上传全部图片
+        // 如果没有详情图，就用主图作为详情图（兜底逻辑）
+        const finalDetailImages = (ctx.scraped.detailImages && ctx.scraped.detailImages.length > 0)
+            ? ctx.scraped.detailImages
+            : imgs;
+
+        const allImages = [...imgs, ...finalDetailImages];
+        // 限制总量防止无限负荷
+        const limitedImages = allImages.slice(0, 30);
+
+        Logger.log("📸 步骤2: 开始一键上传全部图片 (主图+详情图)...", imgs.length + (ctx.scraped.detailImages?.length || 0), "张")
+        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(imgs, ctx.scraped.detailImages || [])
         Logger.log(`✅ 图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
 
-        // 4️⃣ 上传 SKU 图片
+        // 3️⃣ SKU 图片
         if (ctx.scraped.skuImages && Object.keys(ctx.scraped.skuImages).length) {
-            Logger.log("🏷 步骤4: 开始上传 SKU 图片...")
+            Logger.log("🏷 步骤3: 开始上传 SKU 图片...")
             await AutoFillAIEngine.uploadSKUImages(ctx.scraped.skuImages)
-            Logger.log("✅ SKU 图片上传完成")
         }
 
-        // 5️⃣ 填写 SKU 规格
+        // 4️⃣ SKU 规格与数据
         if (ctx.scraped.skuSpecs?.length) {
-            Logger.log("🧩 步骤5: 填写 SKU 规格...")
+            Logger.log("🧩 步骤4: 填写 SKU 规格...")
             await AutoFillAIEngine.fillSkuSpecs(ctx.scraped.skuSpecs)
         }
-
-        // 6️⃣ 填写 SKU 数据
         if (ctx.scraped.skuData?.length) {
-            Logger.log("🧩 步骤6: 填写 SKU 数据...")
+            Logger.log("🧩 步骤5: 填写 SKU 数据...")
             await AutoFillAIEngine.fillSKUData(ctx.scraped.skuData)
         }
 
-        // 7️⃣ 填写产地
+        // 5️⃣ 辅助填写
         try {
-            Logger.log("🌍 步骤7: 填写产地...")
             await AutoFillAIEngine.fillOrigin(ctx.scraped)
+            await AutoFillAIEngine.fillPriceAndStock(ctx.scraped)
         } catch { }
 
-        // 8️⃣ 填写价格/库存
-        try {
-            Logger.log("💰 步骤8: 填写价格/库存...")
-            await AutoFillAIEngine.fillPriceAndStock(ctx.scraped)
-        } catch (e) {
-            Logger.warn("价格/库存填写失败:", e)
-        }
-
-        // ⚠️ 自动提交已禁用（调试中）
-        // 填表完成后请手动检查并点击提交
-        Logger.section("✅ 旗舰 MAX：填写完成，请手动检查后提交")
-
-        // 如需恢复自动提交，取消下面的注释
-        // if (location.pathname.includes("/goods/publish")) {
-        //     const submitOk = await Clicker.clickButton("提交")
-        //     if (!submitOk) {
-        //         await Clicker.clickButton("保存") || await Clicker.clickButton("发布")
-        //     }
-        // } else {
-        //     await Clicker.clickButton("下一步")
-        // }
+        Logger.section("✅ 旗舰 MAX：全部信息填写完成")
     },
 
     async runOnPublishPage(ctx: TaskContext): Promise<void> {
-        (window as any).scraped = ctx.scraped;
-
-        const productInfo: AutoFillProductInfo = {
-            title: ctx.scraped.title,
-            brand: ctx.scraped.brand,
-            model: ctx.scraped.model,
-            sku: ctx.scraped.model,
-            sourceUrl: ctx.scraped.sourceUrl,
-            unit: ctx.scraped.specs?.['计量单位'],
-            stock: ctx.scraped.stock,
-            specs: ctx.scraped.specs
-        }
-        await AutoFillAIEngine.run(productInfo)
-
-        Logger.section("✅ 旗舰 MAX：发布页填写完成")
+        await this.fillPublishPage(ctx)
     }
 }
 

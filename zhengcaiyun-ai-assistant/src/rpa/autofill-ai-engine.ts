@@ -1,5 +1,8 @@
 ﻿// ===================== AutoFill AI Engine =====================
 // 扫描字段 → 生成schema → 调AI/规则引擎 → 按plan自动填写
+import { VisionBridge } from "../lib/vision-bridge"
+import { apiProxy } from "../utils/api-proxy"
+import { getStoredLicense } from "../utils/license"
 
 // 工具函数
 function dispatchInputLikeEvents(el: HTMLElement) {
@@ -152,7 +155,7 @@ function getBrandCompanyInfo(brand: string): BrandCompanyInfo | null {
 
     // 默认使用浙江宁波（政采云大本营）
     return {
-        companyName: `${cleanBrand}科技有限公司`,
+        companyName: `${cleanBrand} 科技有限公司`,
         province: "浙江省",
         city: "宁波市",
         district: "镇海区",
@@ -170,7 +173,7 @@ async function fetchBrandCompanyInfo(brand: string): Promise<BrandCompanyInfo | 
     if (!BACKEND_URL) return null
 
     try {
-        const response = await fetch(`${BACKEND_URL}/api/brand-company?brand=${encodeURIComponent(brand)}`, {
+        const response = await fetch(`${BACKEND_URL} /api/brand - company ? brand = ${encodeURIComponent(brand)} `, {
             signal: AbortSignal.timeout(2000)
         })
 
@@ -196,6 +199,26 @@ async function fetchBrandCompanyInfo(brand: string): Promise<BrandCompanyInfo | 
 // ===================== AutoFill AI Engine =====================
 
 export const AutoFillAIEngine = {
+    /** 
+     * 获取后端 URL（支持缓存）
+     */
+    async getBackendUrl(): Promise<string> {
+        // 优先从 window 获取（如果由 content script 注入过）
+        if ((window as any).PLASMO_PUBLIC_BACKEND_URL) {
+            return (window as any).PLASMO_PUBLIC_BACKEND_URL;
+        }
+
+        // 其次尝试从 chrome.storage 获取
+        return new Promise(resolve => {
+            chrome.storage.local.get(['apiUrl'], result => {
+                const url = result.apiUrl || process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+                // 存入 window 下次直取
+                (window as any).PLASMO_PUBLIC_BACKEND_URL = url;
+                resolve(url);
+            });
+        });
+    },
+
     log(...args: any[]) {
         console.log("[AUTO_FILL_AI]", ...args)
     },
@@ -277,7 +300,7 @@ export const AutoFillAIEngine = {
      */
     async fillSearchableDropdown(fieldLabel: string, value: string): Promise<boolean> {
         if (!value) {
-            this.warn(`[${fieldLabel}] 值为空，跳过`)
+            this.warn(`[${fieldLabel}]值为空，跳过`)
             return false
         }
 
@@ -293,27 +316,27 @@ export const AutoFillAIEngine = {
         }
 
         if (!targetRow) {
-            this.warn(`[${fieldLabel}] 未找到字段，尝试全局搜索...`)
+            this.warn(`[${fieldLabel}]未找到字段，尝试全局搜索...`)
             // 尝试用 placeholder 搜索
-            const input = document.querySelector(`input[placeholder*="${fieldLabel}"], input[placeholder*="${fieldLabel === '品牌' ? '请选择' : '请输入'}"]`) as HTMLInputElement
+            const input = document.querySelector(`input[placeholder *= "${fieldLabel}"], input[placeholder *= "${fieldLabel === '品牌' ? '请选择' : '请输入'}"]`) as HTMLInputElement
             if (input) {
                 targetRow = input.closest('.doraemon-form-item, .el-form-item') as HTMLElement
             }
         }
 
         if (!targetRow) {
-            this.warn(`[${fieldLabel}] 未找到字段行`)
+            this.warn(`[${fieldLabel}]未找到字段行`)
             return false
         }
 
         // 2. 找到输入框
         const input = targetRow.querySelector('input:not([type="hidden"]):not([type="file"])') as HTMLInputElement
         if (!input) {
-            this.warn(`[${fieldLabel}] 未找到输入框`)
+            this.warn(`[${fieldLabel}]未找到输入框`)
             return false
         }
 
-        this.log(`[${fieldLabel}] 找到输入框:`, input.placeholder)
+        this.log(`[${fieldLabel}]找到输入框: `, input.placeholder)
 
         // 3. 点击激活输入框
         input.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -334,7 +357,7 @@ export const AutoFillAIEngine = {
         input.dispatchEvent(new Event('change', { bubbles: true }))
         input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }))
 
-        this.log(`[${fieldLabel}] 已输入: ${value}，等待下拉列表...`)
+        this.log(`[${fieldLabel}]已输入: ${value}，等待下拉列表...`)
         await sleep(800)  // 等待搜索结果加载
 
         // 5. 等待下拉列表出现并点击匹配项
@@ -353,7 +376,7 @@ export const AutoFillAIEngine = {
                 // 模糊匹配：选项包含输入值，或输入值包含选项
                 if (itemText && (itemText.includes(value) || value.includes(itemText) ||
                     itemText.toUpperCase().includes(value.toUpperCase()))) {
-                    this.log(`[${fieldLabel}] ✓ 找到匹配项: ${itemText}`)
+                    this.log(`[${fieldLabel}] ✓ 找到匹配项: ${itemText} `)
                         ; (item as HTMLElement).click()
                     clicked = true
                     break
@@ -372,7 +395,7 @@ export const AutoFillAIEngine = {
             ) as HTMLElement
 
             if (firstOption && firstOption.innerText.trim()) {
-                this.log(`[${fieldLabel}] ⚠️ 未找到精确匹配，选择第一个选项: ${firstOption.innerText.trim()}`)
+                this.log(`[${fieldLabel}] ⚠️ 未找到精确匹配，选择第一个选项: ${firstOption.innerText.trim()} `)
                 firstOption.click()
                 clicked = true
             }
@@ -401,7 +424,7 @@ export const AutoFillAIEngine = {
         const modelOk = await this.fillModel(model)
 
         this.log("🎯 ========== 品牌/型号填写完成 ==========")
-        this.log(`   品牌: ${brandOk ? '✓' : '✗'} | 型号: ${modelOk ? '✓' : '✗'}`)
+        this.log(`   品牌: ${brandOk ? '✓' : '✗'} | 型号: ${modelOk ? '✓' : '✗'} `)
 
         return { brandOk, modelOk }
     },
@@ -534,24 +557,30 @@ export const AutoFillAIEngine = {
             const selectRoot =
                 row.querySelector(".el-select") ||
                 row.querySelector(".doraemon-select") ||
-                row.querySelector("[class*='select']")
+                row.querySelector("[class*='select']") ||
+                row.querySelector(".ant-select")
 
             // Radio 类型（单选）
             const radioGroup =
                 row.querySelector(".el-radio-group") ||
                 row.querySelector(".doraemon-radio-group") ||
-                row.querySelector("[class*='radio-group']")
+                row.querySelector("[class*='radio-group']") ||
+                row.querySelector(".ant-radio-group") ||
+                row.querySelector(".el-radio") || // 直接有 radio 也可以
+                row.querySelector(".doraemon-radio")
 
             // Checkbox 类型（多选）
             const checkboxGroup =
                 row.querySelector(".el-checkbox-group") ||
                 row.querySelector(".doraemon-checkbox-group") ||
-                row.querySelector("[class*='checkbox-group']")
+                row.querySelector("[class*='checkbox-group']") ||
+                row.querySelector(".ant-checkbox-group")
 
             // Cascader 类型（级联选择器，如产地）
             const cascader =
                 row.querySelector(".el-cascader") ||
-                row.querySelector(".doraemon-cascader-picker")
+                row.querySelector(".doraemon-cascader-picker") ||
+                row.querySelector(".ant-cascader-picker")
 
             const textarea = row.querySelector("textarea")
             const input = row.querySelector("input:not([type='hidden']):not([type='radio']):not([type='checkbox'])")
@@ -664,7 +693,7 @@ export const AutoFillAIEngine = {
         // ⭐⭐ 输出所有必填字段详情（调试用）⭐⭐
         this.log("📋 必填字段列表:")
         fields.filter(f => f.required).forEach((f, i) => {
-            this.log(`  [${i + 1}] ${f.label} (${f.controlType})${f.optionsPreview.length ? ' 选项:' + f.optionsPreview.slice(0, 3).join('/') : ''}`)
+            this.log(`  [${i + 1}] ${f.label} (${f.controlType})${f.optionsPreview.length ? ' 选项:' + f.optionsPreview.slice(0, 3).join('/') : ''} `)
         })
 
         return fields
@@ -755,7 +784,7 @@ export const AutoFillAIEngine = {
                     (brand ? brand + "集团有限公司" : "")  // 最后兜底
 
                 plan = { id: f.id, action: "input", value: companyName }
-                this.log(`🏭 制造商：${brand} -> ${companyName}`)
+                this.log(`🏭 制造商：${brand} -> ${companyName} `)
             }
             // 制造商规模
             else if (/制造商规模/.test(l)) {
@@ -834,7 +863,7 @@ export const AutoFillAIEngine = {
                     else {
                         unit = "件"
                     }
-                    this.log(`📏 计量单位智能推断：${title.substring(0, 20)}... -> ${unit}`)
+                    this.log(`📏 计量单位智能推断：${title.substring(0, 20)}... -> ${unit} `)
                 }
 
                 plan = { id: f.id, action: "select", value: unit || "件" }
@@ -918,7 +947,7 @@ export const AutoFillAIEngine = {
                     else if (options.includes("否")) bestOption = "否"
 
                     plan = { id: f.id, action: "select", value: bestOption }
-                    this.log(`📝 智能选择：${l} -> ${bestOption}`)
+                    this.log(`📝 智能选择：${l} -> ${bestOption} `)
                 }
                 // 3. 如果是 input 类型，尝试从 specs 模糊匹配
                 else if (f.controlType === "input") {
@@ -926,7 +955,7 @@ export const AutoFillAIEngine = {
                     for (const key of Object.keys(specs)) {
                         if (key.includes(l) || l.includes(key)) {
                             plan = { id: f.id, action: "input", value: specs[key] }
-                            this.log(`📝 智能匹配 specs：${l} -> ${key} = ${specs[key]}`)
+                            this.log(`📝 智能匹配 specs：${l} -> ${key} = ${specs[key]} `)
                             break
                         }
                     }
@@ -975,7 +1004,7 @@ export const AutoFillAIEngine = {
 
                     if (specsValue) {
                         plan = { id: field.id, action: "input", value: specsValue }
-                        this.log(`📝 specs匹配：${field.label} -> ${specsValue}`)
+                        this.log(`📝 specs匹配：${field.label} -> ${specsValue} `)
                     }
                     // 2. 有选项就智能选择
                     else if (field.optionsPreview?.length > 0) {
@@ -989,7 +1018,7 @@ export const AutoFillAIEngine = {
                         else if (opts.includes("中型企业")) best = "中型企业"
 
                         plan = { id: field.id, action: "select", value: best }
-                        this.log(`🎯 智能选择：${field.label} -> ${best}`)
+                        this.log(`🎯 智能选择：${field.label} -> ${best} `)
                     }
                     else {
                         this.log("跳过（无值无选项）：", field.label)
@@ -1010,7 +1039,7 @@ export const AutoFillAIEngine = {
             try {
                 // ⭐ searchAndClick: 品牌/型号等带搜索的下拉框（AI 返回的 action）
                 if (plan.action === 'searchAndClick' && plan.value) {
-                    this.log(`🔍 执行 searchAndClick: ${field.label} = ${plan.value}`)
+                    this.log(`🔍 执行 searchAndClick: ${field.label} = ${plan.value} `)
                     const ok = await this.fillSearchableDropdown(field.label, plan.value)
                     if (ok) success++
                     else fail++
@@ -1057,7 +1086,7 @@ export const AutoFillAIEngine = {
                 })
 
                 if (suggestion && suggestion.value) {
-                    this.log(`🤖 AI 建议：${field.label} -> ${suggestion.value}`)
+                    this.log(`🤖 AI 建议：${field.label} -> ${suggestion.value} `)
                     // 使用 AI 建议值替换原值
                     plan.value = suggestion.value
                 }
@@ -1322,15 +1351,38 @@ export const AutoFillAIEngine = {
             return hit > 0
         }
 
-        this.warn("未知控件类型：", field.label, controlType)
+        // 如果到这里还是未知，最后兜底尝试
+        const firstInput = row.querySelector("input:not([type='hidden'])") as HTMLInputElement
+        if (firstInput) {
+            this.log("⚠️ 未知类型但找到输入框，尝试填写:", field.label)
+            firstInput.value = value
+            dispatchInputLikeEvents(firstInput)
+            return true
+        }
+
+        const firstRadio = row.querySelector(".el-radio, .doraemon-radio-wrapper, .ant-radio-wrapper") as HTMLElement
+        if (firstRadio) {
+            this.log("⚠️ 未知类型但找到 Radio，尝试点击第一个匹配项:", field.label)
+            const radios = row.querySelectorAll(".el-radio, .doraemon-radio-wrapper, .ant-radio-wrapper")
+            const target = Array.from(radios).find(r => (r as HTMLElement).innerText.includes(value)) as HTMLElement
+            if (target) {
+                target.click()
+                return true
+            }
+        }
+
+        this.warn("未知控件类型且无法兜底：", field.label, controlType)
         return false
     },
 
     // ===================== 4. 调用后端AI获取填写计划 =====================
     async fetchAIPlan(productInfo: ProductInfo, fields: FieldSchema[]): Promise<FillPlan[] | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        const BACKEND_URL = await this.getBackendUrl();
 
-        if (!BACKEND_URL) return null
+        if (!BACKEND_URL) {
+            this.warn("⚠️ [AI] 无法获取 BACKEND_URL，跳过 AI 分析");
+            return null
+        }
 
         // 只发送必填项给 AI，减少处理量
         const requiredFields = fields.filter(f => f.required)
@@ -1339,14 +1391,14 @@ export const AutoFillAIEngine = {
             this.log("调用后端 AI 获取填写计划...", BACKEND_URL)
             this.log("总字段:", fields.length, "必填项:", requiredFields.length)
 
-            // 增加到 30 秒超时
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 30000)
-
-            const response = await fetch(`${BACKEND_URL}/api/autofill-plan`, {
+            const license = await getStoredLicense();
+            const response = await apiProxy(`${BACKEND_URL}/api/autofill-plan`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${license?.licenseKey || ''}`
+                },
+                body: {
                     productInfo,
                     fields: requiredFields.map(f => ({
                         id: f.id,
@@ -1355,18 +1407,15 @@ export const AutoFillAIEngine = {
                         controlType: f.controlType,
                         optionsPreview: f.optionsPreview
                     }))
-                }),
-                signal: controller.signal
+                }
             })
 
-            clearTimeout(timeoutId)
-
             if (!response.ok) {
-                this.warn("AI API 返回错误:", response.status)
+                this.warn("AI API 返回错误:", response.status, response.error)
                 return null
             }
 
-            const data = await response.json()
+            const data = response.data
             if (data.plans && Array.isArray(data.plans)) {
                 this.log("✅ AI 返回计划:", data.plans.filter((p: FillPlan) => p.action !== 'skip').length, "个")
                 return data.plans
@@ -1422,9 +1471,11 @@ export const AutoFillAIEngine = {
     },
 
     // ===================== 5. 主入口（混合模式） =====================
-    async run(productInfo: ProductInfo): Promise<{ success: number; fail: number }> {
+    // ===================== 5. 主入口（混合模式） =====================
+    async run(productInfo: ProductInfo, cachedAttributes?: Record<string, string>): Promise<{ success: number; fail: number; attributes?: Record<string, string> }> {
         this.log("🚀 AutoFill AI Engine 启动，商品：", productInfo.title)
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        const BACKEND_URL = await this.getBackendUrl();
+        this.log("🛰️ 后端地址:", BACKEND_URL);
 
         // 1. 扫描字段（使用最终版三轮扫描）
         let fields = await this.scanFields()
@@ -1440,87 +1491,122 @@ export const AutoFillAIEngine = {
             fields = fields.map(f => ({ ...f, required: true }))
         }
 
-        // ========== 混合模式：先查询规则库 ==========
+        // 结果字典，用于返回本次填写的最终内容
+        const filledAttributes: Record<string, string> = {}
+
+        // ========== 情况一：RPA 闪速模式 (如果有缓存记录) ==========
         let plans: FillPlan[] = []
-        let unmatchedFields: FieldSchema[] = []
-
-        if (BACKEND_URL) {
-            try {
-                this.log("📚 查询规则库...")
-                const matchResult = await this.matchFieldRules(fields.filter(f => f.required))
-
-                if (matchResult) {
-                    // 从规则库匹配到的字段
-                    for (const result of matchResult.results) {
-                        if (result.matched && result.rule) {
-                            plans.push({
-                                id: result.fieldId,
-                                action: result.rule.action,
-                                value: result.rule.value
-                            })
-                        }
-                    }
-
-                    // 未匹配的字段
-                    unmatchedFields = fields.filter(f =>
-                        matchResult.unmatchedFields.some((u: { id: string }) => u.id === f.id)
-                    )
-
-                    this.log(`📚 规则库匹配: ${matchResult.matched} 个已知, ${matchResult.unmatched} 个未知`)
+        if (cachedAttributes) {
+            this.log("🚀 [RPA 闪速模式] 正在应用缓存数据...")
+            for (const field of fields) {
+                // 根据 label 精确匹配缓存中的键
+                if (cachedAttributes[field.label]) {
+                    plans.push({
+                        id: field.id,
+                        action: field.controlType === 'input' ? 'input' : 'select',
+                        value: cachedAttributes[field.label]
+                    })
+                    filledAttributes[field.label] = cachedAttributes[field.label]
                 }
-            } catch (e) {
-                this.warn("规则库查询失败，使用本地规则引擎:", e)
             }
+            this.log(`🚀[RPA 闪速模式] 已从缓存加载 ${plans.length} 个字段方案`)
         }
 
-        // ========== 处理未匹配的字段 ==========
-        if (unmatchedFields.length > 0 && BACKEND_URL) {
-            this.log(`🤖 调用 AI 处理 ${unmatchedFields.length} 个未知字段...`)
-
-            try {
-                // 调用 AI 获取填写计划
-                const aiPlans = await this.fetchAIPlan(productInfo, unmatchedFields)
-
-                if (aiPlans && aiPlans.length > 0) {
-                    // 合并 AI 计划
-                    plans = [...plans, ...aiPlans]
-
-                    // ⭐ 将 AI 生成的规则收录到规则库
-                    await this.saveAIRulesToLibrary(unmatchedFields, aiPlans)
-                }
-            } catch (e) {
-                this.warn("AI 调用失败，使用本地规则引擎:", e)
-            }
-        }
-
-        // ========== 兜底：使用本地规则引擎处理剩余字段 ==========
+        // ========== 情况二：混合模式 (如果缓存没覆盖全部必填项) ==========
         const coveredIds = new Set(plans.map(p => p.id))
         const remainingFields = fields.filter(f => f.required && !coveredIds.has(f.id))
 
         if (remainingFields.length > 0) {
-            this.log(`📋 本地规则引擎处理 ${remainingFields.length} 个剩余字段`)
-            const localPlans = this.generatePlan(productInfo, remainingFields)
-            plans = [...plans, ...localPlans]
+            this.log(`📋 处理 ${remainingFields.length} 个非缓存 / 剩余必填字段`)
+
+            let unmatchedFields: FieldSchema[] = remainingFields
+
+            // 1. 如果有规则库，尝试查询
+            if (BACKEND_URL) {
+                try {
+                    this.log("📚 查询规则库...")
+                    const matchResult = await this.matchFieldRules(remainingFields)
+                    if (matchResult) {
+                        for (const result of matchResult.results) {
+                            if (result.matched && result.rule) {
+                                plans.push({
+                                    id: result.fieldId,
+                                    action: result.rule.action,
+                                    value: result.rule.value
+                                })
+                                // 提取 label 供沉淀使用
+                                const f = fields.find(i => i.id === result.fieldId)
+                                if (f) filledAttributes[f.label] = result.rule.value
+                            }
+                        }
+                        unmatchedFields = remainingFields.filter(f =>
+                            matchResult.unmatchedFields.some((u: { id: string }) => u.id === f.id)
+                        )
+                    }
+                } catch (e) {
+                    this.warn("规则库查询失败:", e)
+                }
+            }
+
+            // 2. 如果还有未知字段，调用 AI (Browser-use 视觉模式的核心：智能补全)
+            if (unmatchedFields.length > 0 && BACKEND_URL) {
+                this.log(`🤖 调用 AI 处理 ${unmatchedFields.length} 个未知字段...`)
+                try {
+                    const aiPlans = await this.fetchAIPlan(productInfo, unmatchedFields)
+                    if (aiPlans && aiPlans.length > 0) {
+                        plans = [...plans, ...aiPlans]
+                        // 将 AI 的决定加入已填充列表
+                        for (const p of aiPlans) {
+                            const f = fields.find(i => i.id === p.id)
+                            if (f) filledAttributes[f.label] = p.value
+                        }
+                        await this.saveAIRulesToLibrary(unmatchedFields, aiPlans)
+                    }
+                } catch (e) {
+                    this.warn("AI 分析失败:", e)
+                }
+            }
+
+            // 3. 兜底：本地规则引擎
+            const finalCoveredIds = new Set(plans.map(p => p.id))
+            const lastFields = remainingFields.filter(f => !finalCoveredIds.has(f.id))
+            if (lastFields.length > 0) {
+                const localPlans = this.generatePlan(productInfo, lastFields)
+                plans = [...plans, ...localPlans]
+                for (const p of localPlans) {
+                    const f = fields.find(i => i.id === p.id)
+                    if (f) filledAttributes[f.label] = p.value
+                }
+            }
         }
 
-        this.log("📋 最终计划：", plans.filter(p => p.action !== 'skip').length, "个")
+        this.log("📋 最终执行计划：", plans.filter(p => p.action !== 'skip').length, "个")
 
-        // 3. 执行计划（传递 productInfo 用于规则引擎兜底）
-        const result = await this.applyPlan(fields, plans, productInfo)
-        this.log("🎉 AutoFill AI Engine 完成：", result)
-        return result
+        // 3. 执行物理点击/填写
+        const fillResult = await this.applyPlan(fields, plans, productInfo)
+
+        this.log("🎉 AutoFill AI Engine 完成：", fillResult)
+
+        return {
+            ...fillResult,
+            attributes: filledAttributes // 返回本次实际填充的属性字典，供 KnowledgeEngine 沉淀
+        }
     },
 
     // ===================== 5.1 查询规则库 =====================
     async matchFieldRules(fields: FieldSchema[]): Promise<any | null> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
-        if (!BACKEND_URL) return null
+        const BACKEND_URL = await this.getBackendUrl();
+        if (!BACKEND_URL) return null;
 
         try {
-            const response = await fetch(`${BACKEND_URL}/api/field-rules/match`, {
+            const license = await getStoredLicense();
+            const response = await apiProxy(`${BACKEND_URL}/api/field-rules/match`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${license?.licenseKey || ''}`
+                },
+                body: {
                     fields: fields.map(f => ({
                         id: f.id,
                         label: f.label,
@@ -1528,50 +1614,38 @@ export const AutoFillAIEngine = {
                         required: f.required,
                         optionsPreview: f.optionsPreview
                     }))
-                })
+                }
             })
 
             if (!response.ok) {
-                this.warn("规则库 API 返回错误:", response.status)
+                this.warn("规则库 API 返回错误:", response.status, response.error)
                 return null
             }
 
-            return await response.json()
+            return response.data
         } catch (error) {
             this.warn("规则库 API 调用失败:", error)
             return null
         }
     },
 
-    // ===================== 5.2 将 AI 规则收录到规则库 =====================
     async saveAIRulesToLibrary(fields: FieldSchema[], plans: FillPlan[]): Promise<void> {
-        const BACKEND_URL = (window as any).PLASMO_PUBLIC_BACKEND_URL || ''
+        const BACKEND_URL = await this.getBackendUrl();
         if (!BACKEND_URL) return
 
-        for (const plan of plans) {
-            if (plan.action === 'skip' || !plan.value) continue
-
-            const field = fields.find(f => f.id === plan.id)
-            if (!field) continue
-
-            try {
-                await fetch(`${BACKEND_URL}/api/field-rules`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        label: field.label.replace(/^[*＊\s]+/, '').replace(/[:：\s]+$/, '').trim(),
-                        controlType: field.controlType,
-                        action: plan.action,
-                        value: plan.value,
-                        priority: 50, // AI 生成的规则优先级较低
-                        source: 'ai',
-                        category: '自动收录'
-                    })
-                })
-                this.log(`📥 规则已收录: ${field.label} = ${plan.value}`)
-            } catch (e) {
-                this.warn(`规则收录失败: ${field.label}`, e)
-            }
+        try {
+            const license = await getStoredLicense();
+            await apiProxy(`${BACKEND_URL}/api/field-rules/save-ai`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${license?.licenseKey || ''}`
+                },
+                body: { fields, plans }
+            });
+            this.log(`✅ 已向后端同步 ${plans.length} 条 AI 填写建议`)
+        } catch (e) {
+            this.warn("沉淀 AI 规则失败:", e)
         }
     },
 
@@ -1753,7 +1827,7 @@ export const AutoFillAIEngine = {
                     const scale = Math.max(scaleX, scaleY)
                     newWidth = Math.ceil(width * scale)
                     newHeight = Math.ceil(height * scale)
-                    this.log(`📐 图片放大: ${width}x${height} → ${newWidth}x${newHeight}`)
+                    this.log(`📐 图片放大: ${width}x${height} → ${newWidth}x${newHeight} `)
                 } else {
                     // 即使尺寸达标，也强制重新编码（解决格式问题）
                     this.log(`🔄 图片重新编码: ${width}x${height} (强制转换为标准JPEG)`)
@@ -1821,7 +1895,7 @@ export const AutoFillAIEngine = {
 
     // 上传单张图片到素材库（弹窗必须已打开）
     async uploadSingleImageToMaterial(url: string, index: number): Promise<boolean> {
-        this.log(`[IMG] 上传图片 ${index + 1}:`, url.substring(0, 60));
+        this.log(`[IMG] 上传图片 ${index + 1}: `, url.substring(0, 60));
 
         try {
             // 找弹窗
@@ -1850,7 +1924,7 @@ export const AutoFillAIEngine = {
             inp.files = dt.files;
             inp.dispatchEvent(new Event('change', { bubbles: true }));
 
-            this.log(`[IMG] 已注入文件 ${index + 1}`);
+            this.log(`[IMG] 已注入文件 ${index + 1} `);
 
             // 等待上传完成
             for (let wait = 0; wait < 30; wait++) {
@@ -1864,22 +1938,22 @@ export const AutoFillAIEngine = {
                 // 检测错误
                 const errorTip = document.querySelector('.ant-message-error, .doraemon-message-error');
                 if (errorTip) {
-                    this.warn(`[IMG] 上传出错 ${index + 1}: ${errorTip.textContent}`);
+                    this.warn(`[IMG] 上传出错 ${index + 1}: ${errorTip.textContent} `);
                     return false;
                 }
             }
 
-            this.warn(`[IMG] 上传超时 ${index + 1}`);
+            this.warn(`[IMG] 上传超时 ${index + 1} `);
             return false;
         } catch (e) {
-            this.warn(`[IMG] 上传异常 ${index + 1}:`, e);
+            this.warn(`[IMG] 上传异常 ${index + 1}: `, e);
             return false;
         }
     },
 
     // 选择素材库中指定范围的图片（多选）
     async selectImagesInRange(startIndex: number, endIndex: number, useTail = false): Promise<number> {
-        this.log(`[IMG] 选择图片范围: ${startIndex + 1} ~ ${endIndex}${useTail ? " (尾部优先)" : ""}`);
+        this.log(`[IMG] 选择图片范围: ${startIndex + 1} ~${endIndex}${useTail ? " (尾部优先)" : ""} `);
 
         const modal = document.querySelector('.doraemon-modal') || document;
         const items = modal.querySelectorAll(
@@ -2074,21 +2148,51 @@ export const AutoFillAIEngine = {
         for (const selector of buttonSelectors) {
             const btn = document.querySelector(selector) as HTMLElement;
             if (btn) {
-                this.log(`[DETAIL_IMG] 找到按钮: ${selector}`);
+                this.log(`[DETAIL_IMG] 找到按钮: ${selector} (tagName: ${btn.tagName})`);
+                btn.scrollIntoView({ behavior: "smooth", block: "center" });
+                await sleep(200);
+
+                // 尝试多种点击方式
                 btn.click();
+                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
                 clicked = true;
-                this.log("[DETAIL_IMG] 已点击上传按钮，等待弹窗...");
+                this.log("[DETAIL_IMG] 已触发上传按钮点击事件，等待弹窗...");
                 break;
             }
         }
 
         if (!clicked) {
-            this.warn("[DETAIL_IMG] 未找到详情图上传按钮");
+            this.warn("[DETAIL_IMG] 未找到详情图上传按钮，尝试【Gemini 视觉 AI】定位...");
+        } else {
+            // 虽然点击了，但也要检查弹窗是否成功打开
+            this.log("[DETAIL_IMG] 已触发点击，等待弹窗加载...");
+            for (let i = 0; i < 20; i++) {
+                const modal = document.querySelector(".doraemon-modal, .ant-modal") as HTMLElement | null;
+                if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
+                    await sleep(300);
+                    return modal;
+                }
+                await sleep(100);
+            }
+            this.warn("[DETAIL_IMG] 常规点击后弹窗未出现，启动【Gemini 视觉 AI】补救...");
+        }
+
+        // ⭐ 视觉补救：直接让 Vision Agent 去找那个图标并点击
+        const visionOk = await VisionBridge.performTask(
+            "点击编辑器工具栏上的'图片'或'单图上传'图标",
+            "当前处于详情图编辑区，由于按钮尝试点击无效或未找到，需要通过视觉识别工具栏上的上传图标（通常是一个山峰太阳或相框图标）"
+        );
+
+        if (!visionOk) {
+            this.warn("[DETAIL_IMG] 视觉 AI 定位失败");
             return null;
         }
 
-        // 等待弹窗出现
-        for (let i = 0; i < 50; i++) {
+        this.log("[DETAIL_IMG] 视觉 AI 定位并点击成功，进行最后等待...");
+        // 视觉点击后最后等待一次弹窗
+        for (let i = 0; i < 30; i++) {
             const modal = document.querySelector(".doraemon-modal, .ant-modal") as HTMLElement | null;
             if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
                 await sleep(300);
@@ -2097,7 +2201,7 @@ export const AutoFillAIEngine = {
             await sleep(100);
         }
 
-        this.warn("[DETAIL_IMG] 弹窗等待超时");
+        this.warn("[DETAIL_IMG] 视觉点击后仍然未检测到弹窗");
         return null;
     },
 
@@ -2105,11 +2209,20 @@ export const AutoFillAIEngine = {
     async uploadDetailImages(imageUrls: string[], skipCount = 0): Promise<number> {
         this.log("[DETAIL_IMG] 开始上传详情图...");
 
-        // 取跳过主图后的所有图片作为详情图（不再限制 7 张）
-        const detailUrls = imageUrls.slice(skipCount);
-        this.log(`[DETAIL_IMG] 详情图数量: ${detailUrls.length} 张（跳过主图 ${skipCount} 张）`);
+        // 过滤图片：确保是有效的 URL 且不是超长字符串（除非是 data:image）
+        const detailUrls = imageUrls.slice(skipCount).filter(url => {
+            if (typeof url !== 'string') return false;
+            if (url.startsWith('data:image')) return url.length < 5000000; // 5MB 限制
+            if (url.length > 1000) return false; // 排除超长的普通 URL
+            if (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('//')) {
+                return true;
+            }
+            return false;
+        });
+
+        this.log(`[DETAIL_IMG] 详情图数量: ${detailUrls.length} 张（跳过主图 ${skipCount} 张，原始总计 ${imageUrls.length}）`);
         if (!detailUrls.length) {
-            this.log("[DETAIL_IMG] 无详情图需要上传");
+            this.log("[DETAIL_IMG] 无有效详情图需要上传");
             return 0;
         }
 
@@ -2141,7 +2254,7 @@ export const AutoFillAIEngine = {
             ).length;
         const beforeCount = countThumbs();
 
-        // 一次性注入 7 张（避免点击位移）
+        // 一次性注入图片
         const dt = new DataTransfer();
         for (let i = 0; i < detailUrls.length; i++) {
             const file = await this.urlToFile(detailUrls[i], `detail_${i + 1}.jpg`);
@@ -2170,14 +2283,6 @@ export const AutoFillAIEngine = {
                 if (!stillThere || modal.style.display === "none") break;
                 await sleep(300);
             }
-            // 若未关闭，重试一次点击
-            if (document.contains(modal)) {
-                okBtn.click();
-                this.log("[DETAIL_IMG] 弹窗未关闭，重试点击确定");
-                await sleep(500);
-            }
-        } else {
-            this.warn("[DETAIL_IMG] 未找到确定按钮");
         }
 
         this.log(`[DETAIL_IMG] 详情图上传完成: ${detailUrls.length} 张`);
@@ -2186,17 +2291,21 @@ export const AutoFillAIEngine = {
     },
 
     // ========== 一键上传+选择（统一入口）==========
-    async uploadAllImages(allImageUrls: string[]): Promise<{ mainCount: number; detailCount: number }> {
+    async uploadAllImages(mainUrls: string[], detailUrls: string[]): Promise<{ mainCount: number; detailCount: number }> {
         this.log("[IMG] ==========================================");
-        this.log("[IMG]   开始一键上传图片（全部经主图入口，最多8张）");
+        this.log("[IMG]   开始一键上传图片");
         this.log("[IMG] ==========================================");
-        this.log("[IMG] 总图片数:", allImageUrls.length);
+        this.log("[IMG] 主图数:", mainUrls.length, "详情图数:", detailUrls.length);
 
-        const mainCount = await this.uploadMainImages(allImageUrls);
-        const detailCount = await this.uploadDetailImages(allImageUrls, mainCount);
+        const mainCount = await this.uploadMainImages(mainUrls);
+
+        // 如果详情图为空，且主图有值，则用主图作为详情图
+        const finalDetailUrls = (detailUrls.length > 0) ? detailUrls : mainUrls;
+
+        const detailCount = await this.uploadDetailImages(finalDetailUrls, 0);
 
         this.log("[IMG] ==========================================");
-        this.log(`[IMG]   完成! 主图入口上传并选择: ${mainCount}`);
+        this.log(`[IMG]   完成! 主图选择: ${mainCount}, 详情图插入: ${detailCount}`);
         this.log("[IMG] ==========================================");
 
         return { mainCount, detailCount };
@@ -2246,37 +2355,60 @@ export const AutoFillAIEngine = {
             return
         }
 
-        const rows = [...table.querySelectorAll(".el-table__row, tr, .sku-row")]
+        // 获取表头，用于定位列
+        const headers = [...table.querySelectorAll("th, .el-table__header th")].map(th => th.innerText.trim());
+        this.log("SKU 表头:", headers.join(" | "));
+
+        const rows = [...table.querySelectorAll(".el-table__row, tr, .sku-row")].filter(row => row.querySelector("input"));
 
         for (let i = 0; i < rows.length && i < skuList.length; i++) {
             const rowEl = rows[i]
             const sku = skuList[i]
             if (!sku) continue
 
-            const inputs = rowEl.querySelectorAll("input")
+            const cells = rowEl.querySelectorAll("td, .el-table__cell");
+            const inputs = rowEl.querySelectorAll("input");
 
-            // 根据 placeholder 或位置填写
-            inputs.forEach((inp: HTMLInputElement) => {
-                const placeholder = inp.placeholder?.toLowerCase() || ''
+            // 策略1: 基于表头索引定位 (更准确)
+            if (headers.length > 0 && cells.length === headers.length) {
+                headers.forEach((h, idx) => {
+                    const input = cells[idx]?.querySelector("input");
+                    if (!input) return;
 
-                if ((placeholder.includes('价格') || placeholder.includes('price')) && sku.price !== undefined) {
-                    inp.value = String(sku.price)
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-                else if ((placeholder.includes('库存') || placeholder.includes('stock')) && sku.stock !== undefined) {
-                    inp.value = String(sku.stock)
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-                else if ((placeholder.includes('sku') || placeholder.includes('编码') || placeholder.includes('code')) && sku.code) {
-                    inp.value = sku.code
-                    inp.dispatchEvent(new Event("input", { bubbles: true }))
-                }
-            })
+                    if ((h.includes("价格") || h.includes("单价") || h.includes("price")) && sku.price !== undefined) {
+                        this.setVal(input, String(sku.price), `SKU价格(${h})`);
+                    } else if ((h.includes("库存") || h.includes("stock")) && sku.stock !== undefined) {
+                        this.setVal(input, String(sku.stock), `SKU库存(${h})`);
+                    } else if ((h.includes("编码") || h.includes("SKU") || h.includes("code")) && sku.code) {
+                        this.setVal(input, sku.code, `SKU编码(${h})`);
+                    }
+                });
+            }
+            // 策略2: 兜底基于 placeholder
+            else {
+                inputs.forEach((inp: HTMLInputElement) => {
+                    const ph = (inp.placeholder || "").toLowerCase();
+                    if ((ph.includes("价格") || ph.includes("price")) && sku.price !== undefined) {
+                        this.setVal(inp, String(sku.price), "SKU价格(PH)");
+                    } else if ((ph.includes("库存") || ph.includes("stock")) && sku.stock !== undefined) {
+                        this.setVal(inp, String(sku.stock), "SKU库存(PH)");
+                    }
+                });
+            }
 
             await sleep(200)
         }
 
         this.log("✅ SKU 数据填写完成")
+    },
+
+    // 辅助方法：设置输入框值
+    setVal(input: HTMLInputElement, val: string, debugName: string) {
+        input.value = val;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new Event("blur", { bubbles: true }));
+        this.log(`   [SKU] 填写 ${debugName} = ${val}`);
     },
 
     // 上传 SKU 规格图
@@ -2600,20 +2732,29 @@ export const AutoFillAIEngine = {
             if (input.value && input.value !== '' && input.value !== '0') continue;
 
             const inputId = (input.id || '').toLowerCase();
+            const placeholder = (input.placeholder || '').toLowerCase();
+            const parentText = (input.parentElement?.innerText || '').toLowerCase();
+
+            // 是否匹配市场价
+            const isMarket = inputId.includes('marketprice') || placeholder.includes('市场价') || (/^市场价/.test(parentText));
+            // 是否匹配销售价
+            const isSale = inputId.includes('saleprice') || placeholder.includes('销售价') || (/^销售价/.test(parentText));
+            // 是否匹配库存
+            const isStock = inputId.includes('stock') || inputId.includes('quantity') || placeholder.includes('库存') || placeholder.includes('数量') || (/^库存|^数量/.test(parentText));
 
             // 市场价（填写所有匹配的）
-            if (marketPrice > 0 && inputId.includes('marketprice')) {
-                setVal(input, String(marketPrice), `市场价(${input.id})`);
+            if (marketPrice > 0 && isMarket) {
+                setVal(input, String(marketPrice), `市场价(${input.id || 'no-id'})`);
                 filledCount.market++;
             }
             // 销售价（填写所有匹配的）
-            else if (salePrice > 0 && inputId.includes('saleprice')) {
-                setVal(input, String(salePrice), `销售价(${input.id})`);
+            else if (salePrice > 0 && isSale) {
+                setVal(input, String(salePrice), `销售价(${input.id || 'no-id'})`);
                 filledCount.sale++;
             }
             // 库存（填写所有匹配的）
-            else if (stockVal > 0 && (inputId.includes('stock') || inputId.includes('quantity'))) {
-                setVal(input, String(stockVal), `库存(${input.id})`);
+            else if (stockVal > 0 && isStock) {
+                setVal(input, String(stockVal), `库存(${input.id || 'no-id'})`);
                 filledCount.stock++;
             }
         }
