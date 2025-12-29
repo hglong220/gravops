@@ -332,3 +332,30 @@ model FormFieldMapping {
   @@index([categoryId])
   @@index([successCount])
 }
+
+/// 商品属性快进库 - 沉淀 AI 学习到的特定商品必填项
+model ProductAttributeCache {
+  id           String   @id @default(cuid())
+  /// 政采云类目 ID
+  categoryId   String
+  /// 完整类目路径
+  categoryPath String
+  /// 品牌名（归一化后）
+  brand        String
+  /// 型号（归一化后）
+  model        String
+  /// 沉淀的属性键值对 JSON: { "字段名": "值" }
+  attributes   String
+  /// 命中次数
+  hitCount     Int      @default(1)
+  /// 最后使用时间
+  lastUsedAt   DateTime @default(now())
+  /// 创建时间
+  createdAt    DateTime @default(now())
+  /// 更新时间
+  updatedAt    DateTime @updatedAt
+
+  @@unique([categoryId, brand, model])
+  @@index([categoryId])
+  @@index([brand, model])
+}
