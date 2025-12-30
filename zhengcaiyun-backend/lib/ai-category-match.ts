@@ -19,7 +19,7 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 })
 
-const AI_PROVIDER = process.env.AI_PROVIDER || 'gemini'
+// 类目分析只使用 DeepSeek（Gemini 已移除）
 
 interface CategoryNode {
     id: number
@@ -372,59 +372,25 @@ ${categoryList}
     try {
         let content = ''
 
-        if (AI_PROVIDER === 'gemini') {
-            const rawKey = (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '').trim()
-            if (!rawKey) throw new Error('GOOGLE_API_KEY is missing')
+        // ⭐ 类目分析只使用 DeepSeek（中文理解更准确）
+        // 如果 DeepSeek 不可用，回退到 OpenAI
+        const useDeepSeek = !!process.env.DEEPSEEK_API_KEY
+        const client = useDeepSeek ? deepseek : openai
+        const model = useDeepSeek ? 'deepseek-chat' : 'gpt-4o-mini'
 
-            // ⭐ 优先使用稳定的 1.5 Pro，这也是目前上下文理解最强的版本
-            // 用户提到的 gemini-3-pro 如果是非公开 ID 可能会导致 404
-            const modelName = 'gemini-1.5-pro';
-            console.log(`[AI Category] 正在调用 Gemini 模型: ${modelName} ...`)
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${rawKey}`
+        console.log(`[AI Category] 使用 ${useDeepSeek ? 'DeepSeek' : 'OpenAI'} (${model})`)
 
-            console.log(`[AI Category] 调用 Gemini: ${modelName}`)
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{
-                        role: 'user',
-                        parts: [{ text: systemPrompt + "\n\n" + userPrompt }]
-                    }],
-                    generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 800,
-                        responseMimeType: "application/json"
-                    }
-                })
-            })
+        const response = await client.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.1,
+            max_tokens: 500
+        })
+        content = response.choices[0]?.message?.content || ''
 
-            const responseText = await response.text();
-            if (!response.ok) {
-                console.error(`[AI Category] Gemini API 错误: ${response.status}`, responseText);
-                throw new Error(`Gemini API Error: ${response.status} ${responseText}`)
-            }
-
-            const data = JSON.parse(responseText);
-            content = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-            console.log('[AI Category] Gemini 原始回复:', content)
-        } else {
-            const client = AI_PROVIDER === 'deepseek' ? deepseek : openai
-            const model = AI_PROVIDER === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini'
-
-            console.log(`[AI Category] 使用 ${AI_PROVIDER} (${model})`)
-
-            const response = await client.chat.completions.create({
-                model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                temperature: 0.1,
-                max_tokens: 500
-            })
-            content = response.choices[0]?.message?.content || ''
-        }
 
         console.log('[AI Category] AI 返回:', content)
 
