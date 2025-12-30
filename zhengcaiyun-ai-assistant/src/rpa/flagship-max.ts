@@ -1152,9 +1152,14 @@ export const FlagshipMax = {
 
         // 5️⃣ 辅助填写
         try {
+            Logger.log("🌍 步骤5: 填写产地/制造商区域...")
             await AutoFillAIEngine.fillOrigin(ctx.scraped)
+            Logger.log("💰 步骤6: 填写价格/库存...")
             await AutoFillAIEngine.fillPriceAndStock(ctx.scraped)
-        } catch { }
+        } catch (e: any) {
+            Logger.error("❌ 辅助填写失败:", e?.message || e)
+        }
+
 
         Logger.section("✅ 旗舰 MAX：全部信息填写完成")
     },

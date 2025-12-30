@@ -2567,6 +2567,57 @@ export const AutoFillAIEngine = {
         // 等待 UI 空闲，避免与上传/其他弹窗抢焦点
         await waitForUIIdle();
 
+        // =============================================
+        // 第一步：尝试处理简单产地单选框（境内/境外）
+        // 这是政采云常见的产地选择方式
+        // =============================================
+        let simpleRadioHandled = false;
+
+        const formRows = document.querySelectorAll('.el-form-item, .doraemon-form-item, .attr-row, [class*="form-item"]');
+        for (const row of formRows) {
+            const labelEl = row.querySelector('.el-form-item__label, .doraemon-form-item-label, label, [class*="label"]');
+            const labelText = (labelEl as HTMLElement)?.innerText?.trim()?.replace(/[*＊]/g, '') || '';
+
+            if (/^产地/.test(labelText)) {
+                this.log('🔍 找到产地字段:', labelText);
+
+                // 查找该行中的单选框选项
+                const radioOptions = row.querySelectorAll('.el-radio, .doraemon-radio, .doraemon-radio-wrapper, .el-radio-group label, label[class*="radio"]');
+                this.log(`🔘 检测到 ${radioOptions.length} 个单选选项`);
+
+                if (radioOptions.length > 0) {
+                    // 点击"境内"选项
+                    for (const opt of radioOptions) {
+                        const optText = (opt as HTMLElement).innerText?.trim() || '';
+                        this.log(`  选项: "${optText}"`);
+                        if (optText === '境内' || optText.includes('境内')) {
+                            (opt as HTMLElement).click();
+                            this.log('✅ 已点击选择产地: 境内');
+                            simpleRadioHandled = true;
+                            await sleep(300);
+                            break;
+                        }
+                    }
+
+                    if (simpleRadioHandled) break;
+                }
+            }
+        }
+
+        // 如果简单单选框已处理，检查是否还有级联选择器需要处理
+        if (simpleRadioHandled) {
+            // 检查是否有制造商所在区域等级联选择器
+            const hasCascader = document.querySelector('.doraemon-cascader-picker, .el-cascader');
+            if (!hasCascader) {
+                this.log("✅ 产地填写完成（简单单选模式）");
+                return;
+            }
+            this.log("📍 继续处理制造商所在区域级联选择器...");
+        }
+
+        // =============================================
+        // 第二步：处理制造商所在区域级联选择器
+        // =============================================
         // 1. 找到输入框：通常在 "制造商所在区域" 行
         // 我们查找 class 包含 cascader 的输入框，或者根据 label 查找
         let triggerInput: HTMLElement | null = null;
@@ -2585,9 +2636,15 @@ export const AutoFillAIEngine = {
         }
 
         if (!triggerInput) {
-            this.warn("未找到产地选择器输入框");
+            // 如果没有级联选择器，但简单单选已处理，视为成功
+            if (simpleRadioHandled) {
+                this.log("✅ 产地填写完成（无级联选择器）");
+                return;
+            }
+            this.warn("未找到产地选择器（既没有简单单选也没有级联）");
             return;
         }
+
 
         // 先点击"境内"单选，确保级联可用
         // ⭐ 支持多种 radio 组件结构：el-radio, doraemon-radio, 原生 radio, ant-radio 等
@@ -2734,13 +2791,33 @@ export const AutoFillAIEngine = {
             const inputId = (input.id || '').toLowerCase();
             const placeholder = (input.placeholder || '').toLowerCase();
             const parentText = (input.parentElement?.innerText || '').toLowerCase();
+            // ⭐ 增强：检查祖先元素文本（政采云价格区域可能嵌套较深）
+            const grandParentText = (input.parentElement?.parentElement?.innerText || '').toLowerCase();
+            const ancestorCell = input.closest('td, th, .price-item, .el-form-item, .doraemon-form-item');
+            const ancestorText = (ancestorCell?.textContent || '').toLowerCase();
+            // 检查前一个兄弟节点（表格布局中 label 可能在前一个 td）
+            const prevSiblingText = (input.parentElement?.previousElementSibling?.textContent || '').toLowerCase();
 
-            // 是否匹配市场价
-            const isMarket = inputId.includes('marketprice') || placeholder.includes('市场价') || (/^市场价/.test(parentText));
-            // 是否匹配销售价
-            const isSale = inputId.includes('saleprice') || placeholder.includes('销售价') || (/^销售价/.test(parentText));
-            // 是否匹配库存
-            const isStock = inputId.includes('stock') || inputId.includes('quantity') || placeholder.includes('库存') || placeholder.includes('数量') || (/^库存|^数量/.test(parentText));
+            // 是否匹配市场价 - 增强匹配
+            const isMarket = inputId.includes('marketprice') || inputId.includes('market_price') ||
+                placeholder.includes('市场价') || placeholder.includes('请输入') && parentText.includes('市场价') ||
+                parentText.includes('市场价') || grandParentText.includes('市场价') ||
+                ancestorText.includes('市场价') || prevSiblingText.includes('市场价');
+
+            // 是否匹配销售价 - 增强匹配
+            const isSale = inputId.includes('saleprice') || inputId.includes('sale_price') ||
+                placeholder.includes('销售价') || placeholder.includes('请输入') && parentText.includes('销售价') ||
+                parentText.includes('销售价') || grandParentText.includes('销售价') ||
+                ancestorText.includes('销售价') || prevSiblingText.includes('销售价');
+
+            // 是否匹配库存 - 增强匹配
+            const isStock = inputId.includes('stock') || inputId.includes('quantity') ||
+                placeholder.includes('库存') || placeholder.includes('数量') ||
+                parentText.includes('库存') || parentText.includes('数量') ||
+                grandParentText.includes('库存') || grandParentText.includes('数量') ||
+                ancestorText.includes('库存') || ancestorText.includes('数量') ||
+                prevSiblingText.includes('库存') || prevSiblingText.includes('数量');
+
 
             // 市场价（填写所有匹配的）
             if (marketPrice > 0 && isMarket) {
