@@ -287,3 +287,30 @@ export async function visualAgentAction(base64Image: string, task: string, conte
     throw error;
   }
 }
+// --- AIService Namespace Export ---
+
+export async function askAI(prompt: string, jsonMode: boolean = true): Promise<any> {
+  const config = getAIConfig();
+  return await executeWithFailover(async (provider, apiKey) => {
+    if (provider.provider === 'gemini') {
+      return await callGemini(provider, apiKey, "You are a helpful assistant.", prompt, 0.7, 1000);
+    } else {
+      const messages = [{ role: 'user', content: prompt }];
+      return await callOpenAICompatible(provider, apiKey, messages, 0.7, 1000, jsonMode);
+    }
+  });
+}
+
+export const AIService = {
+  analyzeProduct,
+  analyzeScreenshot,
+  visualAgentAction,
+  /**
+   * 泛用型表单分析
+   */
+  async analyzeFormSection(prompt: string): Promise<any> {
+    return await askAI(prompt, true);
+  }
+};
+
+export default AIService;

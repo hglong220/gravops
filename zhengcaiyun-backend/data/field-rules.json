@@ -16,7 +16,7 @@
       "source": "manual",
       "category": "常规属性",
       "createdAt": "2024-12-12",
-      "usageCount": 4
+      "usageCount": 9
     },
     {
       "id": "rule_002",
@@ -33,7 +33,7 @@
       "source": "manual",
       "category": "常规属性",
       "createdAt": "2024-12-12",
-      "usageCount": 8
+      "usageCount": 18
     },
     {
       "id": "rule_003",
@@ -49,7 +49,7 @@
       "source": "manual",
       "category": "产地信息",
       "createdAt": "2024-12-12",
-      "usageCount": 8
+      "usageCount": 18
     },
     {
       "id": "rule_004",
@@ -162,7 +162,7 @@
       "source": "manual",
       "category": "售后信息",
       "createdAt": "2024-12-12",
-      "usageCount": 0
+      "usageCount": 5
     },
     {
       "id": "rule_007",
@@ -250,7 +250,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356755",
@@ -263,7 +263,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356792",
@@ -276,7 +276,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356831",
@@ -289,7 +289,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356870",
@@ -302,7 +302,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356911",
@@ -315,7 +315,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     },
     {
       "id": "rule_1767032356950",
@@ -328,7 +328,7 @@
       "source": "ai",
       "category": "自动收录",
       "createdAt": "2025-12-29",
-      "usageCount": 7
+      "usageCount": 17
     }
   ]
 }

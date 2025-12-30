@@ -6,6 +6,7 @@
  */
 
 import { AutoFillAIEngine, type ProductInfo as AutoFillProductInfo } from './autofill-ai-engine'
+import { AutoFillEngineV2 } from './autofill-v2'
 import { VisionBridge } from '../lib/vision-bridge'
 import { fetchWithAuth } from '../utils/api'
 import { KnowledgeEngine } from './knowledge-engine'
@@ -1025,7 +1026,29 @@ export const FlagshipMax = {
 
         await Util.sleep(2000)
 
-        const isRealAttrPage = () => location.pathname.includes("/goods/publish")
+        // ⚠️ 重要：判断是否进入真正的"属性填写页"（发布页）
+        // 类目选择页也有 .doraemon-form-item 等元素，不能仅靠这些判断
+        // 必须使用 URL 作为主要判断依据
+        const isRealAttrPage = () => {
+            const path = location.pathname;
+            const search = location.search;
+
+            // 核心判断：URL 包含 /goods/publish
+            if (path.includes("/goods/publish")) {
+                return true;
+            }
+
+            // 备用判断：URL 包含 categoryId 参数 + 有大量表单项
+            if (search.includes("categoryId=")) {
+                const formItems = document.querySelectorAll('.doraemon-form-item, .el-form-item');
+                // 发布页通常有很多表单项（超过20个），而类目选择页只有品牌/型号两个
+                if (formItems.length > 15) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
         Logger.log("📍 当前 pathname:", location.pathname)
 
         if (ai.brand) {
@@ -1037,14 +1060,27 @@ export const FlagshipMax = {
             await BrandModelFiller.selectModel(ai.model)
         }
 
+        // ⭐ 关键修复：品牌型号填写后，必须点击"下一步"进入发布页
         let clickCount = 0
         const maxClicks = 5
+
+        // 先等待一下让页面稳定
+        await Util.sleep(1000)
+
         while (!isRealAttrPage() && clickCount < maxClicks) {
             Logger.log("📍 点击下一步 (", clickCount + 1, "/", maxClicks, ")")
-            await Clicker.clickButton("下一步")
-            await Util.sleep(2000)
+            const clicked = await Clicker.clickButton("下一步")
+            if (!clicked) {
+                Logger.warn("⚠️ 未找到下一步按钮，尝试其他方式...")
+                // 尝试直接查找按钮
+                const nextBtn = document.querySelector('button.doraemon-btn-primary, .btn-next, [class*="next"]') as HTMLElement;
+                if (nextBtn && nextBtn.innerText.includes('下一步')) {
+                    nextBtn.click();
+                }
+            }
+            await Util.sleep(2500)
             clickCount++
-            Logger.log("📍 点击后 pathname:", location.pathname)
+            Logger.log("📍 点击后 pathname:", location.pathname, "search:", location.search)
             if (isRealAttrPage()) break
         }
 
@@ -1098,68 +1134,71 @@ export const FlagshipMax = {
             specs: ctx.scraped.specs
         }
 
-        // 1️⃣ 填写表单（自动分析或使用缓存）
-        Logger.log("📝 步骤1: 开始填写表单属性...")
-        const fillResult = await AutoFillAIEngine.run(productInfo, ctx.cachedAttributes)
-        Logger.log("✅ 表单填写完成", fillResult)
+        // 1️⃣ 一键上传全部图片 (先行，且必须物理隔离)
+        // 理由：图片上传是最高失败率模块 (JD 404、切图失效)，绝不允许其阻塞主流程
+        try {
+            Logger.log("📸 步骤1: 启动图片上传模块 [隔离运行]...")
 
-        // ⭐ 知识沉淀
-        if (!ctx.cachedAttributes && fillResult.attributes && Object.keys(fillResult.attributes).length > 0) {
-            try {
-                const categoryId = CategorySelectorMax.getCurrentCategoryId() || "";
-                const categoryPath = ctx.scraped.categoryPath || [];
-                await KnowledgeEngine.saveProductKnowledge(
-                    categoryId,
-                    categoryPath,
-                    ctx.scraped.brand || "",
-                    ctx.scraped.model || "",
-                    fillResult.attributes
-                );
-            } catch (e) {
-                Logger.warn("[知识沉淀] 保存异常:", e);
+            // 构造图片列表
+            const imgs = ctx.scraped.images || [];
+            const detailImgs = ctx.scraped.detailImages || []
+            const finalDetailImages = detailImgs.length > 0 ? detailImgs : imgs;
+
+            const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(imgs, finalDetailImages);
+            Logger.log(`[IMG] 图片上传结束: 主图 ${mainCount}, 详情图 ${detailCount}`);
+
+            // 附件图片 (SKU)
+            if (ctx.scraped.skuImages && Object.keys(ctx.scraped.skuImages).length) {
+                await AutoFillAIEngine.uploadSKUImages(ctx.scraped.skuImages);
             }
+        } catch (e) {
+            Logger.warn("⚠️ [IMG] 图片上传模块异常，已自动熔断隔离，主流程继续执行。", e);
         }
 
-        // 2️⃣ 一键上传全部图片
-        // 如果没有详情图，就用主图作为详情图（兜底逻辑）
-        const finalDetailImages = (ctx.scraped.detailImages && ctx.scraped.detailImages.length > 0)
-            ? ctx.scraped.detailImages
-            : imgs;
+        // ⭐ 关键：等待 DOM 稳定 (图片弹窗关闭后需要呼吸时间)
+        await Util.sleep(1500);
 
-        const allImages = [...imgs, ...finalDetailImages];
-        // 限制总量防止无限负荷
-        const limitedImages = allImages.slice(0, 30);
+        // 2️⃣ 填写表单属性 (V2 引擎启动)
+        Logger.log("═══════════════════════════════════════════════════════")
+        Logger.log("📝 步骤2: 🔥🔥🔥 V2 引擎即将启动 🔥🔥🔥")
+        Logger.log("═══════════════════════════════════════════════════════")
 
-        Logger.log("📸 步骤2: 开始一键上传全部图片 (主图+详情图)...", imgs.length + (ctx.scraped.detailImages?.length || 0), "张")
-        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(imgs, ctx.scraped.detailImages || [])
-        Logger.log(`✅ 图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
+        const productDataV2 = {
+            title: ctx.scraped.title,
+            brand: ctx.scraped.brand,
+            model: ctx.scraped.model,
+            origin: '中国',
+            manufacturer: ctx.scraped.brand,
+            platform_link: ctx.scraped.sourceUrl,
+            unit: ctx.scraped.specs?.['计量单位'] || '件',
+            stock: ctx.scraped.stock?.toString() || '9999',
+            price: ctx.scraped.price?.toString(),
+            warranty: '12个月',
+            is_sme_product: '否' as const,
+            is_energy_saving: '否' as const,
+            is_env_certified: '否' as const,
+            specs: ctx.scraped.specs
+        };
 
-        // 3️⃣ SKU 图片
-        if (ctx.scraped.skuImages && Object.keys(ctx.scraped.skuImages).length) {
-            Logger.log("🏷 步骤3: 开始上传 SKU 图片...")
-            await AutoFillAIEngine.uploadSKUImages(ctx.scraped.skuImages)
-        }
+        const v2Result = await AutoFillEngineV2.run(productDataV2);
+        Logger.log("═══════════════════════════════════════════════════════")
+        Logger.log("✅ V2 引擎执行完毕", {
+            ok: v2Result.success,
+            filled: v2Result.filledCount,
+            failed: v2Result.failedCount,
+            list: v2Result.failedFields
+        });
+        Logger.log("═══════════════════════════════════════════════════════")
 
-        // 4️⃣ SKU 规格与数据
+        // 3️⃣ SKU 规格与数据 (放在最后，因为依赖表单选项生成)
         if (ctx.scraped.skuSpecs?.length) {
-            Logger.log("🧩 步骤4: 填写 SKU 规格...")
+            Logger.log("🧩 步骤3: 填写 SKU 规格...")
             await AutoFillAIEngine.fillSkuSpecs(ctx.scraped.skuSpecs)
         }
         if (ctx.scraped.skuData?.length) {
-            Logger.log("🧩 步骤5: 填写 SKU 数据...")
+            Logger.log("🧩 步骤4: 填写 SKU 数据...")
             await AutoFillAIEngine.fillSKUData(ctx.scraped.skuData)
         }
-
-        // 5️⃣ 辅助填写
-        try {
-            Logger.log("🌍 步骤5: 填写产地/制造商区域...")
-            await AutoFillAIEngine.fillOrigin(ctx.scraped)
-            Logger.log("💰 步骤6: 填写价格/库存...")
-            await AutoFillAIEngine.fillPriceAndStock(ctx.scraped)
-        } catch (e: any) {
-            Logger.error("❌ 辅助填写失败:", e?.message || e)
-        }
-
 
         Logger.section("✅ 旗舰 MAX：全部信息填写完成")
     },
@@ -1180,4 +1219,7 @@ export const FlagshipMax = {
     ; (window as any).SuperEngineV8 = SuperEngineV8
     ; (window as any).Clicker = Clicker
     ; (window as any).PageDetector = PageDetector
+
+    // 暴露 V2 引擎（已通过静态导入）
+    ; (window as any).AutoFillEngineV2 = AutoFillEngineV2
 

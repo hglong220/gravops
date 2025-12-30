@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        .el-form-item__label:before {
+            content: '*';
+            color: rgb(245, 108, 108);
+            margin-right: 4px;
+        }
+        .not-required:before {
+            content: none !important;
+        }
+        .red-star {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div id="page-content">
+        <!-- 1. 标准 ElementUI 星号项 (伪元素) -->
+        <div class="el-form-item is-required">
+            <label class="el-form-item__label">产品尺寸 (mm)</label>
+            <div class="el-form-item__content">
+                <input type="text">
+            </div>
+        </div>
+
+        <!-- 2. 文本星号项 -->
+        <div class="el-form-item">
+            <label class="el-form-item__label"><span class="red-star">*</span>扫描尺寸 (mm)</label>
+            <div class="el-form-item__content">
+                <input type="text">
+            </div>
+        </div>
+
+        <!-- 3. 非必填项 (无星号) -->
+        <div class="el-form-item">
+            <label class="el-form-item__label not-required">电话手柄</label>
+            <div class="el-form-item__content">
+                <input type="text">
+            </div>
+        </div>
+
+        <!-- 4. 下拉必填项 -->
+        <div class="ant-form-item ant-form-item-required">
+            <div class="ant-form-item-label">
+                <label class="ant-form-item-required">能效等级</label>
+            </div>
+            <div class="ant-form-item-control">
+                <select><option>一级</option></select>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function isRequired(container) {
+            const labelEl = container.querySelector('.el-form-item__label, .ant-form-item-label, label, .attr-label');
+            const labelText = labelEl ? labelEl.textContent : '';
+            if (labelText.includes('*') || labelText.includes('＊')) return true;
+            
+            if (labelEl) {
+                const style = window.getComputedStyle(labelEl, ':before');
+                const content = style.getPropertyValue('content');
+                const color = style.getPropertyValue('color');
+                if (content && content !== 'none' && (color.includes('255, 0, 0') || color.includes('245, 108, 108'))) return true;
+            }
+
+            const mandatoryClasses = ['.is-required', '.ant-form-item-required', '.required'];
+            if (mandatoryClasses.some(cls => container.matches(cls) || container.querySelector(cls))) return true;
+
+            return false;
+        }
+
+        function testScanner() {
+            const containers = document.querySelectorAll('.el-form-item, .ant-form-item');
+            const results = [];
+            containers.forEach(c => {
+                const label = c.querySelector('label')?.innerText.replace(/[*＊]/g, '').trim();
+                results.push({
+                    label: label,
+                    required: isRequired(c)
+                });
+            });
+            return results;
+        }
+        window.testResults = testScanner();
+    </script>
+</body>
+</html>

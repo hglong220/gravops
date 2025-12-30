@@ -30,15 +30,16 @@ export const DEFAULT_CONFIG: AIConfig = {
         retryCount: 3
     },
     providers: [
+        // ⭐ DeepSeek 最高优先级 - 中文理解能力强，适合国内政采云场景
         {
-            id: 'gemini-backup',
-            name: 'Google Gemini',
-            provider: 'gemini',
+            id: 'deepseek-domestic',
+            name: 'DeepSeek (Domestic)',
+            provider: 'deepseek',
             enabled: true,
-            priority: 1,
-            baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-            apiKeyPool: [process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ''],
-            model: 'gemini-2.0-flash'
+            priority: 1,  // 最高优先级
+            baseUrl: 'https://api.deepseek.com/v1',
+            apiKeyPool: [process.env.DEEPSEEK_API_KEY || ''],
+            model: 'deepseek-chat'
         },
         {
             id: 'openai-primary',
@@ -51,14 +52,14 @@ export const DEFAULT_CONFIG: AIConfig = {
             model: 'gpt-4o'
         },
         {
-            id: 'deepseek-domestic',
-            name: 'DeepSeek (Domestic)',
-            provider: 'deepseek',
+            id: 'gemini-backup',
+            name: 'Google Gemini',
+            provider: 'gemini',
             enabled: true,
-            priority: 3,
-            baseUrl: 'https://api.deepseek.com/v1',
-            apiKeyPool: [process.env.DEEPSEEK_API_KEY || ''],
-            model: 'deepseek-chat'
+            priority: 3,  // 降为备选
+            baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+            apiKeyPool: [process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || ''],
+            model: 'gemini-2.0-flash'
         },
         {
             id: 'qwen-domestic',

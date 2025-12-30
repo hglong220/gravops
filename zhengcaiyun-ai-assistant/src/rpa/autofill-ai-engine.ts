@@ -1926,9 +1926,9 @@ export const AutoFillAIEngine = {
 
             this.log(`[IMG] 已注入文件 ${index + 1} `);
 
-            // 等待上传完成
-            for (let wait = 0; wait < 30; wait++) {
-                await sleep(500);
+            // 等待上传完成（缩短超时：10次 x 400ms = 4秒）
+            for (let wait = 0; wait < 10; wait++) {
+                await sleep(400);
                 // 检测图片数量是否增加
                 const imgCards = modal.querySelectorAll('.item-img, .image-card, .img-wrapper, .doraemon-image-card');
                 if (imgCards.length > index) {
@@ -2131,83 +2131,111 @@ export const AutoFillAIEngine = {
         return selected;
     },
 
-    // 打开富文本详情图上传弹窗（尝试多种方式）
+    // 打开富文本详情图上传弹窗（简化版 - 不依赖视觉AI）
     async openDetailUploadModal(): Promise<HTMLElement | null> {
         this.log("[DETAIL_IMG] 尝试打开详情图上传弹窗...");
 
-        // 政采云详情图上传按钮选择器（按优先级排列）
+        // 🔥 政采云 UEditor 的图片上传按钮选择器
+        // 按钮结构通常是: div.edui-for-simpleuploadgoodsdetail > div.edui-button-body
         const buttonSelectors = [
-            "#edui154_body",                                      // 直接用 ID（最可靠）
+            // 政采云专用的详情图上传按钮
             ".edui-for-simpleuploadgoodsdetail .edui-button-body",
             ".edui-for-simpleuploadgoodsdetail",
-            "[title='单图上传'] .edui-button-body",
-            "[title='单图上传']"
+            // 通用图片上传按钮
+            ".edui-for-simpleupload .edui-button-body",
+            ".edui-for-simpleupload",
+            ".edui-for-insertimage .edui-button-body",
+            ".edui-for-insertimage",
+            // 按 title 查找
+            "[title='单图上传']",
+            "[title='图片']",
+            "[title='插入图片']",
         ];
 
+        // 第一步：尝试用精确选择器找到并点击按钮
         let clicked = false;
         for (const selector of buttonSelectors) {
             const btn = document.querySelector(selector) as HTMLElement;
-            if (btn) {
-                this.log(`[DETAIL_IMG] 找到按钮: ${selector} (tagName: ${btn.tagName})`);
+            if (btn && btn.offsetParent !== null) {
+                this.log(`[DETAIL_IMG] 找到上传按钮: ${selector}`);
                 btn.scrollIntoView({ behavior: "smooth", block: "center" });
                 await sleep(200);
-
-                // 尝试多种点击方式
                 btn.click();
-                btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-
                 clicked = true;
-                this.log("[DETAIL_IMG] 已触发上传按钮点击事件，等待弹窗...");
                 break;
             }
         }
 
+        // 第二步：如果精确选择器失败，遍历所有 edui-box（工具栏按钮容器）
         if (!clicked) {
-            this.warn("[DETAIL_IMG] 未找到详情图上传按钮，尝试【Gemini 视觉 AI】定位...");
-        } else {
-            // 虽然点击了，但也要检查弹窗是否成功打开
-            this.log("[DETAIL_IMG] 已触发点击，等待弹窗加载...");
-            for (let i = 0; i < 20; i++) {
-                const modal = document.querySelector(".doraemon-modal, .ant-modal") as HTMLElement | null;
-                if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
-                    await sleep(300);
-                    return modal;
+            this.log("[DETAIL_IMG] 精确选择器未命中，遍历工具栏按钮...");
+            const allBoxes = document.querySelectorAll('.edui-box[id^="edui"]');
+            for (const box of allBoxes) {
+                const className = box.className || '';
+                // 查找包含 simpleupload、insertimage、image 关键字的按钮
+                if (className.includes('simpleupload') || className.includes('insertimage')) {
+                    this.log(`[DETAIL_IMG] 遍历命中: ${className}`);
+                    const body = box.querySelector('.edui-button-body') as HTMLElement || box as HTMLElement;
+                    body.click();
+                    clicked = true;
+                    break;
                 }
-                await sleep(100);
             }
-            this.warn("[DETAIL_IMG] 常规点击后弹窗未出现，启动【Gemini 视觉 AI】补救...");
         }
 
-        // ⭐ 视觉补救：直接让 Vision Agent 去找那个图标并点击
-        const visionOk = await VisionBridge.performTask(
-            "点击编辑器工具栏上的'图片'或'单图上传'图标",
-            "当前处于详情图编辑区，由于按钮尝试点击无效或未找到，需要通过视觉识别工具栏上的上传图标（通常是一个山峰太阳或相框图标）"
-        );
+        if (!clicked) {
+            this.warn("[DETAIL_IMG] 选择器未命中，启动视觉AI定位...");
+            // 视觉AI作为备选方案
+            try {
+                const visionOk = await VisionBridge.performTask(
+                    "点击编辑器工具栏上的'图片'或'单图上传'图标",
+                    "当前处于详情图编辑区，需要点击工具栏上的上传图标（通常是一个山峰太阳或相框图标）"
+                );
+                if (visionOk) {
+                    clicked = true;
+                    this.log("[DETAIL_IMG] 视觉AI点击成功");
+                }
+            } catch (e) {
+                this.warn("[DETAIL_IMG] 视觉AI调用失败:", e);
+            }
+        }
 
-        if (!visionOk) {
-            this.warn("[DETAIL_IMG] 视觉 AI 定位失败");
+        if (!clicked) {
+            this.warn("[DETAIL_IMG] 所有方法都未能找到上传按钮");
             return null;
         }
 
-        this.log("[DETAIL_IMG] 视觉 AI 定位并点击成功，进行最后等待...");
-        // 视觉点击后最后等待一次弹窗
-        for (let i = 0; i < 30; i++) {
-            const modal = document.querySelector(".doraemon-modal, .ant-modal") as HTMLElement | null;
-            if (modal && modal.querySelector("#goodsDetail-picture, input[type='file']")) {
-                await sleep(300);
-                return modal;
+        // 等待弹窗出现
+        this.log("[DETAIL_IMG] 已点击按钮，等待弹窗...");
+        for (let i = 0; i < 40; i++) {
+            const modal = document.querySelector(".doraemon-modal, .ant-modal, .edui-dialog") as HTMLElement | null;
+            if (modal) {
+                const hasUploadInput = modal.querySelector("input[type='file'], #goodsDetail-picture");
+                const hasUploadText = modal.innerText?.includes('本地上传') ||
+                    modal.innerText?.includes('图片上传') ||
+                    modal.innerText?.includes('选择文件');
+                if (hasUploadInput || hasUploadText) {
+                    this.log("[DETAIL_IMG] 弹窗已打开");
+                    await sleep(300);
+                    return modal;
+                }
             }
             await sleep(100);
         }
 
-        this.warn("[DETAIL_IMG] 视觉点击后仍然未检测到弹窗");
+        this.warn("[DETAIL_IMG] 点击后弹窗未出现");
         return null;
     },
 
     // ========== 详情图上传到富文本（上传全部详情图）==========
     async uploadDetailImages(imageUrls: string[], skipCount = 0): Promise<number> {
         this.log("[DETAIL_IMG] 开始上传详情图...");
+
+        // 确保 imageUrls 是数组
+        if (!imageUrls || !Array.isArray(imageUrls)) {
+            this.warn("[DETAIL_IMG] imageUrls 不是有效数组:", typeof imageUrls);
+            return 0;
+        }
 
         // 过滤图片：确保是有效的 URL 且不是超长字符串（除非是 data:image）
         const detailUrls = imageUrls.slice(skipCount).filter(url => {
@@ -2271,18 +2299,87 @@ export const AutoFillAIEngine = {
         }
 
         // 直接点击确定（列表中新增的都会插入富文本）
-        const okBtn = modal.querySelector(".doraemon-btn-primary, button[type='button'].doraemon-btn-primary") as HTMLElement | null;
+        // 先在弹窗内查找，如果找不到就全局查找
+        let okBtn: HTMLElement | null = null;
+
+        // 选择器列表（从精确到模糊）
+        const okBtnSelectors = [
+            'button.doraemon-btn.doraemon-btn-primary',
+            '.doraemon-btn-primary',
+            'button[type="button"].doraemon-btn-primary',
+            '.ant-btn-primary',
+            'button:contains("确定")',
+        ];
+
+        // 先在 modal 内查找
+        for (const sel of okBtnSelectors) {
+            okBtn = modal.querySelector(sel) as HTMLElement | null;
+            if (okBtn && okBtn.innerText.includes('确定')) break;
+        }
+
+        // 如果 modal 内找不到，全局查找（某些弹窗确定按钮在 modal 外层）
+        if (!okBtn) {
+            this.log("[DETAIL_IMG] 弹窗内未找到确定按钮，尝试全局查找...");
+            const allModals = document.querySelectorAll('.doraemon-modal, .ant-modal');
+            for (const m of allModals) {
+                for (const sel of okBtnSelectors) {
+                    const btn = m.querySelector(sel) as HTMLElement;
+                    if (btn && btn.innerText.includes('确定')) {
+                        okBtn = btn;
+                        break;
+                    }
+                }
+                if (okBtn) break;
+            }
+        }
+
+        // 最后兜底：直接在 document 中查找包含"确定"的蓝色按钮
+        if (!okBtn) {
+            const allBtns = document.querySelectorAll('button.doraemon-btn-primary, .ant-btn-primary');
+            for (const btn of allBtns) {
+                if ((btn as HTMLElement).innerText.includes('确定')) {
+                    okBtn = btn as HTMLElement;
+                    break;
+                }
+            }
+        }
+
         if (okBtn) {
+            this.log(`[DETAIL_IMG] 找到确定按钮: ${okBtn.className}`);
+
+            // ⭐ 重要：等待按钮从 loading 状态恢复后再点击
+            // 如果按钮有 doraemon-btn-loading 类，说明正在上传中，点击无效
+            for (let wait = 0; wait < 60; wait++) {  // 最多等 30 秒
+                if (!okBtn.classList.contains('doraemon-btn-loading') &&
+                    !okBtn.classList.contains('is-loading') &&
+                    !okBtn.hasAttribute('disabled')) {
+                    break;
+                }
+                this.log(`[DETAIL_IMG] 等待按钮 loading 结束... (${wait + 1})`);
+                await sleep(500);
+            }
+
+            // 再次确认按钮不是 loading 状态
+            if (okBtn.classList.contains('doraemon-btn-loading')) {
+                this.warn("[DETAIL_IMG] ⚠️ 按钮仍在 loading 状态，强制点击可能无效");
+            }
+
             okBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-            await sleep(200);
+            await sleep(300);
             okBtn.click();
-            this.log("[DETAIL_IMG] 点击确定");
+            this.log("[DETAIL_IMG] ✅ 点击确定按钮");
+
             // 等待弹窗关闭
             for (let i = 0; i < 30; i++) {
                 const stillThere = document.contains(modal);
-                if (!stillThere || modal.style.display === "none") break;
+                if (!stillThere || modal.style.display === "none") {
+                    this.log("[DETAIL_IMG] 弹窗已关闭");
+                    break;
+                }
                 await sleep(300);
             }
+        } else {
+            this.warn("[DETAIL_IMG] ⚠️ 未找到确定按钮！");
         }
 
         this.log(`[DETAIL_IMG] 详情图上传完成: ${detailUrls.length} 张`);
@@ -2290,24 +2387,39 @@ export const AutoFillAIEngine = {
         return detailUrls.length;
     },
 
-    // ========== 一键上传+选择（统一入口）==========
+    // ========== 一键上传+选择（统一入口：增加隔离与健壮性）==========
     async uploadAllImages(mainUrls: string[], detailUrls: string[]): Promise<{ mainCount: number; detailCount: number }> {
         this.log("[IMG] ==========================================");
-        this.log("[IMG]   开始一键上传图片");
-        this.log("[IMG] ==========================================");
-        this.log("[IMG] 主图数:", mainUrls.length, "详情图数:", detailUrls.length);
-
-        const mainCount = await this.uploadMainImages(mainUrls);
-
-        // 如果详情图为空，且主图有值，则用主图作为详情图
-        const finalDetailUrls = (detailUrls.length > 0) ? detailUrls : mainUrls;
-
-        const detailCount = await this.uploadDetailImages(finalDetailUrls, 0);
-
-        this.log("[IMG] ==========================================");
-        this.log(`[IMG]   完成! 主图选择: ${mainCount}, 详情图插入: ${detailCount}`);
+        this.log("[IMG]   启动隔离上传模式...");
         this.log("[IMG] ==========================================");
 
+        let mainCount = 0;
+        let detailCount = 0;
+
+        // 隔离执行主图上传
+        try {
+            if (mainUrls && Array.isArray(mainUrls) && mainUrls.length > 0) {
+                mainCount = await this.uploadMainImages(mainUrls);
+            }
+        } catch (e) {
+            this.warn("[IMG] 主图模块崩溃，已自动剥离:", e);
+        }
+
+        // 隔离执行详情图上传
+        try {
+            // 数据清洗：确保是数组，否则回退到主图
+            const safeDetailUrls = (detailUrls && Array.isArray(detailUrls) && detailUrls.length > 0)
+                ? detailUrls
+                : (mainUrls && Array.isArray(mainUrls) ? mainUrls : []);
+
+            if (safeDetailUrls.length > 0) {
+                detailCount = await this.uploadDetailImages(safeDetailUrls, 0);
+            }
+        } catch (e) {
+            this.warn("[IMG] 详情图模块崩溃，已自动剥离:", e);
+        }
+
+        this.log(`[IMG] 隔离上传结束。主图: ${mainCount}，详情图: ${detailCount}`);
         return { mainCount, detailCount };
     },
 
@@ -2568,40 +2680,84 @@ export const AutoFillAIEngine = {
         await waitForUIIdle();
 
         // =============================================
-        // 第一步：尝试处理简单产地单选框（境内/境外）
-        // 这是政采云常见的产地选择方式
+        // 第一步：直接全局搜索"境内"单选框并点击
+        // 这是最简单直接的方法，不依赖特定的表单结构
         // =============================================
         let simpleRadioHandled = false;
 
-        const formRows = document.querySelectorAll('.el-form-item, .doraemon-form-item, .attr-row, [class*="form-item"]');
-        for (const row of formRows) {
-            const labelEl = row.querySelector('.el-form-item__label, .doraemon-form-item-label, label, [class*="label"]');
-            const labelText = (labelEl as HTMLElement)?.innerText?.trim()?.replace(/[*＊]/g, '') || '';
+        // 🔥 方法1：直接查找所有 doraemon-radio-wrapper 中包含"境内"文字的元素
+        const allRadioWrappers = document.querySelectorAll('.doraemon-radio-wrapper, .el-radio, .ant-radio-wrapper');
+        this.log(`📍 全局搜索：找到 ${allRadioWrappers.length} 个 radio wrapper`);
 
-            if (/^产地/.test(labelText)) {
-                this.log('🔍 找到产地字段:', labelText);
+        for (const wrapper of allRadioWrappers) {
+            const wrapperText = (wrapper as HTMLElement).innerText?.trim() || '';
+            if (wrapperText === '境内') {
+                this.log(`🎯 直接命中境内选项: "${wrapperText}"`);
+                // 尝试点击内部的 input 或 wrapper 本身
+                const input = wrapper.querySelector('input[type="radio"]') as HTMLInputElement;
+                if (input && !input.checked) {
+                    input.click();
+                    this.log('✅ 点击了 radio input');
+                }
+                (wrapper as HTMLElement).click();
+                this.log('✅ 点击了 radio wrapper');
+                simpleRadioHandled = true;
+                await sleep(300);
+                break;
+            }
+        }
 
-                // 查找该行中的单选框选项
-                const radioOptions = row.querySelectorAll('.el-radio, .doraemon-radio, .doraemon-radio-wrapper, .el-radio-group label, label[class*="radio"]');
-                this.log(`🔘 检测到 ${radioOptions.length} 个单选选项`);
+        // 🔥 方法2：如果方法1失败，遍历表单行查找产地字段
+        if (!simpleRadioHandled) {
+            this.log('📍 方法1未命中，尝试方法2：遍历表单行...');
+            const formRows = document.querySelectorAll('.el-form-item, .doraemon-form-item, .attr-row, [class*="form-item"], .goods-attr-form .attr-row');
+            this.log(`📍 找到 ${formRows.length} 个表单行`);
 
-                if (radioOptions.length > 0) {
-                    // 点击"境内"选项
-                    for (const opt of radioOptions) {
-                        const optText = (opt as HTMLElement).innerText?.trim() || '';
-                        this.log(`  选项: "${optText}"`);
-                        if (optText === '境内' || optText.includes('境内')) {
-                            (opt as HTMLElement).click();
-                            this.log('✅ 已点击选择产地: 境内');
+            for (const row of formRows) {
+                const rowText = (row as HTMLElement).innerText || '';
+                // 检查这一行是否包含"产地"标签
+                if (rowText.includes('产地') && (rowText.includes('境内') || rowText.includes('境外'))) {
+                    this.log('🔍 找到产地行:', rowText.substring(0, 50));
+
+                    // 查找该行中的所有可点击元素
+                    const clickables = row.querySelectorAll('.doraemon-radio-wrapper, .el-radio, .ant-radio-wrapper, label, span');
+                    for (const el of clickables) {
+                        const elText = (el as HTMLElement).innerText?.trim() || '';
+                        if (elText === '境内') {
+                            this.log(`🎯 在产地行中找到境内选项`);
+                            (el as HTMLElement).click();
                             simpleRadioHandled = true;
                             await sleep(300);
                             break;
                         }
                     }
-
                     if (simpleRadioHandled) break;
                 }
             }
+        }
+
+        // 🔥 方法3：最后尝试 - 直接搜索所有包含"境内"文字的 span/label 并点击其父级
+        if (!simpleRadioHandled) {
+            this.log('📍 方法2未命中，尝试方法3：搜索所有文字节点...');
+            const allElements = document.querySelectorAll('span, label');
+            for (const el of allElements) {
+                if ((el as HTMLElement).innerText?.trim() === '境内') {
+                    const parent = (el as HTMLElement).closest('.doraemon-radio-wrapper, .el-radio, .ant-radio-wrapper, label');
+                    if (parent) {
+                        this.log('🎯 方法3命中，点击父级元素');
+                        (parent as HTMLElement).click();
+                        simpleRadioHandled = true;
+                        await sleep(300);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (simpleRadioHandled) {
+            this.log('✅ 产地"境内"选择成功');
+        } else {
+            this.warn('⚠️ 未能找到并点击"境内"选项，请检查页面结构');
         }
 
         // 如果简单单选框已处理，检查是否还有级联选择器需要处理
