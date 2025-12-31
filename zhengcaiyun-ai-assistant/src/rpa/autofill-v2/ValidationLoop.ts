@@ -89,7 +89,10 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
         console.log('[V2] Step 5: 开始执行填写...');
 
         // 过滤掉不应该自动填写的字段
-        const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片'];
+        const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片', '商品标题'];
+        // 这些字段如果UI上已经有值了，就跳过
+        const maybeFilledLabels = ['品牌', '型号', '商品名称'];
+
         const requiredFields = analysis.fields.filter(f => {
             if (!f.required) return false;
             // 跳过图片类字段
@@ -99,10 +102,30 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             }
             return true;
         });
+
         console.log('[V2] 需要填写', requiredFields.length, '个必填项');
+
+        // productData 在函数参数中已经有了
 
         for (const field of requiredFields) {
             console.log(`[V2] 填写: ${field.label}`);
+
+            // ★ 关键：强制使用采集的数据覆盖 Gemini 推荐的值
+            if (field.label.includes('电商平台链接') || field.label.includes('平台链接')) {
+                if (productData.platform_link) {
+                    field.value = productData.platform_link;
+                    console.log(`[V2] 使用采集的电商链接: ${field.value}`);
+                }
+            }
+            if (field.label.includes('运费模板')) {
+                field.value = '默认';
+                console.log(`[V2] 运费模板使用: 默认`);
+            }
+            if (field.label.includes('是否需要安装')) {
+                field.value = '不需要';
+                field.type = 'select'; // 强制设为 select 类型
+                console.log(`[V2] 是否需要安装使用: 不需要`);
+            }
 
             try {
                 const success = await executeFieldFill(field);
@@ -1045,48 +1068,74 @@ async function waitForFormStable(timeout = 3000): Promise<boolean> {
 }
 
 async function closeAllDropdowns(): Promise<void> {
+    // 按 Escape 关闭弹出层
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(100);
-    document.body.click();
-    await sleep(100);
 
-    // 隐藏所有浮层
-    document.querySelectorAll('.doraemon-select-dropdown, .el-select-dropdown, .ant-select-dropdown').forEach(d => {
-        (d as HTMLElement).style.display = 'none';
-    });
+    // 点击空白区域关闭
+    const backdrop = document.querySelector('.doraemon-modal-mask, .el-popup-parent--hidden');
+    if (backdrop) {
+        (backdrop as HTMLElement).click();
+    } else {
+        document.body.click();
+    }
+    await sleep(100);
 }
 
 function getVisibleOptions(): Array<{ text: string, element: HTMLElement }> {
     const options: Array<{ text: string, element: HTMLElement }> = [];
 
+    // 先检查有没有下拉框弹出
+    const dropdowns = document.querySelectorAll(
+        '.doraemon-select-dropdown:not([style*="display: none"]), ' +
+        '.el-select-dropdown, .ant-select-dropdown, ' +
+        '[class*="dropdown"]:not([style*="display: none"])'
+    );
+    console.log(`[V2] getVisibleOptions: 找到 ${dropdowns.length} 个下拉容器`);
+
     const selectors = [
+        // Doraemon UI
         '.doraemon-select-dropdown-menu-item',
         '.doraemon-select-dropdown-menu li',
+        '.doraemon-select-dropdown li',
         '.doraemon-select-item',
+        // Element UI
         '.el-select-dropdown__item',
+        '.el-select-dropdown__list li',
+        // Ant Design
         '.ant-select-item-option',
+        '.ant-select-item',
+        // 通用
         '[role="option"]',
+        '[role="listbox"] > *',
         '.dropdown-item',
         '.select-option',
         'li.option',
-        // 通用：dropdown 下的 li
         '.doraemon-dropdown li',
-        '.dropdown-menu li'
+        '.dropdown-menu li',
+        // 更通用的选择器
+        '[class*="select-dropdown"] li',
+        '[class*="dropdown-menu"] li',
+        '[class*="option"]:not(input)'
     ];
 
     for (const sel of selectors) {
-        document.querySelectorAll(sel).forEach(item => {
+        const items = document.querySelectorAll(sel);
+        items.forEach(item => {
             const el = item as HTMLElement;
             const text = el.innerText?.trim();
-            // 确保可见且有文字
-            if (text && !el.classList.contains('is-disabled') && el.offsetParent !== null) {
-                options.push({ text, element: el });
+            // 确保可见且有文字，排除已选中的
+            if (text && text.length < 50 && !el.classList.contains('is-disabled') && el.offsetParent !== null) {
+                // 避免重复
+                if (!options.some(o => o.text === text)) {
+                    options.push({ text, element: el });
+                }
             }
         });
         if (options.length > 0) break;
     }
 
-    console.log(`[V2] 找到 ${options.length} 个下拉选项:`, options.map(o => o.text).join(', '));
+    console.log(`[V2] getVisibleOptions 找到 ${options.length} 个选项:`, options.map(o => o.text).slice(0, 10).join(', '));
     return options;
 }
 
