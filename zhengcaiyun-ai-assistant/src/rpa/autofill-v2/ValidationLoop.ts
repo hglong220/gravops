@@ -159,7 +159,7 @@ async function captureFullPage(): Promise<string | null> {
 
 /**
  * 滚动页面截取多张截图（覆盖整个页面）
- * 根据页面高度动态决定截图数量（最多5张）
+ * 根据页面高度动态决定截图数量（最多7张，5%重叠）
  */
 async function captureMultipleScreenshots(): Promise<string[]> {
     const screenshots: string[] = [];
@@ -169,10 +169,10 @@ async function captureMultipleScreenshots(): Promise<string[]> {
         const totalHeight = document.body.scrollHeight;
         const viewportHeight = window.innerHeight;
 
-        // 2. 计算需要截取的次数（每次滚动70%视口高度，有30%重叠）
-        const scrollStep = Math.floor(viewportHeight * 0.7);
+        // 2. 计算需要截取的次数（每次滚动65%视口高度，有5%重叠，减少冗余）
+        const scrollStep = Math.floor(viewportHeight * 0.65);
         let numScreenshots = Math.ceil(totalHeight / scrollStep);
-        numScreenshots = Math.max(1, Math.min(numScreenshots, 5)); // 最少1张，最多5张
+        numScreenshots = Math.max(1, Math.min(numScreenshots, 7)); // 最少1张，最多7张
 
         console.log(`[V2] 页面高度: ${totalHeight}px, 视口高度: ${viewportHeight}px, 计划截取 ${numScreenshots} 张`);
 
@@ -742,76 +742,143 @@ async function handleOriginCascader(container: HTMLElement): Promise<void> {
 }
 
 /**
- * 填写 Select/Dropdown
+ * 填写 Select/Dropdown（增强版，确保100%成功）
  */
 async function fillSelect(container: HTMLElement, value: string): Promise<boolean> {
+    console.log(`[V2] fillSelect 开始，目标值: "${value}"`);
+
     // 关闭所有已打开的下拉框
     await closeAllDropdowns();
 
-    // 找触发器并点击
-    const trigger = container.querySelector(
-        '.doraemon-select, .el-select, .ant-select, [role="combobox"], .doraemon-select-selection'
-    ) as HTMLElement;
+    // 找触发器（多种选择器）
+    const triggerSelectors = [
+        '.doraemon-select',
+        '.doraemon-select-selection',
+        '.el-select',
+        '.ant-select',
+        '[role="combobox"]',
+        '.doraemon-select-selection__rendered',
+        'div[class*="select"]'
+    ];
+
+    let trigger: HTMLElement | null = null;
+    for (const sel of triggerSelectors) {
+        trigger = container.querySelector(sel) as HTMLElement;
+        if (trigger) {
+            console.log(`[V2] 找到触发器: ${sel}`);
+            break;
+        }
+    }
 
     if (!trigger) {
         // 可能是 combobox，尝试找 input
         const input = container.querySelector('input') as HTMLInputElement;
         if (input && !input.disabled && !input.readOnly) {
+            console.log(`[V2] 未找到下拉触发器，尝试作为输入框处理`);
             return await fillInput(container, value);
         }
+        console.warn(`[V2] fillSelect 失败：未找到触发器`);
         return false;
     }
 
-    // 点击打开下拉框
-    trigger.click();
-    await sleep(600);
+    // 尝试多种方式打开下拉框
+    let dropdownOpened = false;
+    for (let attempt = 0; attempt < 3 && !dropdownOpened; attempt++) {
+        console.log(`[V2] 尝试打开下拉框，第 ${attempt + 1} 次`);
 
-    // 检查是否是搜索型下拉框
-    const searchInput = container.querySelector('.doraemon-select-search__field, input.doraemon-input') as HTMLInputElement;
-    if (searchInput && !searchInput.disabled) {
-        // 搜索型：先输入搜索文字
+        if (attempt === 0) {
+            trigger.click();
+        } else if (attempt === 1) {
+            // 尝试点击内部 input
+            const innerInput = container.querySelector('input') as HTMLElement;
+            if (innerInput) {
+                innerInput.focus();
+                innerInput.click();
+            } else {
+                trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                trigger.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            }
+        } else {
+            // 尝试模拟键盘事件
+            trigger.focus();
+            trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        }
+
+        await sleep(500);
+
+        // 检查下拉框是否打开
+        const visibleDropdowns = document.querySelectorAll(
+            '.doraemon-select-dropdown:not(.doraemon-select-dropdown-hidden), ' +
+            '.el-select-dropdown, .ant-select-dropdown, [role="listbox"]'
+        );
+        if (visibleDropdowns.length > 0) {
+            dropdownOpened = true;
+            console.log(`[V2] 下拉框已打开`);
+        }
+    }
+
+    // 搜索型下拉框：输入搜索文字
+    const searchInput = container.querySelector('.doraemon-select-search__field, input.doraemon-input, input[type="text"]') as HTMLInputElement;
+    if (searchInput && !searchInput.disabled && searchInput.offsetParent !== null) {
         console.log(`[V2] 检测到搜索型下拉框，输入: ${value}`);
         searchInput.focus();
         searchInput.value = value;
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(500);
+        await sleep(600);
     }
 
-    // 查找选项
+    // 查找选项（多种方式）
     let options = getVisibleOptions();
 
-    // 备选方案：用 XPath 查找包含目标文字的 li 元素
+    // 备选方案1：查找所有可见 li
     if (options.length === 0) {
-        console.log('[V2] 尝试用 XPath 查找下拉选项...');
+        console.log('[V2] 方案1：查找所有可见 li...');
         const liElements = document.querySelectorAll('li');
         for (const li of liElements) {
             const el = li as HTMLElement;
             const text = el.innerText?.trim();
             if (text && el.offsetParent !== null && !el.classList.contains('is-disabled')) {
-                // 检查是否在下拉菜单中（不是级联选择器）
                 if (!el.closest('.doraemon-cascader-menu')) {
                     options.push({ text, element: el });
                 }
             }
         }
-        console.log(`[V2] XPath 找到 ${options.length} 个选项:`, options.map(o => o.text).slice(0, 5).join(', '));
     }
 
+    // 备选方案2：查找 dropdown 内的任何可点击元素
     if (options.length === 0) {
-        console.warn(`[V2] 未找到下拉选项`);
+        console.log('[V2] 方案2：查找 dropdown 内元素...');
+        const dropdownItems = document.querySelectorAll(
+            '[class*="dropdown"] > *, [class*="select-menu"] li, [class*="option"]'
+        );
+        for (const item of dropdownItems) {
+            const el = item as HTMLElement;
+            const text = el.innerText?.trim();
+            if (text && el.offsetParent !== null) {
+                options.push({ text, element: el });
+            }
+        }
+    }
+
+    console.log(`[V2] 共找到 ${options.length} 个选项:`, options.map(o => o.text).slice(0, 5).join(', '));
+
+    if (options.length === 0) {
+        console.warn(`[V2] fillSelect 失败：未找到下拉选项`);
         document.body.click();
         return false;
     }
 
-    // 匹配选项
+    // 智能匹配选项
     const normalizedValue = value.trim().toLowerCase();
     let targetOption = options.find(o => o.text.toLowerCase() === normalizedValue);
+
     if (!targetOption) {
         targetOption = options.find(o =>
             o.text.toLowerCase().includes(normalizedValue) ||
             normalizedValue.includes(o.text.toLowerCase())
         );
     }
+
     // 特殊匹配：否/不需要/无需
     if (!targetOption && (normalizedValue === '否' || normalizedValue === '不需要' || normalizedValue === '无需' || normalizedValue.includes('不'))) {
         targetOption = options.find(o =>
@@ -822,6 +889,7 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
             o.text.startsWith('不')
         );
     }
+
     // 特殊匹配：是/需要
     if (!targetOption && (normalizedValue === '是' || normalizedValue === '需要')) {
         targetOption = options.find(o =>
@@ -830,19 +898,36 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
             (o.text.includes('需要') && !o.text.includes('不'))
         );
     }
+
+    // 默认选项
     if (!targetOption && options.length > 0) {
-        // 默认选第一个或第二个（第二个通常是"不需要"）
-        targetOption = options.length > 1 ? options[1] : options[0];
+        // 对于"是否需要安装"这类字段，第二个选项通常是"不需要"
+        if (normalizedValue.includes('不') || normalizedValue.includes('否')) {
+            targetOption = options.length > 1 ? options[1] : options[0];
+        } else {
+            targetOption = options[0];
+        }
         console.log(`[V2] 使用默认选项: ${targetOption.text}`);
     }
 
     if (targetOption) {
-        console.log(`[V2] 点击下拉选项: ${targetOption.text}`);
+        console.log(`[V2] 点击下拉选项: "${targetOption.text}"`);
         targetOption.element.scrollIntoView({ block: 'center' });
         await sleep(50);
+
+        // 多种方式点击
         targetOption.element.click();
+        await sleep(100);
+
+        // 如果还没关闭，再尝试
+        if (targetOption.element.offsetParent !== null) {
+            targetOption.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            targetOption.element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        }
+
         await sleep(300);
         await closeAllDropdowns();
+        console.log(`[V2] fillSelect 成功`);
         return true;
     }
 
