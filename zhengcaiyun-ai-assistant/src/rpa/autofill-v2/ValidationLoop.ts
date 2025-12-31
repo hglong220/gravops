@@ -47,6 +47,8 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
     console.log('[V2] ═══════════════════════════════════════════════════════');
     console.log('[V2] 商品:', productData.title);
     console.log('[V2] 品牌:', productData.brand, '| 型号:', productData.model);
+    console.log('[V2] ⭐ 电商链接:', productData.platform_link || '❌ 未提供');
+    console.log('[V2] ⭐ 价格:', productData.price, '| 库存:', productData.stock);
 
     try {
         // Step 1: 等待页面稳定
@@ -962,20 +964,26 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
  * 填写 Input/Textarea
  */
 async function fillInput(container: HTMLElement, value: string): Promise<boolean> {
+    console.log(`[V2] fillInput 开始，值: "${value.substring(0, 50)}..."`);
+
     // 查找输入框
     const input = container.querySelector(
         'input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([disabled]), textarea:not([disabled])'
     ) as HTMLInputElement;
 
     if (!input) {
+        console.log(`[V2] fillInput: 未找到主输入框，尝试 combobox`);
         // 可能是 combobox 的 input
         const comboboxInput = container.querySelector('.doraemon-select-search__field, input.doraemon-input') as HTMLInputElement;
         if (comboboxInput && !comboboxInput.disabled) {
+            console.log(`[V2] fillInput: 找到 combobox 输入框`);
             return setInputValue(comboboxInput, value);
         }
+        console.warn(`[V2] fillInput: 未找到任何输入框`);
         return false;
     }
 
+    console.log(`[V2] fillInput: 找到输入框, type=${input.type}, id=${input.id}`);
     return setInputValue(input, value);
 }
 
