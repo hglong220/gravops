@@ -57,18 +57,19 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
         console.log('[V2] Step 2: 滚动页面收集所有区域...');
         await scrollToCollectAll();
 
-        // Step 3: 截取页面截图
-        console.log('[V2] Step 3: 截取页面截图...');
-        const screenshot = await captureFullPage();
-        if (!screenshot) {
+        // Step 3: 截取页面截图（多张，覆盖整个页面）
+        console.log('[V2] Step 3: 截取页面多张截图...');
+        const screenshots = await captureMultipleScreenshots();
+        if (screenshots.length === 0) {
             console.error('[V2] ❌ 截图失败');
             return { ...report, success: false };
         }
-        console.log('[V2] 截图大小:', Math.round(screenshot.length / 1024), 'KB');
+        const totalSize = screenshots.reduce((sum, s) => sum + s.length, 0);
+        console.log(`[V2] 截取 ${screenshots.length} 张截图，总大小: ${Math.round(totalSize / 1024)} KB`);
 
-        // Step 4: 发给 Gemini 分析
+        // Step 4: 发给 Gemini 分析（一次性发送多张截图）
         console.log('[V2] Step 4: 发送给 Gemini 分析...');
-        const analysis = await analyzeWithGemini(screenshot, productData);
+        const analysis = await analyzeWithGemini(screenshots, productData);
 
         if (!analysis.success) {
             console.error('[V2] ❌ Gemini 分析失败:', analysis.error);
@@ -86,7 +87,18 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
 
         // Step 5: 执行填写
         console.log('[V2] Step 5: 开始执行填写...');
-        const requiredFields = analysis.fields.filter(f => f.required);
+
+        // 过滤掉不应该自动填写的字段
+        const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片'];
+        const requiredFields = analysis.fields.filter(f => {
+            if (!f.required) return false;
+            // 跳过图片类字段
+            if (skipLabels.some(skip => f.label.includes(skip))) {
+                console.log(`[V2] 跳过图片字段: ${f.label}`);
+                return false;
+            }
+            return true;
+        });
         console.log('[V2] 需要填写', requiredFields.length, '个必填项');
 
         for (const field of requiredFields) {
@@ -146,6 +158,61 @@ async function captureFullPage(): Promise<string | null> {
 }
 
 /**
+ * 滚动页面截取多张截图（覆盖整个页面）
+ * 根据页面高度动态决定截图数量（最多5张）
+ */
+async function captureMultipleScreenshots(): Promise<string[]> {
+    const screenshots: string[] = [];
+
+    try {
+        // 1. 获取页面总高度
+        const totalHeight = document.body.scrollHeight;
+        const viewportHeight = window.innerHeight;
+
+        // 2. 计算需要截取的次数（每次滚动70%视口高度，有30%重叠）
+        const scrollStep = Math.floor(viewportHeight * 0.7);
+        let numScreenshots = Math.ceil(totalHeight / scrollStep);
+        numScreenshots = Math.max(1, Math.min(numScreenshots, 5)); // 最少1张，最多5张
+
+        console.log(`[V2] 页面高度: ${totalHeight}px, 视口高度: ${viewportHeight}px, 计划截取 ${numScreenshots} 张`);
+
+        // 3. 先滚到顶部
+        window.scrollTo(0, 0);
+        await sleep(400);
+
+        // 4. 循环截图
+        for (let i = 0; i < numScreenshots; i++) {
+            // 计算滚动位置
+            let scrollPos = i * scrollStep;
+            // 最后一张确保滚到底部
+            if (i === numScreenshots - 1 && numScreenshots > 1) {
+                scrollPos = Math.max(0, totalHeight - viewportHeight);
+            }
+
+            window.scrollTo(0, scrollPos);
+            await sleep(400);
+
+            const shot = await VisionBridge.captureScreenshot();
+            if (shot) {
+                screenshots.push(shot);
+                console.log(`[V2] 截图 ${i + 1}/${numScreenshots} 成功，位置: ${scrollPos}px，大小: ${Math.round(shot.length / 1024)} KB`);
+            }
+        }
+
+        // 5. 滚回顶部
+        window.scrollTo(0, 0);
+        await sleep(300);
+
+        console.log(`[V2] 共截取 ${screenshots.length} 张截图`);
+
+    } catch (error) {
+        console.error('[V2] 多截图失败:', error);
+    }
+
+    return screenshots;
+}
+
+/**
  * 滚动页面收集所有区域
  */
 async function scrollToCollectAll(): Promise<void> {
@@ -175,14 +242,18 @@ async function scrollToCollectAll(): Promise<void> {
 /**
  * 调用后端 Gemini 视觉分析接口
  * 通过 background 的 API_PROXY 绕过 Mixed Content 限制
+ * 支持单张或多张截图
  */
-async function analyzeWithGemini(screenshot: string, productData: ProductData): Promise<FormAnalysisResult> {
+async function analyzeWithGemini(screenshots: string | string[], productData: ProductData): Promise<FormAnalysisResult> {
     try {
         const baseUrl = 'http://localhost:3000';
         const url = `${baseUrl}/api/vision/form-analyze`;
 
+        // 统一转换为数组格式
+        const screenshotArray = Array.isArray(screenshots) ? screenshots : [screenshots];
+
         const body = {
-            screenshot,
+            screenshots: screenshotArray,  // 使用数组格式
             productInfo: {
                 title: productData.title,
                 brand: productData.brand,
@@ -296,6 +367,10 @@ function findFieldContainer(label: string): HTMLElement | null {
         'label.doraemon-form-item-label',
         '.doraemon-form-item-label label',
         '.el-form-item__label',
+        'th',  // 表格表头（销售规格区域）
+        'td',  // 表格单元格
+        'span.item-label',  // 其他可能的 label 容器
+        'div.label',
         'label'
     ];
 
@@ -345,6 +420,41 @@ function findFieldContainer(label: string): HTMLElement | null {
                     console.log(`[V2] 使用 doraemon-row 容器:`, row.className);
                     return row as HTMLElement;
                 }
+            }
+        }
+    }
+
+    // 备选策略：在销售规格区域查找（表格结构）
+    const specTable = document.querySelector('.sku-table, .item-container, [class*="spec"], [class*="price"]');
+    if (specTable) {
+        // 在表格中查找包含该文字的单元格
+        const cells = specTable.querySelectorAll('th, td, .item-label');
+        for (const cell of cells) {
+            const cellText = (cell as HTMLElement).innerText?.replace(/[*\s:：]/g, '').trim() || '';
+            if (cellText === normalizedLabel || cellText.includes(normalizedLabel)) {
+                console.log(`[V2] 在规格表格中找到: "${cellText}"`);
+                // 返回包含输入框的容器
+                const row = cell.closest('tr, .item-container, .item-row');
+                if (row) return row as HTMLElement;
+                return specTable as HTMLElement;
+            }
+        }
+    }
+
+    // 备选策略2：直接查找包含该文字的区域
+    const allDivs = document.querySelectorAll('div, span');
+    for (const div of allDivs) {
+        const text = (div as HTMLElement).innerText?.replace(/[*\s:：]/g, '').trim() || '';
+        if (text === normalizedLabel && (div as HTMLElement).querySelectorAll('*').length < 5) {
+            // 找到了精确匹配的小元素，向上找包含 input 的容器
+            let parent = div.parentElement;
+            for (let i = 0; i < 5 && parent; i++) {
+                const hasInput = parent.querySelector('input, select, textarea');
+                if (hasInput) {
+                    console.log(`[V2] 通过文字向上查找到容器`);
+                    return parent as HTMLElement;
+                }
+                parent = parent.parentElement;
             }
         }
     }
@@ -640,7 +750,7 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
 
     // 找触发器并点击
     const trigger = container.querySelector(
-        '.doraemon-select, .el-select, .ant-select, [role="combobox"]'
+        '.doraemon-select, .el-select, .ant-select, [role="combobox"], .doraemon-select-selection'
     ) as HTMLElement;
 
     if (!trigger) {
@@ -656,8 +766,37 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
     trigger.click();
     await sleep(600);
 
+    // 检查是否是搜索型下拉框
+    const searchInput = container.querySelector('.doraemon-select-search__field, input.doraemon-input') as HTMLInputElement;
+    if (searchInput && !searchInput.disabled) {
+        // 搜索型：先输入搜索文字
+        console.log(`[V2] 检测到搜索型下拉框，输入: ${value}`);
+        searchInput.focus();
+        searchInput.value = value;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(500);
+    }
+
     // 查找选项
-    const options = getVisibleOptions();
+    let options = getVisibleOptions();
+
+    // 备选方案：用 XPath 查找包含目标文字的 li 元素
+    if (options.length === 0) {
+        console.log('[V2] 尝试用 XPath 查找下拉选项...');
+        const liElements = document.querySelectorAll('li');
+        for (const li of liElements) {
+            const el = li as HTMLElement;
+            const text = el.innerText?.trim();
+            if (text && el.offsetParent !== null && !el.classList.contains('is-disabled')) {
+                // 检查是否在下拉菜单中（不是级联选择器）
+                if (!el.closest('.doraemon-cascader-menu')) {
+                    options.push({ text, element: el });
+                }
+            }
+        }
+        console.log(`[V2] XPath 找到 ${options.length} 个选项:`, options.map(o => o.text).slice(0, 5).join(', '));
+    }
+
     if (options.length === 0) {
         console.warn(`[V2] 未找到下拉选项`);
         document.body.click();
@@ -673,11 +812,32 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
             normalizedValue.includes(o.text.toLowerCase())
         );
     }
+    // 特殊匹配：否/不需要/无需
+    if (!targetOption && (normalizedValue === '否' || normalizedValue === '不需要' || normalizedValue === '无需' || normalizedValue.includes('不'))) {
+        targetOption = options.find(o =>
+            o.text === '不需要' ||
+            o.text === '否' ||
+            o.text.includes('不需要') ||
+            o.text.includes('无需') ||
+            o.text.startsWith('不')
+        );
+    }
+    // 特殊匹配：是/需要
+    if (!targetOption && (normalizedValue === '是' || normalizedValue === '需要')) {
+        targetOption = options.find(o =>
+            o.text === '需要' ||
+            o.text === '是' ||
+            (o.text.includes('需要') && !o.text.includes('不'))
+        );
+    }
     if (!targetOption && options.length > 0) {
-        targetOption = options[0];
+        // 默认选第一个或第二个（第二个通常是"不需要"）
+        targetOption = options.length > 1 ? options[1] : options[0];
+        console.log(`[V2] 使用默认选项: ${targetOption.text}`);
     }
 
     if (targetOption) {
+        console.log(`[V2] 点击下拉选项: ${targetOption.text}`);
         targetOption.element.scrollIntoView({ block: 'center' });
         await sleep(50);
         targetOption.element.click();
@@ -816,22 +976,32 @@ function getVisibleOptions(): Array<{ text: string, element: HTMLElement }> {
 
     const selectors = [
         '.doraemon-select-dropdown-menu-item',
+        '.doraemon-select-dropdown-menu li',
+        '.doraemon-select-item',
         '.el-select-dropdown__item',
         '.ant-select-item-option',
-        '[role="option"]'
+        '[role="option"]',
+        '.dropdown-item',
+        '.select-option',
+        'li.option',
+        // 通用：dropdown 下的 li
+        '.doraemon-dropdown li',
+        '.dropdown-menu li'
     ];
 
     for (const sel of selectors) {
         document.querySelectorAll(sel).forEach(item => {
             const el = item as HTMLElement;
             const text = el.innerText?.trim();
-            if (text && !el.classList.contains('is-disabled')) {
+            // 确保可见且有文字
+            if (text && !el.classList.contains('is-disabled') && el.offsetParent !== null) {
                 options.push({ text, element: el });
             }
         });
         if (options.length > 0) break;
     }
 
+    console.log(`[V2] 找到 ${options.length} 个下拉选项:`, options.map(o => o.text).join(', '));
     return options;
 }
 

@@ -73,6 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<FormAnaly
    - 普通属性区域（生产厂商、是否需要安装等）
    - 销售规格区域（市场价、销售价、库存）
    - 运费信息（运费模板）
+   - 售后服务区域（质保时间、整机免费换货期限等）
    - 上架管理（上架时间）
 3. 去重：如果多张截图中出现同一个字段，只返回一次
 4. 根据商品信息，推断每个字段应该填写什么值
@@ -81,10 +82,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<FormAnaly
 商品信息：
 ${JSON.stringify(productInfo, null, 2)}
 
-⚠️ **价格和库存填写规则**（重要！）：
-- 市场价：直接使用商品信息中的 price 字段值（如 ${productInfo?.price || '无'}）
-- 销售价：使用市场价的 90%，即 ${productInfo?.price ? Math.round(productInfo.price * 0.9 * 100) / 100 : '无'}
-- 库存：直接使用商品信息中的 stock 字段值（如 ${productInfo?.stock || '99'}）
+⚠️ **价格和库存填写规则**（重要！必须使用采集的数据）：
+- 市场价：必须使用商品信息中的 price 字段值 = ${productInfo?.price || '无'}
+- 销售价：必须使用商品信息中的 salePrice 字段值 = ${productInfo?.salePrice || (productInfo?.price ? Math.round(productInfo.price * 0.9 * 100) / 100 : '无')}
+- 库存：必须使用商品信息中的 stock 字段值 = ${productInfo?.stock || '99'}
 
 ⚠️ **单选框（Radio）填写规则**：
 - 产地：如果是惠普、佳能等国际品牌在中国有工厂的，选"境内"
@@ -94,11 +95,16 @@ ${JSON.stringify(productInfo, null, 2)}
 
 ⚠️ **下拉框（Select）填写规则**：
 - 计量单位：打印机/电脑选"台"，耗材选"个/件"，纸张选"包/箱"
-- 运费模板：选择第一个可用的模板
+- 运费模板：选择第一个可用的模板（或默认模板）
+- 是否需要安装：这是一个搜索型下拉框，打印机等小型设备选"不需要"（type 必须是 select，不是 radio）
+- 是否中小企业商品：这是一个单选按钮，通常选"否"（type 是 radio）
+- 上门安装调试：如果有这个字段，选择第一个选项
 
-⚠️ **输入框填写规则**：
+⚠️ **输入框填写规则**（重要！优先使用采集的数据）：
+- 电商平台链接：必须使用 platform_link 字段值 = ${productInfo?.platform_link || '无'}
 - 生产厂商：根据品牌推断，如"惠普"→"中国惠普有限公司"
-- 电商平台链接：使用 platform_link 字段值
+- 质保时间：打印机等电子产品填写"12"（表示12个月）
+- 整机免费换货期限：填写"7"（表示7天）
 
 输出格式（必须是合法 JSON）：
 {
@@ -120,7 +126,13 @@ ${JSON.stringify(productInfo, null, 2)}
 2. label 必须与页面上的文字完全一致
 3. 合并多张截图中的所有必填项，去重后返回
 4. 对于已经填好的字段，标记 required: false
-5. 重点关注未填写的星号必填项`;
+5. 重点关注未填写的星号必填项
+6. **排除以下类型的字段**（不要返回）：
+   - 商品图片、主图、详情图、规格图片等图片上传类字段
+   - 商品标题（通常已经填好）
+   - 已经显示有值的字段
+7. 如果有多个规格行（如多个价格/库存行），只返回第一行的字段即可
+8. 销售规格区域的字段用"市场价(元)"、"销售价(元)"、"库存"为 label`;
 
         // 构建多图请求 parts
         const imageParts = imageList.map((img, index) => ({
