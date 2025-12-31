@@ -87,17 +87,14 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             console.log(`[V2] ${icon} ${field.label} (${field.type}) → "${field.value}"`);
         }
 
-        // Step 5: 执行填写
+        // Step 5: 执行填写（简化版：直接用 AI 给的值填写）
         console.log('[V2] Step 5: 开始执行填写...');
 
-        // 过滤掉不应该自动填写的字段
-        const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片', '商品标题'];
-        // 这些字段如果UI上已经有值了，就跳过
-        const maybeFilledLabels = ['品牌', '型号', '商品名称'];
+        // 只跳过图片类字段
+        const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片'];
 
         const requiredFields = analysis.fields.filter(f => {
             if (!f.required) return false;
-            // 跳过图片类字段
             if (skipLabels.some(skip => f.label.includes(skip))) {
                 console.log(`[V2] 跳过图片字段: ${f.label}`);
                 return false;
@@ -107,46 +104,37 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
 
         console.log('[V2] 需要填写', requiredFields.length, '个必填项');
 
-        // productData 在函数参数中已经有了
-
         for (const field of requiredFields) {
-            console.log(`[V2] 填写: ${field.label}`);
+            const { label, type, value } = field;
 
-            // ★ 关键：强制使用采集的数据覆盖 Gemini 推荐的值
-            if (field.label.includes('电商平台链接') || field.label.includes('平台链接')) {
-                if (productData.platform_link) {
-                    field.value = productData.platform_link;
-                    console.log(`[V2] 使用采集的电商链接: ${field.value}`);
-                }
+            // 填前校验：空值跳过
+            if (!value || value === 'undefined' || value === 'null') {
+                console.warn(`[V2] ⚠️ AI 返回空值，跳过: ${label}`);
+                report.failedCount++;
+                report.failedFields.push({ label, reason: 'AI返回值为空' });
+                continue;
             }
-            if (field.label.includes('运费模板')) {
-                field.value = '默认';
-                console.log(`[V2] 运费模板使用: 默认`);
-            }
-            if (field.label.includes('是否需要安装')) {
-                field.value = '不需要';
-                field.type = 'select'; // 强制设为 select 类型
-                console.log(`[V2] 是否需要安装使用: 不需要`);
-            }
+
+            console.log(`[V2] 填写: ${label} → "${value}" (${type})`);
 
             try {
                 const success = await executeFieldFill(field);
 
                 if (success) {
                     report.filledCount++;
-                    console.log(`[V2] ✅ ${field.label} = "${field.value}"`);
+                    console.log(`[V2] ✅ ${label} = "${value}"`);
                 } else {
                     report.failedCount++;
-                    report.failedFields.push({ label: field.label, reason: '定位或填写失败' });
-                    console.log(`[V2] ❌ ${field.label} 失败`);
+                    report.failedFields.push({ label, reason: '填写失败' });
+                    console.log(`[V2] ❌ ${label} 填写失败`);
                 }
 
                 await sleep(300);
 
             } catch (e) {
-                console.error(`[V2] 异常: ${field.label}`, e);
+                console.error(`[V2] 异常: ${label}`, e);
                 report.failedCount++;
-                report.failedFields.push({ label: field.label, reason: '异常' });
+                report.failedFields.push({ label, reason: '异常' });
             }
         }
 
