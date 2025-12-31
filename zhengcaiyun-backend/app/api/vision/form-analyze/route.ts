@@ -86,7 +86,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<FormAnaly
 | 产地 | radio | 境内 |
 | 电商平台链接 | input | ${productInfo?.platform_link || '采集的链接'} |
 | 计量单位 | select | 台 |
-| 生产厂商 | input | ${productInfo?.brand || '品牌'}有限公司 |
+| 生产厂商 | input | 根据品牌智能推断正确公司名：惠普/HP→中国惠普有限公司，佳能→佳能（中国）有限公司，联想→联想（北京）有限公司，戴尔→戴尔（中国）有限公司，爱普生→爱普生（中国）有限公司，华为→华为技术有限公司，其他品牌→品牌名+有限公司 |
 | 是否需要安装 | select | 不需要 |
 | 运费模板 | select | 默认 |
 | 市场价 | input | ${productInfo?.price || ''} |
