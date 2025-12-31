@@ -6,36 +6,55 @@ const BLACKLIST = new Set<string>();
 
 /**
  * V2 语义解析器：规则优先 + AI 兜底
+ * 
+ * ⚠️ 重要：点选类（select/radio）不调用 AI！
+ * 因为此时还不知道真实选项，AI 会瞎猜。
+ * 让 FillExecutor 打开下拉获取真实选项后再决策。
  */
 export async function resolveField(field: FieldCandidate, productData: ProductData): Promise<SemanticDecision> {
 
-    // 1. 熔断判定 (Rule 1)
+    // 1. 熔断判定
     if (BLACKLIST.has(field.signature)) {
         console.log(`[V2 Resolver] 跳过熔断字段: ${field.label}`);
-        return createFailedDecision(field, '熔断：该字段前次尝试已失败');
+        return createFailedDecision(field, '熔断');
     }
 
-    // 2. ⭐ 优先使用本地规则映射（速度快、准确率高）
+    // 2. ⭐ 点选类（select/radio/unknown）：不调用 AI！
+    // 返回占位符，让 FillExecutor 用真实选项决策
+    if (field.controlType === 'select' || field.controlType === 'radio' || field.controlType === 'unknown') {
+        console.log(`[V2 Resolver] 点选类: ${field.label} -> 交给 Executor 处理`);
+        return {
+            signature: field.signature,
+            semantic: 'enum_placeholder',
+            confidence: 1,
+            source: 'rule',
+            fillValue: '__ENUM_PLACEHOLDER__',
+            fillPlan: { kind: 'fixed_value', value: '' },
+            executePlan: { action: 'select', payload: '__ENUM_PLACEHOLDER__' }
+        };
+    }
+
+    // 3. 输入类：优先使用本地规则映射
     const ruleDecision = RuleMap.matchRule(field, productData);
     if (ruleDecision && ruleDecision.executePlan?.payload) {
         console.log(`[V2 Resolver] ✅ 规则命中: ${field.label} -> ${ruleDecision.executePlan.payload}`);
         return ruleDecision;
     }
 
-    // 3. 规则未命中，尝试从 specs 中智能匹配
+    // 4. 从 specs 中智能匹配
     const specsDecision = matchFromSpecs(field, productData);
     if (specsDecision && specsDecision.executePlan?.payload) {
         console.log(`[V2 Resolver] ✅ Specs 匹配: ${field.label} -> ${specsDecision.executePlan.payload}`);
         return specsDecision;
     }
 
-    // 4. 调用后端 AI 服务（兜底）
+    // 5. 调用后端 AI 服务（仅输入类才调用）
     try {
         console.log(`[V2 Resolver] 🤖 调用 AI 解析: ${field.label}`);
         const baseUrl = process.env.PLASMO_PUBLIC_BACKEND_URL || 'http://localhost:3000';
         const response = await fetch(`${baseUrl}/api/autofill/semantic-resolve`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },  // ⭐ 添加 Content-Type
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ field, productData }),
             signal: AbortSignal.timeout(10000)
         });
@@ -46,9 +65,8 @@ export async function resolveField(field: FieldCandidate, productData: ProductDa
         }
 
         const decision = await response.json() as SemanticDecision;
-
-        // 5. 结果验证
         const payload = decision.executePlan?.payload;
+
         if (!payload || payload.length > 100 || payload.includes('没有提供') || payload === field.label) {
             console.warn(`[V2 Resolver] AI 返回无效: "${payload}"`);
             return createDefaultDecision(field, productData);

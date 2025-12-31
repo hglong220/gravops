@@ -1,72 +1,39 @@
 import type { ProductData, AutoFillReport } from './types';
-import { PageScanner } from './PageScanner';
-import { SemanticResolver } from './SemanticResolver';
-import { FillExecutor } from './FillExecutor';
-import { CacheStore } from './CacheStore';
+import { VisionBridge } from '../../lib/vision-bridge';
 
-const MAX_RETRY = 3;
+/**
+ * V2 主循环 - Gemini 视觉 AI 主导方案
+ * 
+ * 核心原则：
+ * 1. 截取页面，发给 Gemini 分析所有必填项
+ * 2. Gemini 返回每个字段的填写计划
+ * 3. 软件按计划执行填写（不需要思考）
+ */
 
 function sleep(ms: number) {
     return new Promise(r => setTimeout(r, ms));
 }
 
-/**
- * 等待表单 DOM 真正出现并稳定 (物理级判定)
- * ❗ 核心修复：只信 DOM，与 Scraper/Flags 完全解耦
- */
-async function waitForFormStable(timeout = 8000): Promise<boolean> {
-    const start = Date.now();
-    console.log('[V2 Loop] 🔍 开始检测表单 DOM 是否就绪...');
+// ==================== 类型定义 ====================
 
-    while (Date.now() - start < timeout) {
-        // 政采云专用选择器 + 通用 UI 框架选择器
-        const formItems = document.querySelectorAll(
-            '.el-form-item, .ant-form-item, .doraemon-form-item, .attr-row, .publish-item, [class*="form-item"]'
-        );
-
-        const elapsed = Date.now() - start;
-
-        if (formItems.length > 5) {
-            console.log(`[V2 Loop] ✅ 检测到 ${formItems.length} 个表单项 (${elapsed}ms)，等待 DOM 稳定...`);
-            await sleep(1000); // 发现后多等 1000ms 让它彻底稳定（政采云加载慢）
-
-            // 二次确认：再次检查数量是否稳定
-            const formItemsAfter = document.querySelectorAll(
-                '.el-form-item, .ant-form-item, .doraemon-form-item, .attr-row, .publish-item, [class*="form-item"]'
-            );
-            console.log(`[V2 Loop] ✅ 稳定后检测到 ${formItemsAfter.length} 个表单项，DOM 已就绪`);
-            return true;
-        }
-
-        // 每 1 秒输出一次等待进度
-        if (elapsed % 1000 < 250) {
-            console.log(`[V2 Loop] ⏳ 等待表单加载... (${Math.round(elapsed / 1000)}s, 当前 ${formItems.length} 项)`);
-        }
-
-        await sleep(200);
-    }
-
-    console.warn('[V2 Loop] ❌ 表单 DOM 等待超时 (8s)');
-    return false;
+interface FormField {
+    label: string;
+    type: 'input' | 'select' | 'radio' | 'checkbox' | 'textarea';
+    value: string;
+    options?: string[];
+    required: boolean;
+    confidence: number;
 }
 
-/**
- * 触发一次页面校验 (暴力捕捉隐藏必填项)
- */
-async function triggerValidation() {
-    console.log('[V2 Loop] 正在尝试触发页面深度校验以捕捉隐藏报错项...');
-    // 寻找保存草稿或类似按钮，但不点击（避免跳转），只通过失焦或模拟点击 input 触发
-    const firstInput = document.querySelector('input, .el-select, .ant-select') as HTMLElement;
-    if (firstInput) {
-        firstInput.focus();
-        await sleep(100);
-        firstInput.blur();
-    }
+interface FormAnalysisResult {
+    success: boolean;
+    fields: FormField[];
+    summary: string;
+    error?: string;
 }
 
-/**
- * 主执行循环
- */
+// ==================== 主流程 ====================
+
 export async function runAutoFillV2(productData: ProductData): Promise<AutoFillReport> {
     const report: AutoFillReport = {
         success: false,
@@ -75,128 +42,797 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
         failedFields: []
     };
 
-    console.log('[V2 Loop] >>> 引擎启动：跳过识别器，实施 DOM 绝对判定 <<<');
+    console.log('[V2] ═══════════════════════════════════════════════════════');
+    console.log('[V2] 🚀 Gemini 视觉 AI 填表引擎启动');
+    console.log('[V2] ═══════════════════════════════════════════════════════');
+    console.log('[V2] 商品:', productData.title);
+    console.log('[V2] 品牌:', productData.brand, '| 型号:', productData.model);
 
-    // 1. 强制稳定 (核心修复 2) - 严查表单容器，杜绝 Fallback/假页面的干扰
-    // ❗ V2 绝对禁止依赖 Scraper / Flags / Fallback -> 只信 DOM
-    const isReady = await waitForFormStable();
+    try {
+        // Step 1: 等待页面稳定
+        console.log('[V2] Step 1: 等待页面稳定...');
+        await waitForFormStable();
 
-    // 如果 waitForFormStable 通过，说明已有足够的表单项，直接允许执行
-    // 不再强制要求顶层容器 (.ant-form) 存在，因为政采云结构多变
-    if (!isReady) {
-        // 最后兜底：检查是否至少有一些表单项
-        const fallbackItems = document.querySelectorAll('.el-form-item, .doraemon-form-item, [class*="form-item"]');
-        if (fallbackItems.length > 0) {
-            console.log(`[V2 Loop] ⚠️ waitForFormStable 超时，但检测到 ${fallbackItems.length} 个表单项，强制继续执行`);
-        } else {
-            console.warn('[V2 Loop] ❌ 未能在页面发现任何表单项，V2 引擎判定为"未就绪"，拒绝执行');
-            return { ...report, success: false, failedFields: [{ label: 'Global', reason: 'No Form Items Found' }] };
+        // Step 2: 滚动页面收集所有区域
+        console.log('[V2] Step 2: 滚动页面收集所有区域...');
+        await scrollToCollectAll();
+
+        // Step 3: 截取页面截图
+        console.log('[V2] Step 3: 截取页面截图...');
+        const screenshot = await captureFullPage();
+        if (!screenshot) {
+            console.error('[V2] ❌ 截图失败');
+            return { ...report, success: false };
         }
-    }
+        console.log('[V2] 截图大小:', Math.round(screenshot.length / 1024), 'KB');
 
-    console.log('[V2 Loop] ✅ 表单 DOM 检测通过，开始扫描必填项...');
+        // Step 4: 发给 Gemini 分析
+        console.log('[V2] Step 4: 发送给 Gemini 分析...');
+        const analysis = await analyzeWithGemini(screenshot, productData);
 
-    const MAX_ROUNDS = 2; // 只需要 2 轮：第一轮填写，第二轮复查
-    const filledLabels = new Set<string>(); // 记录已成功填写的字段，避免重复
-
-    for (let round = 1; round <= MAX_ROUNDS; round++) {
-        console.log(`[V2 Loop] --- 第 ${round} 轮执行 ---`);
-
-        // 获取当前全部可见的必填项
-        let fieldsToProcess = PageScanner.scanRequiredFields();
-
-        // 核心修复 3：如果第一轮没扫到（可能是没打星号），强制触发一次校验
-        if (fieldsToProcess.length === 0 && round === 1) {
-            console.log('[V2 Loop] 首轮未捕捉到必填项，尝试触发交互唤醒...');
-            await triggerValidation();
-            await sleep(500);
-            fieldsToProcess = PageScanner.scanRequiredFields();
+        if (!analysis.success) {
+            console.error('[V2] ❌ Gemini 分析失败:', analysis.error);
+            return { ...report, success: false };
         }
 
-        if (fieldsToProcess.length === 0) {
-            console.log(`[V2 Loop] 第 ${round} 轮检测：无待填项，任务完成。`);
-            report.success = true;
-            break;
+        console.log('[V2] Gemini 分析完成:', analysis.summary);
+        console.log('[V2] 识别到', analysis.fields.length, '个字段');
+
+        // 打印识别结果
+        for (const field of analysis.fields) {
+            const icon = field.required ? '⭐' : '○';
+            console.log(`[V2] ${icon} ${field.label} (${field.type}) → "${field.value}"`);
         }
 
-        console.log(`[V2 Loop] 发现待处理字段数: ${fieldsToProcess.length}`);
+        // Step 5: 执行填写
+        console.log('[V2] Step 5: 开始执行填写...');
+        const requiredFields = analysis.fields.filter(f => f.required);
+        console.log('[V2] 需要填写', requiredFields.length, '个必填项');
 
-        let filledThisRound = 0;
-        let skippedThisRound = 0;
-
-        for (const field of fieldsToProcess) {
-            // 跳过已成功填写过的字段
-            if (filledLabels.has(field.label)) {
-                skippedThisRound++;
-                continue;
-            }
-
-            // 检查字段是否已有值（支持 input/textarea/select）
-            const container = field.domRef as HTMLElement;
-            const input = container.querySelector('input:not([type="hidden"]), textarea') as HTMLInputElement;
-            const selectTrigger = container.querySelector('.el-select, .ant-select, .doraemon-select') as HTMLElement;
-            const radioChecked = container.querySelector('.el-radio.is-checked, .ant-radio-wrapper-checked, input[type="radio"]:checked');
-
-            // 判断是否已有值
-            let hasValue = false;
-            if (input && input.value && input.value.trim()) {
-                hasValue = true;
-            } else if (selectTrigger) {
-                // 检查 select 是否已选择（通常有 .el-input__inner 显示选中值）
-                const selectedText = selectTrigger.querySelector('.el-input__inner, .ant-select-selection-item')?.textContent?.trim();
-                if (selectedText && selectedText !== '请选择' && selectedText !== '') {
-                    hasValue = true;
-                }
-            } else if (radioChecked) {
-                hasValue = true;
-            }
-
-            // 如果已有值且没有报错，跳过
-            const hasError = container.querySelector('.is-error, .el-form-item__error, .ant-form-item-explain-error');
-            if (hasValue && !hasError) {
-                console.log(`[V2 Loop] 跳过已填写字段: ${field.label}`);
-                filledLabels.add(field.label); // 标记为已处理
-                skippedThisRound++;
-                continue;
-            }
+        for (const field of requiredFields) {
+            console.log(`[V2] 填写: ${field.label}`);
 
             try {
-                const decision = await SemanticResolver.resolveField(field, productData);
-                if (decision && decision.executePlan?.payload) {
-                    console.log(`[V2 Loop] 填写字段: ${field.label} = ${decision.executePlan.payload}`);
-                    const ok = await FillExecutor.executeFill(field, decision);
-                    if (ok) {
-                        report.filledCount++;
-                        filledLabels.add(field.label); // 标记为已成功填写
-                        CacheStore.recordSuccess(field.signature, decision);
-                        filledThisRound++;
-                    } else {
-                        report.failedFields.push({ label: field.label, reason: '物理执行失败' });
-                        report.failedCount++;
-                    }
+                const success = await executeFieldFill(field);
+
+                if (success) {
+                    report.filledCount++;
+                    console.log(`[V2] ✅ ${field.label} = "${field.value}"`);
                 } else {
-                    console.log(`[V2 Loop] 无法解析字段值: ${field.label}`);
+                    report.failedCount++;
+                    report.failedFields.push({ label: field.label, reason: '定位或填写失败' });
+                    console.log(`[V2] ❌ ${field.label} 失败`);
                 }
+
+                await sleep(300);
+
             } catch (e) {
-                console.error(`[V2 Loop] 字段解析异常: ${field.label}`, e);
+                console.error(`[V2] 异常: ${field.label}`, e);
+                report.failedCount++;
+                report.failedFields.push({ label: field.label, reason: '异常' });
             }
         }
 
-        console.log(`[V2 Loop] 第 ${round} 轮结束: 填写 ${filledThisRound} 个, 跳过 ${skippedThisRound} 个`);
+        // Step 6: 完成
+        report.success = report.failedCount === 0;
+        console.log('[V2] ═══════════════════════════════════════════════════════');
+        console.log(`[V2] ✅ 完成: 成功 ${report.filledCount}, 失败 ${report.failedCount}`);
+        console.log('[V2] ═══════════════════════════════════════════════════════');
 
-        // 如果这一轮没有填写任何新字段，说明已完成
-        if (filledThisRound === 0) {
-            console.log('[V2 Loop] 本轮无新填写，任务完成');
-            report.success = true;
-            break;
+        return report;
+
+    } catch (error) {
+        console.error('[V2] 主流程异常:', error);
+        return { ...report, success: false };
+    }
+}
+
+// ==================== 截图模块 ====================
+
+/**
+ * 截取当前可见区域
+ * 直接使用 VisionBridge 的截图能力
+ */
+async function captureFullPage(): Promise<string | null> {
+    try {
+        console.log('[V2] 使用 VisionBridge 截图...');
+        const screenshot = await VisionBridge.captureScreenshot();
+        console.log('[V2] 截图成功，大小:', Math.round(screenshot.length / 1024), 'KB');
+        return screenshot;
+    } catch (error) {
+        console.error('[V2] 截图失败:', error);
+        return null;
+    }
+}
+
+/**
+ * 滚动页面收集所有区域
+ */
+async function scrollToCollectAll(): Promise<void> {
+    // 先滚动到顶部
+    window.scrollTo(0, 0);
+    await sleep(300);
+
+    // 展开所有折叠区域
+    const collapseToggles = document.querySelectorAll('.slide-up-down-trigger, [class*="collapse"]');
+    for (const toggle of collapseToggles) {
+        const text = (toggle as HTMLElement).innerText;
+        if (text.includes('展开')) {
+            (toggle as HTMLElement).click();
+            await sleep(200);
         }
-
-        // 每轮结束留出呼吸时间让异步 state 更新
-        await sleep(800);
     }
 
-    console.log('[V2 Loop] >>> 填写任务结束 <<<', report);
-    return report;
+    // 滚动到底部再回到顶部（触发所有懒加载）
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(500);
+    window.scrollTo(0, 0);
+    await sleep(300);
+}
+
+// ==================== Gemini 分析模块 ====================
+
+/**
+ * 调用后端 Gemini 视觉分析接口
+ * 通过 background 的 API_PROXY 绕过 Mixed Content 限制
+ */
+async function analyzeWithGemini(screenshot: string, productData: ProductData): Promise<FormAnalysisResult> {
+    try {
+        const baseUrl = 'http://localhost:3000';
+        const url = `${baseUrl}/api/vision/form-analyze`;
+
+        const body = {
+            screenshot,
+            productInfo: {
+                title: productData.title,
+                brand: productData.brand,
+                model: productData.model,
+                price: productData.price,
+                salePrice: productData.salePrice,
+                stock: productData.stock || 99,
+                manufacturer: productData.manufacturer || productData.brand,
+                platform_link: productData.platform_link,
+                specs: productData.specs
+            }
+        };
+
+        // 通过 background 代理 API 请求（绕过 Mixed Content）
+        const response = await new Promise<any>((resolve) => {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage(
+                    {
+                        type: 'API_PROXY',
+                        url,
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body
+                    },
+                    (res) => {
+                        if (chrome.runtime.lastError) {
+                            resolve({ ok: false, error: chrome.runtime.lastError.message });
+                        } else {
+                            resolve(res);
+                        }
+                    }
+                );
+
+                // 超时处理
+                setTimeout(() => {
+                    resolve({ ok: false, error: '请求超时 (60s)' });
+                }, 60000);
+            } else {
+                resolve({ ok: false, error: 'chrome.runtime 不可用' });
+            }
+        });
+
+        if (!response.ok) {
+            return {
+                success: false,
+                fields: [],
+                summary: '',
+                error: response.error || `HTTP ${response.status}`
+            };
+        }
+
+        return response.data;
+
+    } catch (error: any) {
+        return {
+            success: false,
+            fields: [],
+            summary: '',
+            error: error.message || '网络异常'
+        };
+    }
+}
+
+// ==================== 填写执行模块 ====================
+
+/**
+ * 按 label 定位 DOM 并执行填写
+ */
+async function executeFieldFill(field: FormField): Promise<boolean> {
+    const { label, type, value, options } = field;
+
+    // Step 1: 按 label 定位字段容器
+    const container = findFieldContainer(label);
+    if (!container) {
+        console.warn(`[V2] 未找到字段容器: ${label}`);
+        return false;
+    }
+
+    // 滚动到可见区域
+    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(200);
+
+    // Step 2: 根据类型执行填写
+    switch (type) {
+        case 'radio':
+            return await fillRadio(container, value);
+        case 'select':
+            return await fillSelect(container, value);
+        case 'input':
+        case 'textarea':
+            return await fillInput(container, value);
+        case 'checkbox':
+            return await fillCheckbox(container, value);
+        default:
+            // 尝试通用填写
+            return await fillInput(container, value);
+    }
+}
+
+/**
+ * 按 label 文本定位字段容器（包含 label + 控件的整行容器）
+ */
+function findFieldContainer(label: string): HTMLElement | null {
+    // 标准化 label（去除空格、星号等）
+    const normalizedLabel = label.replace(/[*\s:：]/g, '').trim();
+    console.log(`[V2] 查找字段容器: "${label}" → 标准化: "${normalizedLabel}"`);
+
+    // 搜索所有 label 元素
+    const labelSelectors = [
+        'label.doraemon-form-item-required',  // 优先找必填标记的 label
+        'label.doraemon-form-item-label',
+        '.doraemon-form-item-label label',
+        '.el-form-item__label',
+        'label'
+    ];
+
+    for (const selector of labelSelectors) {
+        const labels = document.querySelectorAll(selector);
+        for (const labelEl of labels) {
+            const rawText = (labelEl as HTMLElement).innerText || '';
+            const text = rawText.replace(/[*\s:：]/g, '').trim();
+
+            // 精确匹配优先
+            const isExactMatch = text === normalizedLabel;
+            const isPartialMatch = text.includes(normalizedLabel) || normalizedLabel.includes(text);
+
+            if ((isExactMatch || isPartialMatch) && text.length > 0) {
+                console.log(`[V2] 匹配到 label: "${rawText}" (选择器: ${selector})`);
+
+                // 策略：从 label 向上找，跳过 label 容器，找到包含控件的行容器
+                let current = labelEl as HTMLElement;
+
+                // 向上遍历最多 5 层
+                for (let i = 0; i < 5; i++) {
+                    const parent = current.parentElement;
+                    if (!parent) break;
+
+                    // 检查这个父元素是否包含控件（说明是整行容器）
+                    const hasControl = parent.querySelector(
+                        'input:not([type="hidden"]), .doraemon-select, .doraemon-radio-group, .el-select, .el-radio-group, textarea'
+                    );
+
+                    if (hasControl) {
+                        console.log(`[V2] 找到包含控件的容器:`, parent.className);
+                        return parent;
+                    }
+
+                    current = parent;
+                }
+
+                // 备用：直接用 doraemon-form-item 或 doraemon-row
+                const formItem = (labelEl as HTMLElement).closest('.doraemon-form-item');
+                if (formItem) {
+                    console.log(`[V2] 使用 doraemon-form-item 容器:`, formItem.className);
+                    return formItem as HTMLElement;
+                }
+
+                const row = (labelEl as HTMLElement).closest('.doraemon-row');
+                if (row) {
+                    console.log(`[V2] 使用 doraemon-row 容器:`, row.className);
+                    return row as HTMLElement;
+                }
+            }
+        }
+    }
+
+    console.warn(`[V2] 未找到匹配的 label: "${label}"`);
+    return null;
+}
+
+/**
+ * 填写 Radio
+ */
+async function fillRadio(container: HTMLElement, value: string): Promise<boolean> {
+    const radios = container.querySelectorAll('.doraemon-radio, .el-radio, input[type="radio"]');
+
+    const normalizedValue = value.trim().toLowerCase();
+    let clicked = false;
+
+    for (const radio of radios) {
+        const radioEl = radio as HTMLElement;
+        const text = radioEl.innerText?.trim().toLowerCase() || '';
+
+        if (text === normalizedValue || text.includes(normalizedValue) || normalizedValue.includes(text)) {
+            const input = radioEl.querySelector('input[type="radio"]') as HTMLElement || radioEl;
+            input.click();
+            await sleep(300);
+            clicked = true;
+
+            // 特殊处理："境内" 选择后会弹出省市区级联选择器
+            if (normalizedValue.includes('境内') || text.includes('境内')) {
+                await handleOriginCascader(container);
+            }
+
+            return true;
+        }
+    }
+
+    // 兜底：点击第一个
+    if (radios.length > 0 && !clicked) {
+        const first = radios[0] as HTMLElement;
+        const input = first.querySelector('input[type="radio"]') as HTMLElement || first;
+        input.click();
+        await sleep(200);
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * 处理产地"境内"后的省市区级联选择器
+ */
+async function handleOriginCascader(container: HTMLElement): Promise<void> {
+    console.log('[V2] 检测到产地选择境内，处理省市区选择器...');
+
+    await sleep(800); // 等待级联选择器弹出
+
+    // 检查级联菜单是否已经打开（选择"境内"后可能自动弹出）
+    let cascaderMenus = document.querySelectorAll('.doraemon-cascader-menu');
+    console.log(`[V2] 当前级联菜单数量: ${cascaderMenus.length}`);
+
+    // 如果菜单没有打开，尝试点击触发器
+    if (cascaderMenus.length === 0) {
+        console.log('[V2] 级联菜单未打开，尝试查找并点击触发器...');
+
+        // 查找触发器：在包含"产地"文字的表单行中查找级联选择器
+        let triggerInput: HTMLElement | null = null;
+
+        // 方法1：遍历所有表单行，找到包含"产地"的行，然后找其中的级联选择器
+        const allRows = document.querySelectorAll('.doraemon-row, .doraemon-form-item, .el-form-item');
+        for (const row of allRows) {
+            const rowText = (row as HTMLElement).innerText || '';
+            // 这一行包含"产地"且有级联选择器
+            if (rowText.includes('产地') && row.querySelector('.doraemon-cascader-picker')) {
+                triggerInput = row.querySelector('.doraemon-cascader-picker input') as HTMLElement;
+                if (triggerInput) {
+                    console.log(`[V2] 在产地行中找到级联选择器 input`);
+                    break;
+                }
+            }
+        }
+
+        // 方法2：直接查找 id 以 address 开头的 input
+        if (!triggerInput) {
+            const addressInput = document.querySelector('input[id^="address"].doraemon-cascader-input') as HTMLElement;
+            if (addressInput) {
+                triggerInput = addressInput;
+                console.log(`[V2] 通过 id 找到级联选择器 input: ${addressInput.id}`);
+            }
+        }
+
+        // 方法3：查找 placeholder 为"请选择"的级联 input
+        if (!triggerInput) {
+            const allCascaderInputs = document.querySelectorAll('.doraemon-cascader-input[placeholder="请选择"]');
+            if (allCascaderInputs.length > 0) {
+                triggerInput = allCascaderInputs[0] as HTMLElement;
+                console.log(`[V2] 通过 placeholder 找到级联选择器 input`);
+            }
+        }
+
+        if (triggerInput) {
+            console.log(`[V2] 找到级联选择器触发器: ${triggerInput.tagName}.${triggerInput.className}`);
+            triggerInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await sleep(300);
+
+            // 尝试多种点击方式
+            // 方式1: 先聚焦再点击
+            if (triggerInput instanceof HTMLInputElement) {
+                triggerInput.focus();
+            }
+            triggerInput.click();
+            await sleep(300);
+
+            // 检查菜单是否弹出
+            cascaderMenus = document.querySelectorAll('.doraemon-cascader-menu');
+
+            // 方式2: 如果菜单没弹出，尝试点击 picker 容器
+            if (cascaderMenus.length === 0) {
+                console.log('[V2] 尝试点击 picker 容器...');
+                const picker = triggerInput.closest('.doraemon-cascader-picker') as HTMLElement;
+                if (picker) {
+                    picker.click();
+                    await sleep(300);
+                    cascaderMenus = document.querySelectorAll('.doraemon-cascader-menu');
+                }
+            }
+
+            // 方式3: 如果还没弹出，尝试 mousedown + mouseup 事件
+            if (cascaderMenus.length === 0) {
+                console.log('[V2] 尝试 mousedown/mouseup 事件...');
+                triggerInput.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                await sleep(50);
+                triggerInput.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                await sleep(300);
+                cascaderMenus = document.querySelectorAll('.doraemon-cascader-menu');
+            }
+
+            // 等待级联菜单弹出
+            for (let wait = 0; wait < 15; wait++) {
+                await sleep(100);
+                cascaderMenus = document.querySelectorAll('.doraemon-cascader-menu');
+                if (cascaderMenus.length > 0) {
+                    console.log(`[V2] 级联菜单已弹出，共 ${cascaderMenus.length} 列`);
+                    break;
+                }
+            }
+
+            if (cascaderMenus.length === 0) {
+                console.warn('[V2] 点击触发器后级联菜单仍未弹出');
+                // 打印页面上所有可能的级联相关元素
+                const allCascaderElements = document.querySelectorAll('[class*="cascader"]');
+                console.log(`[V2] 页面上 cascader 相关元素: ${allCascaderElements.length}`);
+                for (const el of Array.from(allCascaderElements).slice(0, 5)) {
+                    console.log(`  - ${el.className}`);
+                }
+            }
+        } else {
+            console.warn('[V2] 未找到产地级联选择器触发器');
+            return;  // 如果找不到触发器，直接返回
+        }
+    }
+
+    // 2. 定义完整的省市区路径（从北京、上海、广东、浙江随机选择）
+    const originPaths = [
+        { province: '北京', city: '北京市', district: '海淀区' },
+        { province: '北京', city: '北京市', district: '朝阳区' },
+        { province: '上海', city: '上海市', district: '黄浦区' },
+        { province: '上海', city: '上海市', district: '浦东新区' },
+        { province: '广东省', city: '深圳市', district: '南山区' },
+        { province: '广东省', city: '广州市', district: '天河区' },
+        { province: '浙江省', city: '杭州市', district: '滨江区' },
+        { province: '浙江省', city: '宁波市', district: '镇海区' },
+    ];
+    const randomIndex = Math.floor(Math.random() * originPaths.length);
+    const selectedPath = originPaths[randomIndex];
+    console.log(`[V2] 随机选择产地: ${selectedPath.province}/${selectedPath.city}/${selectedPath.district}`);
+
+    const clickCascaderMenuItem = async (targetText: string): Promise<boolean> => {
+        // 生成多个可能的匹配文本（去掉省/市/区后缀）
+        const textVariants = [
+            targetText,
+            targetText.replace(/省$/, ''),
+            targetText.replace(/市$/, ''),
+            targetText.replace(/区$/, ''),
+            targetText.replace(/(省|市|区)$/, '')
+        ];
+        // 去重
+        const uniqueVariants = [...new Set(textVariants)];
+
+        console.log(`[V2] 查找级联菜单项: ${targetText}, 变体: ${uniqueVariants.join(', ')}`);
+
+        // 尝试多次查找，因为菜单加载有动画延迟
+        for (let retry = 0; retry < 15; retry++) {
+            // 方法1: 使用 XPath 查找（最可靠）
+            for (const variant of uniqueVariants) {
+                const xpath = `//li[contains(@class,'doraemon-cascader-menu-item') and contains(., '${variant}')]`;
+                const el = document.evaluate(xpath, document.body, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue as HTMLElement;
+
+                if (el && el.offsetParent !== null) { // 确保可见
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    await sleep(80);
+                    el.click();
+                    console.log(`[V2] 点击级联菜单(XPath): ${variant}`);
+                    await sleep(200);
+                    return true;
+                }
+            }
+
+            // 方法2: 用 querySelectorAll 遍历查找
+            const allItems = document.querySelectorAll('.doraemon-cascader-menu-item, .el-cascader-node');
+            for (const item of allItems) {
+                const itemText = (item as HTMLElement).innerText?.trim() || '';
+                for (const variant of uniqueVariants) {
+                    if (itemText === variant || itemText.includes(variant) || variant.includes(itemText)) {
+                        if ((item as HTMLElement).offsetParent !== null) {
+                            (item as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            await sleep(80);
+                            (item as HTMLElement).click();
+                            console.log(`[V2] 点击级联菜单(遍历): ${itemText}`);
+                            await sleep(200);
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            await sleep(100);
+        }
+
+        console.warn(`[V2] 未找到级联菜单项: ${targetText}`);
+        return false;
+    };
+
+    // 选择省
+    let provinceSelected = await clickCascaderMenuItem(selectedPath.province);
+    if (!provinceSelected) {
+        provinceSelected = await clickCascaderMenuItem('北京');  // 兜底
+    }
+
+    if (!provinceSelected) {
+        console.warn('[V2] 未能选择省份');
+        document.body.click();
+        return;
+    }
+
+    // 选择市
+    await sleep(400);
+    let citySelected = await clickCascaderMenuItem(selectedPath.city);
+    if (!citySelected) {
+        // 兜底：选择第一个城市
+        const cityPanels = document.querySelectorAll('.doraemon-cascader-menu');
+        if (cityPanels.length >= 2) {
+            const cityItems = cityPanels[1].querySelectorAll('.doraemon-cascader-menu-item');
+            if (cityItems.length > 0) {
+                const firstCity = cityItems[0] as HTMLElement;
+                console.log(`[V2] 选择城市(兜底): ${firstCity.innerText?.trim()}`);
+                firstCity.click();
+                citySelected = true;
+                await sleep(300);
+            }
+        }
+    }
+
+    // 选择区
+    await sleep(300);
+    let districtSelected = await clickCascaderMenuItem(selectedPath.district);
+    if (!districtSelected) {
+        // 兜底：选择第一个区县
+        const districtPanels = document.querySelectorAll('.doraemon-cascader-menu');
+        if (districtPanels.length >= 3) {
+            const districtItems = districtPanels[2].querySelectorAll('.doraemon-cascader-menu-item');
+            if (districtItems.length > 0) {
+                const firstDistrict = districtItems[0] as HTMLElement;
+                console.log(`[V2] 选择区县(兜底): ${firstDistrict.innerText?.trim()}`);
+                firstDistrict.click();
+                await sleep(300);
+            }
+        }
+    }
+
+    // 点击空白处关闭级联选择器
+    document.body.click();
+    await sleep(200);
+
+    console.log('[V2] 产地级联选择完成');
+}
+
+/**
+ * 填写 Select/Dropdown
+ */
+async function fillSelect(container: HTMLElement, value: string): Promise<boolean> {
+    // 关闭所有已打开的下拉框
+    await closeAllDropdowns();
+
+    // 找触发器并点击
+    const trigger = container.querySelector(
+        '.doraemon-select, .el-select, .ant-select, [role="combobox"]'
+    ) as HTMLElement;
+
+    if (!trigger) {
+        // 可能是 combobox，尝试找 input
+        const input = container.querySelector('input') as HTMLInputElement;
+        if (input && !input.disabled && !input.readOnly) {
+            return await fillInput(container, value);
+        }
+        return false;
+    }
+
+    // 点击打开下拉框
+    trigger.click();
+    await sleep(600);
+
+    // 查找选项
+    const options = getVisibleOptions();
+    if (options.length === 0) {
+        console.warn(`[V2] 未找到下拉选项`);
+        document.body.click();
+        return false;
+    }
+
+    // 匹配选项
+    const normalizedValue = value.trim().toLowerCase();
+    let targetOption = options.find(o => o.text.toLowerCase() === normalizedValue);
+    if (!targetOption) {
+        targetOption = options.find(o =>
+            o.text.toLowerCase().includes(normalizedValue) ||
+            normalizedValue.includes(o.text.toLowerCase())
+        );
+    }
+    if (!targetOption && options.length > 0) {
+        targetOption = options[0];
+    }
+
+    if (targetOption) {
+        targetOption.element.scrollIntoView({ block: 'center' });
+        await sleep(50);
+        targetOption.element.click();
+        await sleep(300);
+        await closeAllDropdowns();
+        return true;
+    }
+
+    await closeAllDropdowns();
+    return false;
+}
+
+/**
+ * 填写 Input/Textarea
+ */
+async function fillInput(container: HTMLElement, value: string): Promise<boolean> {
+    // 查找输入框
+    const input = container.querySelector(
+        'input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([disabled]), textarea:not([disabled])'
+    ) as HTMLInputElement;
+
+    if (!input) {
+        // 可能是 combobox 的 input
+        const comboboxInput = container.querySelector('.doraemon-select-search__field, input.doraemon-input') as HTMLInputElement;
+        if (comboboxInput && !comboboxInput.disabled) {
+            return setInputValue(comboboxInput, value);
+        }
+        return false;
+    }
+
+    return setInputValue(input, value);
+}
+
+/**
+ * 设置输入框值（修复 Illegal invocation 问题）
+ */
+function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string): boolean {
+    try {
+        // 先聚焦
+        input.focus();
+
+        // 清空现有内容
+        input.select();
+
+        // 方法 1：尝试使用原生 setter（某些 React/Vue 组件需要）
+        try {
+            const descriptor = Object.getOwnPropertyDescriptor(
+                input instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+                'value'
+            );
+            if (descriptor && descriptor.set) {
+                descriptor.set.call(input, value);
+            } else {
+                input.value = value;
+            }
+        } catch {
+            // 备用：直接赋值
+            input.value = value;
+        }
+
+        // 触发事件确保框架能监听到
+        input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+
+        // 失焦触发验证
+        input.blur();
+
+        console.log(`[V2] 输入框填写成功: "${value.substring(0, 30)}..."`);
+        return true;
+    } catch (error) {
+        console.error(`[V2] setInputValue 失败:`, error);
+
+        // 最后的备用方案：直接操作
+        try {
+            input.value = value;
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+
+/**
+ * 填写 Checkbox
+ */
+async function fillCheckbox(container: HTMLElement, value: string): Promise<boolean> {
+    const checkboxes = container.querySelectorAll('.doraemon-checkbox, .el-checkbox, input[type="checkbox"]');
+
+    const valuesToCheck = value.split(',').map(v => v.trim().toLowerCase());
+    let checked = false;
+
+    for (const checkbox of checkboxes) {
+        const checkboxEl = checkbox as HTMLElement;
+        const text = checkboxEl.innerText?.trim().toLowerCase() || '';
+
+        if (valuesToCheck.some(v => text === v || text.includes(v))) {
+            const input = checkboxEl.querySelector('input[type="checkbox"]') as HTMLElement || checkboxEl;
+            input.click();
+            checked = true;
+            await sleep(100);
+        }
+    }
+
+    return checked;
+}
+
+// ==================== 工具函数 ====================
+
+async function waitForFormStable(timeout = 3000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        const items = document.querySelectorAll('.doraemon-form-item, .el-form-item, .ant-form-item');
+        if (items.length > 5) {
+            await sleep(500);
+            return true;
+        }
+        await sleep(200);
+    }
+    return false;
+}
+
+async function closeAllDropdowns(): Promise<void> {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(100);
+    document.body.click();
+    await sleep(100);
+
+    // 隐藏所有浮层
+    document.querySelectorAll('.doraemon-select-dropdown, .el-select-dropdown, .ant-select-dropdown').forEach(d => {
+        (d as HTMLElement).style.display = 'none';
+    });
+}
+
+function getVisibleOptions(): Array<{ text: string, element: HTMLElement }> {
+    const options: Array<{ text: string, element: HTMLElement }> = [];
+
+    const selectors = [
+        '.doraemon-select-dropdown-menu-item',
+        '.el-select-dropdown__item',
+        '.ant-select-item-option',
+        '[role="option"]'
+    ];
+
+    for (const sel of selectors) {
+        document.querySelectorAll(sel).forEach(item => {
+            const el = item as HTMLElement;
+            const text = el.innerText?.trim();
+            if (text && !el.classList.contains('is-disabled')) {
+                options.push({ text, element: el });
+            }
+        });
+        if (options.length > 0) break;
+    }
+
+    return options;
 }
 
 export const ValidationLoop = { runAutoFillV2 };

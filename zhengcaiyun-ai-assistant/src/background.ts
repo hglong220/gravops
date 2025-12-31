@@ -8,25 +8,43 @@ import { fetchWithAuth } from "~src/utils/api"
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'capturePage') {
         // Capture the visible tab as PNG
-        if (sender.tab?.windowId) {
-            chrome.tabs.captureVisibleTab(
-                sender.tab.windowId,
-                { format: 'png' },
-                (dataUrl) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('[Background] Capture error:', chrome.runtime.lastError);
-                        sendResponse({ error: chrome.runtime.lastError.message });
-                    } else {
-                        // Remove data:image/png;base64, prefix
-                        const imageBase64 = dataUrl.split(',')[1];
-                        sendResponse({ imageBase64 });
-                    }
+        (async () => {
+            try {
+                // 优先使用 sender.tab 的 windowId，否则获取当前 active window
+                let windowId = sender.tab?.windowId;
+
+                if (!windowId) {
+                    // 获取当前激活的窗口
+                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                    windowId = tab?.windowId;
                 }
-            );
-            return true; // Keep message channel open for async response
-        } else {
-            sendResponse({ error: 'No active tab found' });
-        }
+
+                if (!windowId) {
+                    sendResponse({ error: 'No active window found' });
+                    return;
+                }
+
+                chrome.tabs.captureVisibleTab(
+                    windowId,
+                    { format: 'png' },
+                    (dataUrl) => {
+                        if (chrome.runtime.lastError) {
+                            console.error('[Background] Capture error:', chrome.runtime.lastError);
+                            sendResponse({ error: chrome.runtime.lastError.message });
+                        } else {
+                            // Remove data:image/png;base64, prefix
+                            const imageBase64 = dataUrl.split(',')[1];
+                            console.log('[Background] Screenshot captured, size:', Math.round(imageBase64.length / 1024), 'KB');
+                            sendResponse({ imageBase64 });
+                        }
+                    }
+                );
+            } catch (error: any) {
+                console.error('[Background] Capture exception:', error);
+                sendResponse({ error: error.message || 'Capture failed' });
+            }
+        })();
+        return true; // Keep message channel open for async response
     } else if (message.action === 'saveProduct') {
         // Handle client-side scraped product save
         handleSaveProduct(message.data).then(result => {

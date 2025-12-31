@@ -2,19 +2,127 @@ import type { FieldCandidate, ControlType } from './types';
 import { generateSignature } from './FieldSignature';
 
 /**
- * 控件类型判定（DOM 硬规则，不使用 AI）
+ * 控件类型判定（两级策略）
+ * 
+ * 第一级：结构特征快判（基于 class/role，不点击，速度快）
+ * 第二级：行为探测兜底（仅当第一级返回 unknown 时）
+ * 
+ * ⚠️ 核心原则：
+ * - 只相信 DOM，扫描阶段一次判定
+ * - 优先级：radio > select > checkbox > text
+ * - 禁止 select fallback 成 input
  */
 function detectControlType(container: HTMLElement): ControlType {
-    if (container.querySelector('input[type="radio"], .el-radio, .ant-radio, .ant-radio-wrapper')) {
+
+    // ==================== 第一级：结构特征快判 ====================
+
+    // 1️⃣ 优先检测 Radio
+    const radioSelectors = [
+        'input[type="radio"]',
+        '.el-radio',
+        '.el-radio-group',
+        '.el-radio-button',
+        '.ant-radio',
+        '.ant-radio-wrapper',
+        '.ant-radio-group',
+        '.doraemon-radio-group',
+        '.doraemon-radio-wrapper',
+        '[class*="radio"]'  // 模糊匹配任何包含 radio 的 class
+    ];
+    if (container.querySelector(radioSelectors.join(', '))) {
         return 'radio';
     }
-    if (container.querySelector('.el-select, .ant-select, [role="combobox"], .doraemon-select, .ant-cascader-picker')) {
+
+    // 2️⃣ 检测 Select/Dropdown（政采云大量使用 doraemon 组件）
+    const selectSelectors = [
+        '.el-select',
+        '.ant-select',
+        '.ant-select-selector',
+        '.doraemon-select',
+        '.doraemon-select-selection',
+        '[role="combobox"]',
+        '[role="listbox"]',
+        '.ant-cascader-picker',
+        '.el-cascader',
+        '.doraemon-cascader-picker',
+        '[class*="select"]:not([class*="selected"])',  // 模糊匹配 select 但排除 selected
+        '[class*="picker"]',  // 模糊匹配 picker
+        '[class*="dropdown-trigger"]'
+    ];
+    if (container.querySelector(selectSelectors.join(', '))) {
         return 'select';
     }
-    if (container.querySelector('input, textarea, [contenteditable="true"]')) {
+
+    // 3️⃣ 检测 Checkbox
+    const checkboxSelectors = [
+        'input[type="checkbox"]',
+        '.el-checkbox',
+        '.ant-checkbox',
+        '.ant-checkbox-wrapper',
+        '.doraemon-checkbox',
+        '[class*="checkbox"]'
+    ];
+    if (container.querySelector(checkboxSelectors.join(', '))) {
+        return 'checkbox';
+    }
+
+    // 4️⃣ 检测 Input/Textarea
+    const inputSelectors = [
+        'input[type="text"]',
+        'input[type="number"]',
+        'input:not([type])',
+        'input.ant-input',
+        'input.el-input__inner',
+        'input.doraemon-input',
+        'textarea',
+        '.ant-input-number',
+        '[contenteditable="true"]',
+        '.el-textarea',
+        '.ant-input-textarea'
+    ];
+    if (container.querySelector(inputSelectors.join(', '))) {
+        // 确保不是 select 内嵌的 input（用于搜索）
+        const input = container.querySelector('input');
+        if (input) {
+            const parent = input.closest('.ant-select, .el-select, .doraemon-select');
+            if (parent) {
+                // 这是 select 的搜索框，应该判定为 select
+                return 'select';
+            }
+        }
         return 'text';
     }
-    return 'text';
+
+    // 5️⃣ 兜底检查：有任何 input 元素
+    if (container.querySelector('input')) {
+        return 'text';
+    }
+
+    // ==================== 第二级：行为特征探测 ====================
+    // 仅当第一级无法判定时执行
+
+    // 检测是否有可点击的下拉触发元素
+    const clickableDropdown = container.querySelector([
+        '[class*="arrow"]',
+        '[class*="suffix"]',
+        '.anticon-down',
+        '.el-icon-arrow-down'
+    ].join(', '));
+    if (clickableDropdown) {
+        console.log(`[V2 Scanner] 行为探测: 发现下拉箭头，判定为 select`);
+        return 'select';
+    }
+
+    // 检测是否有多个平级的可点击项（可能是 radio）
+    const clickableItems = container.querySelectorAll('[class*="item"], [class*="option"]');
+    if (clickableItems.length >= 2) {
+        console.log(`[V2 Scanner] 行为探测: 发现 ${clickableItems.length} 个可点击项，判定为 radio`);
+        return 'radio';
+    }
+
+    // 最终兜底
+    console.warn(`[V2 Scanner] 无法识别控件类型:`, container.className, container.innerHTML.substring(0, 200));
+    return 'unknown';
 }
 
 /**

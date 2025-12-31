@@ -33,16 +33,7 @@
   },
   "manifest": {
     "host_permissions": [
-      "http://localhost:3000/*",
-      "http://127.0.0.1:3000/*",
-      "https://www.zcygov.cn/*",
-      "https://*.zcygov.cn/*",
-      "https://*.jd.com/*",
-      "https://cd.jd.com/*",
-      "https://*.360buyimg.com/*",
-      "https://*.taobao.com/*",
-      "https://*.tmall.com/*",
-      "https://*.suning.com/*"
+      "<all_urls>"
     ],
     "optional_host_permissions": [
       "https://*/*"
@@ -52,8 +43,7 @@
       "scripting",
       "storage",
       "activeTab",
-      "permissions",
-      "<all_urls>"
+      "permissions"
     ],
     "background": {
       "service_worker": "src/background.ts"
