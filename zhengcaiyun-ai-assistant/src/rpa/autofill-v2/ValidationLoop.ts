@@ -33,6 +33,102 @@ interface FormAnalysisResult {
     error?: string;
 }
 
+/**
+ * 从"编辑商品信息"页面 DOM 读取用户已填写的价格
+ * 这些值是权威值，应覆盖采集数据
+ */
+function readPricesFromEditPage(): { marketPrice?: string; salePrice?: string; stock?: string } {
+    const result: { marketPrice?: string; salePrice?: string; stock?: string } = {};
+
+    try {
+        // 方法1: SKU 表格结构（价格在表格 td 中）
+        const findPriceInTable = (headerText: string): string | null => {
+            // 查找表头
+            const headers = document.querySelectorAll('th, .doraemon-table th, [class*="table"] th');
+            for (let i = 0; i < headers.length; i++) {
+                const th = headers[i];
+                const text = (th.textContent || '').trim();
+                if (text.includes(headerText)) {
+                    // 找到对应列的第一个数据单元格
+                    const table = th.closest('table');
+                    if (table) {
+                        const rows = table.querySelectorAll('tbody tr');
+                        if (rows.length > 0) {
+                            const cells = rows[0].querySelectorAll('td');
+                            if (cells[i]) {
+                                const input = cells[i].querySelector('input') as HTMLInputElement;
+                                if (input && input.value) {
+                                    return input.value.trim();
+                                }
+                                // 也可能是纯文本
+                                const text = (cells[i].textContent || '').trim();
+                                if (text && /^\d+(\.\d+)?$/.test(text)) {
+                                    return text;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+
+        // 方法2: 通过 label 文本查找相邻的 input
+        const findInputByLabel = (labelText: string): string | null => {
+            // 遍历所有包含标签文本的元素
+            const allElements = document.querySelectorAll('*');
+            for (const el of allElements) {
+                if (el.children.length > 0) continue; // 只检查叶子节点
+                const text = (el.textContent || '').trim();
+                if (text === labelText || text === `*${labelText}` || text === `${labelText}：` || text === `*${labelText}：`) {
+                    // 向上查找容器，然后找 input
+                    let parent = el.parentElement;
+                    for (let i = 0; i < 5 && parent; i++) {
+                        const input = parent.querySelector('input:not([type="hidden"])') as HTMLInputElement;
+                        if (input && input.value && input !== el) {
+                            return input.value.trim();
+                        }
+                        parent = parent.parentElement;
+                    }
+                    // 尝试找兄弟元素
+                    const nextSibling = el.nextElementSibling;
+                    if (nextSibling) {
+                        const input = nextSibling.querySelector('input') as HTMLInputElement || nextSibling as HTMLInputElement;
+                        if (input && input.value) {
+                            return input.value.trim();
+                        }
+                    }
+                }
+            }
+            return null;
+        };
+
+        // 读取市场价
+        let marketPrice = findPriceInTable('市场价') || findInputByLabel('市场价');
+        if (marketPrice) {
+            result.marketPrice = marketPrice;
+        }
+
+        // 读取销售价
+        let salePrice = findPriceInTable('销售价') || findInputByLabel('销售价');
+        if (salePrice) {
+            result.salePrice = salePrice;
+        }
+
+        // 读取库存
+        let stock = findPriceInTable('库存') || findInputByLabel('库存');
+        if (stock) {
+            result.stock = stock;
+        }
+
+        console.log('[V2] readPricesFromEditPage:', result);
+    } catch (e) {
+        console.warn('[V2] readPricesFromEditPage 出错:', e);
+    }
+
+    return result;
+}
+
 // ==================== 主流程 ====================
 
 export async function runAutoFillV2(productData: ProductData): Promise<AutoFillReport> {
@@ -49,7 +145,23 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
     console.log('[V2] 商品:', productData.title);
     console.log('[V2] 品牌:', productData.brand, '| 型号:', productData.model);
     console.log('[V2] ⭐ 电商链接:', productData.platform_link || '❌ 未提供');
-    console.log('[V2] ⭐ 价格:', productData.price, '| 库存:', productData.stock);
+
+    // 📌 从编辑页 DOM 读取用户已填写的价格（权威值）
+    const domPrices = readPricesFromEditPage();
+    if (domPrices.marketPrice) {
+        productData.price = domPrices.marketPrice;
+        console.log('[V2] 📌 从编辑页读取市场价:', domPrices.marketPrice);
+    }
+    if (domPrices.salePrice) {
+        productData.salePrice = domPrices.salePrice;
+        console.log('[V2] 📌 从编辑页读取销售价:', domPrices.salePrice);
+    }
+    if (domPrices.stock) {
+        productData.stock = domPrices.stock;
+        console.log('[V2] 📌 从编辑页读取库存:', domPrices.stock);
+    }
+
+    console.log('[V2] ⭐ 市场价:', productData.price, '| 销售价:', productData.salePrice, '| 库存:', productData.stock);
 
     try {
         // Step 1: 等待页面稳定
@@ -140,6 +252,12 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             return true;
         });
 
+        // 静态字段：不需要填写，直接跳过（已清空，计量单位改为点击选择）
+        const staticLabels: string[] = [];
+
+        // 下拉枚举字段：必须点击选项确认（不是普通 input）
+        const dropdownEnumLabels = ['计量单位', '运费模板', '上架时间', '仓库'];
+
         console.log('[V2] 需要填写', fieldsToFill.length, '个必填项');
 
         for (const field of fieldsToFill) {
@@ -152,6 +270,35 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
                 confidence: 1.0
             };
             const { label, type, value } = formField;
+
+            // 静态字段跳过（不需要交互）
+            if (staticLabels.includes(label)) {
+                console.log(`[V2] 跳过静态字段: ${label}`);
+                report.filledCount++;
+                continue;
+            }
+
+            // 下拉枚举字段：强制走点击选择逻辑
+            if (dropdownEnumLabels.includes(label)) {
+                console.log(`[V2] 下拉枚举字段: ${label} → "${value || '默认'}"`);
+                const container = findFieldContainer(label);
+                if (container) {
+                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    await sleep(200);
+                    const success = await fillDropdownEnum(container, value || '台');
+                    if (success) {
+                        report.filledCount++;
+                        console.log(`[V2] ✅ ${label} 点击选择成功`);
+                    } else {
+                        report.failedCount++;
+                        report.failedFields.push({ label, reason: '下拉选择失败' });
+                    }
+                } else {
+                    console.log(`[V2] 跳过下拉枚举字段（未找到容器）: ${label}`);
+                    report.filledCount++;
+                }
+                continue;
+            }
 
             // 填前校验：空值跳过
             if (!value || value === 'undefined' || value === 'null') {
@@ -409,6 +556,12 @@ async function getFieldValues(labels: string[], productData: ProductData): Promi
             }
         };
 
+        // 价格调试日志（确认数据链路）
+        console.log('[PRICE_DEBUG]', {
+            price: productData.price,
+            salePrice: productData.salePrice,
+            stock: productData.stock
+        });
         console.log(`[V2] 发送 ${labels.length} 个 label 到 field-values API...`);
 
         // 通过 background 代理 API 请求
@@ -477,6 +630,27 @@ async function executeFieldFill(field: FormField): Promise<boolean> {
     container.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await sleep(200);
 
+    // ==================== 特例处理 ====================
+
+    // 产地 + 境内 = cascader 特殊处理
+    if (label === '产地' && value === '境内') {
+        console.log('[V2] 产地特殊处理：先选境内 radio，再填 cascader');
+
+        // Step 1: 先点击"境内" radio
+        const radioSuccess = await fillRadio(container, '境内');
+        if (!radioSuccess) {
+            console.warn('[V2] 产地：点击境内 radio 失败');
+            return false;
+        }
+        await sleep(300);
+
+        // Step 2: 找到 cascader 并填写默认地区
+        const cascaderSuccess = await fillDomesticCascader(container);
+        return cascaderSuccess;
+    }
+
+    // ==================== 常规处理 ====================
+
     // Step 2: 根据类型执行填写
     switch (type) {
         case 'radio':
@@ -492,6 +666,189 @@ async function executeFieldFill(field: FormField): Promise<boolean> {
             // 尝试通用填写
             return await fillInput(container, value);
     }
+}
+
+/**
+ * 填写境内产地 cascader（固定路径，不用 AI）
+ * 默认选择：天津市 → 天津市 → 和平区
+ */
+async function fillDomesticCascader(container: HTMLElement): Promise<boolean> {
+    const DEFAULT_PATH = ['天津市', '天津市', '和平区'];
+
+    console.log('[V2] fillDomesticCascader: 开始填写产地 cascader');
+
+    // Step 1: 找到 cascader 触发元素并点击打开
+    const cascaderTrigger = container.querySelector('.doraemon-cascader-picker, .doraemon-cascader, [class*="cascader"]') as HTMLElement;
+    if (!cascaderTrigger) {
+        console.warn('[V2] fillDomesticCascader: 未找到 cascader 触发元素');
+        return false;
+    }
+
+    cascaderTrigger.click();
+    await sleep(300);
+
+    // Step 2: 逐级点击路径
+    for (let i = 0; i < DEFAULT_PATH.length; i++) {
+        const targetName = DEFAULT_PATH[i];
+
+        // 找到当前显示的 cascader 面板
+        const panels = document.querySelectorAll('.doraemon-cascader-menus, .ant-cascader-menus, [class*="cascader-menu"]');
+        const panel = panels[panels.length - 1] as HTMLElement; // 取最后一个面板
+
+        if (!panel) {
+            console.warn(`[V2] fillDomesticCascader: 未找到 cascader 面板`);
+            return false;
+        }
+
+        // 找到目标选项
+        const options = panel.querySelectorAll('.doraemon-cascader-menu-item, .ant-cascader-menu-item, [class*="cascader-menu-item"]');
+        let targetOption: HTMLElement | null = null;
+
+        for (const opt of options) {
+            const text = (opt.textContent || '').trim();
+            if (text === targetName || text.includes(targetName)) {
+                targetOption = opt as HTMLElement;
+                break;
+            }
+        }
+
+        if (!targetOption) {
+            console.warn(`[V2] fillDomesticCascader: 未找到选项 "${targetName}"`);
+            return false;
+        }
+
+        console.log(`[V2] fillDomesticCascader: 点击 "${targetName}"`);
+        targetOption.click();
+        await sleep(200);
+    }
+
+    // 点击空白区域关闭面板
+    document.body.click();
+    await sleep(100);
+
+    console.log('[V2] fillDomesticCascader: 完成');
+    return true;
+}
+
+/**
+ * 填写下拉枚举字段（必须点击选项确认）
+ * 用于：计量单位、运费模板、上架时间、仓库等
+ */
+async function fillDropdownEnum(container: HTMLElement, value: string): Promise<boolean> {
+    console.log(`[V2] fillDropdownEnum: 开始，目标值: "${value}"`);
+
+    // Step 1: 关闭其他下拉框
+    await closeAllDropdowns();
+    await sleep(100);
+
+    // Step 2: 找到下拉触发器并点击
+    const triggerSelectors = [
+        '.doraemon-select',
+        '.doraemon-select-selection',
+        '.doraemon-input',
+        '.ant-select',
+        '[class*="select"]',
+        'input'
+    ];
+
+    let trigger: HTMLElement | null = null;
+    for (const sel of triggerSelectors) {
+        trigger = container.querySelector(sel) as HTMLElement;
+        if (trigger && trigger.offsetParent !== null) {
+            console.log(`[V2] fillDropdownEnum: 找到触发器 ${sel}`);
+            break;
+        }
+    }
+
+    if (!trigger) {
+        console.warn('[V2] fillDropdownEnum: 未找到触发器');
+        return false;
+    }
+
+    // 点击打开下拉框
+    trigger.click();
+    await sleep(400);
+
+    // Step 3: 在下拉面板中找到目标选项
+    const optionSelectors = [
+        '.doraemon-select-dropdown .doraemon-select-item',
+        '.doraemon-select-item',
+        '.ant-select-item',
+        '.ant-select-item-option',
+        '[class*="select-dropdown"] li',
+        '[class*="dropdown"] li',
+        '[role="option"]'
+    ];
+
+    let targetOption: HTMLElement | null = null;
+    const normalizedValue = value.trim().toLowerCase();
+
+    for (const sel of optionSelectors) {
+        const options = document.querySelectorAll(sel);
+        for (const opt of options) {
+            const el = opt as HTMLElement;
+            const text = (el.textContent || '').trim();
+
+            // 跳过不可见的选项
+            if (el.offsetParent === null) continue;
+
+            // 精确匹配或包含匹配
+            if (text === value ||
+                text.toLowerCase() === normalizedValue ||
+                text.includes(value) ||
+                value.includes(text)) {
+                targetOption = el;
+                console.log(`[V2] fillDropdownEnum: 找到选项 "${text}"`);
+                break;
+            }
+        }
+        if (targetOption) break;
+    }
+
+    // 如果没找到，尝试选第一个可见选项（默认值）
+    if (!targetOption) {
+        console.log('[V2] fillDropdownEnum: 未找到精确匹配，尝试第一个选项');
+        for (const sel of optionSelectors) {
+            const options = document.querySelectorAll(sel);
+            for (const opt of options) {
+                const el = opt as HTMLElement;
+                if (el.offsetParent !== null && !el.classList.contains('disabled')) {
+                    targetOption = el;
+                    console.log(`[V2] fillDropdownEnum: 使用默认选项 "${el.textContent?.trim()}"`);
+                    break;
+                }
+            }
+            if (targetOption) break;
+        }
+    }
+
+    if (!targetOption) {
+        console.warn('[V2] fillDropdownEnum: 未找到任何可选项');
+        document.body.click();
+        return false;
+    }
+
+    // Step 4: 点击选项
+    targetOption.scrollIntoView({ block: 'center' });
+    await sleep(50);
+
+    targetOption.click();
+    await sleep(100);
+
+    // 确保点击生效
+    if (targetOption.offsetParent !== null) {
+        targetOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        targetOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        targetOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
+    await sleep(200);
+
+    // 关闭下拉框
+    await closeAllDropdowns();
+
+    console.log('[V2] fillDropdownEnum: 完成');
+    return true;
 }
 
 /**
@@ -1054,20 +1411,40 @@ async function fillSelect(container: HTMLElement, value: string): Promise<boolea
     if (targetOption) {
         console.log(`[V2] 点击下拉选项: "${targetOption.text}"`);
         targetOption.element.scrollIntoView({ block: 'center' });
-        await sleep(50);
-
-        // 多种方式点击
-        targetOption.element.click();
         await sleep(100);
 
-        // 如果还没关闭，再尝试
-        if (targetOption.element.offsetParent !== null) {
-            targetOption.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-            targetOption.element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        // 多种方式点击，确保生效
+        const el = targetOption.element;
+
+        // 方式1: 直接 click
+        el.click();
+        await sleep(100);
+
+        // 方式2: 如果元素还可见，尝试 mousedown + mouseup + click
+        if (el.offsetParent !== null) {
+            el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            await sleep(100);
         }
 
-        await sleep(300);
+        // 方式3: 如果还没关闭，尝试 Enter 键
+        if (el.offsetParent !== null) {
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await sleep(100);
+        }
+
+        // 关闭下拉框
+        await sleep(200);
         await closeAllDropdowns();
+
+        // 触发容器的 blur 事件，确保值被确认
+        const containerInput = container.querySelector('input') as HTMLInputElement;
+        if (containerInput) {
+            containerInput.dispatchEvent(new Event('blur', { bubbles: true }));
+            containerInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
         console.log(`[V2] fillSelect 成功`);
         return true;
     }
@@ -1134,7 +1511,15 @@ function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: str
         input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
         input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 
+        // 触发 Enter 键确认（价格等字段需要）
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+            bubbles: true,
+            key: 'Enter',
+            code: 'Enter'
+        }));
+
         // 失焦触发验证
+        input.dispatchEvent(new Event('blur', { bubbles: true }));
         input.blur();
 
         console.log(`[V2] 输入框填写成功: "${value.substring(0, 30)}..."`);

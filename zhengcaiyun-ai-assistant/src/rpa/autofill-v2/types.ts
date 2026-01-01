@@ -83,7 +83,8 @@ export interface ProductData {
     title?: string;
     brand?: string;
     model?: string;
-    price?: string | number;
+    price?: string | number;       // 市场价
+    salePrice?: string | number;   // 销售价
     stock?: string | number;
     unit?: string;
     origin?: string;

@@ -18,7 +18,8 @@ export interface ScrapedData {
     brand?: string
     model?: string
     stock?: number
-    price?: number
+    price?: number         // 市场价
+    salePrice?: number     // 销售价
     specs?: Record<string, string>
     categoryPath?: string[]
     categoryName?: string
@@ -1163,6 +1164,9 @@ export const FlagshipMax = {
         Logger.log("📝 步骤2: 🔥🔥🔥 V2 引擎即将启动 🔥🔥🔥")
         Logger.log("═══════════════════════════════════════════════════════")
 
+        // 销售价默认策略：如果未采集到销售价，使用市场价
+        const finalSalePrice = ctx.scraped.salePrice?.toString() || ctx.scraped.price?.toString();
+
         const productDataV2 = {
             title: ctx.scraped.title,
             brand: ctx.scraped.brand,
@@ -1173,6 +1177,7 @@ export const FlagshipMax = {
             unit: ctx.scraped.specs?.['计量单位'] || '件',
             stock: ctx.scraped.stock?.toString() || '9999',
             price: ctx.scraped.price?.toString(),
+            salePrice: finalSalePrice,  // 销售价（默认使用市场价）
             warranty: '12个月',
             is_sme_product: '否' as const,
             is_energy_saving: '否' as const,

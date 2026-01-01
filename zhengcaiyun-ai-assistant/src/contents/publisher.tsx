@@ -148,6 +148,8 @@ async function handleCategoryPage(draftId: string) {
   }
 
   console.log('[旗舰MAX] 草稿:', draft.title)
+  // 🔍 调试：打印后端返回的原始价格数据
+  console.log('[DRAFT_RAW]', draft.id, 'price:', draft.price, 'marketPrice:', draft.marketPrice)
   showStatus('旗舰MAX', '正在调用 AI 分析...', `商品: ${draft.title.substring(0, 30)}...`)
 
   // 2. 获取 License
@@ -210,7 +212,8 @@ async function handleCategoryPage(draftId: string) {
 
   // 4. 准备采集数据
   const specs = draft.attributes || {}
-  const price = draft.price ? parseFloat(draft.price) : undefined
+  const marketPrice = draft.marketPrice ? parseFloat(draft.marketPrice) : undefined
+  const salePrice = draft.price ? parseFloat(draft.price) : undefined  // 用户编辑的销售价
 
   // ⭐ 品牌清洗：优先使用 AI 提取的品牌（Gemini Pro 更智能），specs 作为兜底
   let finalBrand = ''
@@ -257,7 +260,8 @@ async function handleCategoryPage(draftId: string) {
     brand: finalBrand,
     model: finalModel,
     stock: draft.stock || 999,
-    price: price,
+    price: marketPrice || salePrice,  // 市场价（优先使用 marketPrice）
+    salePrice: salePrice,              // 销售价（用户编辑的）
     specs: specs,
     categoryPath: categoryPath,
     categoryName: categoryPath[categoryPath.length - 1],
@@ -307,6 +311,9 @@ async function handlePublishPage(draftId: string) {
     return
   }
 
+  // 🔍 调试：打印后端返回的原始价格数据
+  console.log('[DRAFT_RAW]', draft.id, 'price:', draft.price, 'marketPrice:', draft.marketPrice)
+
   const storedLicense = await getStoredLicense()
   const licenseKey = storedLicense?.licenseKey || ''
 
@@ -317,7 +324,8 @@ async function handlePublishPage(draftId: string) {
     brand: specs['品牌'] || draft.brand,
     model: specs['型号'] || draft.model,
     stock: draft.stock || 999,
-    price: draft.price ? parseFloat(draft.price) : undefined,
+    price: draft.marketPrice ? parseFloat(draft.marketPrice) : (draft.price ? parseFloat(draft.price) : undefined),  // 市场价
+    salePrice: draft.price ? parseFloat(draft.price) : undefined,  // 销售价（用户编辑的）
     specs: specs,
     sourceUrl: draft.originalUrl,
     images: draft.images || [],
