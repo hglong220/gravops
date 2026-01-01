@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
         };
 
       // 单品推送：直接创建已采集草稿
+      // 自动计算销售价（市场价 × 0.9）
+      const marketPriceNum = parseFloat(safeData.price) || 0;
+      const salePriceNum = marketPriceNum > 0 ? Math.round(marketPriceNum * 0.9 * 100) / 100 : undefined;
+
       const draft = await prisma.productDraft.create({
         data: {
           userId,
@@ -110,7 +114,9 @@ export async function POST(request: NextRequest) {
           model: safeData.model || "",
           skuData: JSON.stringify(skuDataPayload),
           detailHtml: safeData.detailHtml || "",
-          categoryPath: safeData.category || null
+          categoryPath: safeData.category || null,
+          marketPrice: marketPriceNum || undefined,  // 采集价 = 市场价
+          price: salePriceNum                         // 自动计算销售价 = 市场价 × 0.9
         }
       })
 
@@ -275,6 +281,10 @@ export async function POST(request: NextRequest) {
             skuPrices: []
           }
 
+          // 自动计算销售价（市场价 × 0.9）
+          const marketPriceNum = item.price ? parseFloat(item.price) : 0;
+          const salePriceNum = marketPriceNum > 0 ? Math.round(marketPriceNum * 0.9 * 100) / 100 : undefined;
+
           return prisma.productDraft.create({
             data: {
               userId,
@@ -288,7 +298,8 @@ export async function POST(request: NextRequest) {
               attributes: JSON.stringify(item.attributes || {}),
               brand: item.brand || "",
               model: item.model || "",
-              price: item.price ? parseFloat(item.price) : undefined,
+              marketPrice: marketPriceNum || undefined,  // 采集价 = 市场价
+              price: salePriceNum,                        // 自动计算销售价 = 市场价 × 0.9
               skuData: JSON.stringify(skuData),
               detailHtml: ""
             }

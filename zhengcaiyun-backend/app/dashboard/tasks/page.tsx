@@ -311,6 +311,10 @@ export default function TaskPage() {
     const marketPrice = Number.isFinite(parsedMarketPrice) ? parsedMarketPrice : undefined
 
     const stock = Number.isFinite(parsedStock) ? parsedStock : undefined
+
+    // 🔍 调试：打印即将保存的价格数据
+    console.log('[SAVE_DEBUG] price:', price, 'marketPrice:', marketPrice, 'stock:', stock)
+
     try {
       const res = await authedFetch(`/api/copy/drafts/${editingProduct.id}`, {
         method: 'PUT',
