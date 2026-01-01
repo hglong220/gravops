@@ -1,5 +1,6 @@
 import type { ProductData, AutoFillReport } from './types';
 import { VisionBridge } from '../../lib/vision-bridge';
+import { PageScanner } from './PageScanner';
 
 /**
  * V2 主循环 - Gemini 视觉 AI 主导方案
@@ -59,42 +60,79 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
         console.log('[V2] Step 2: 滚动页面收集所有区域...');
         await scrollToCollectAll();
 
-        // Step 3: 截取页面截图（多张，覆盖整个页面）
-        console.log('[V2] Step 3: 截取页面多张截图...');
-        const screenshots = await captureMultipleScreenshots();
-        if (screenshots.length === 0) {
-            console.error('[V2] ❌ 截图失败');
+        // Step 3: 使用 RequiredFieldResolver 解析必填字段（DOM 事实）
+        console.log('[V2] Step 3: RequiredFieldResolver 解析必填字段...');
+        const resolvedFields = PageScanner.resolveRequiredFields();
+
+        if (resolvedFields.length === 0) {
+            console.error('[V2] ❌ 未找到任何必填字段');
             return { ...report, success: false };
         }
-        const totalSize = screenshots.reduce((sum, s) => sum + s.length, 0);
-        console.log(`[V2] 截取 ${screenshots.length} 张截图，总大小: ${Math.round(totalSize / 1024)} KB`);
 
-        // Step 4: 发给 Gemini 分析（一次性发送多张截图）
-        console.log('[V2] Step 4: 发送给 Gemini 分析...');
-        const analysis = await analyzeWithGemini(screenshots, productData);
+        // 提取 label 列表发给 AI
+        const labels = resolvedFields.map(f => f.label);
+        console.log(`[V2] 解析出 ${resolvedFields.length} 个必填字段`);
+        console.log('[V2] Labels:', labels.slice(0, 15).join(', '));
+
+        // Step 4: 发给 Gemini 获取每个字段的值（AI 只负责填什么值）
+        console.log('[V2] Step 4: 发送给 Gemini 获取字段值...');
+        const analysis = await getFieldValues(labels, productData);
 
         if (!analysis.success) {
-            console.error('[V2] ❌ Gemini 分析失败:', analysis.error);
+            console.error('[V2] ❌ 字段值获取失败:', analysis.error);
             return { ...report, success: false };
         }
 
-        console.log('[V2] Gemini 分析完成:', analysis.summary);
-        console.log('[V2] 识别到', analysis.fields.length, '个字段');
+        console.log('[V2] Gemini 返回:', analysis.fields.length, '个字段值');
 
-        // 打印识别结果
-        for (const field of analysis.fields) {
-            const icon = field.required ? '⭐' : '○';
-            console.log(`[V2] ${icon} ${field.label} (${field.type}) → "${field.value}"`);
+        // 合并 DOM 解析的控件类型 + AI 返回的值
+        // DOM 的 controlType 优先，AI 不负责判断控件类型
+        const mergedFields = resolvedFields.map(domField => {
+            const aiField = analysis.fields.find(f => f.label === domField.label);
+            return {
+                label: domField.label,
+                type: domField.controlType, // 使用 DOM 解析的控件类型
+                value: aiField?.value || '',
+                required: true,
+                options: domField.options
+            };
+        });
+
+        // 打印合并后的结果
+        for (const field of mergedFields) {
+            const hasValue = field.value ? '✓' : '✗';
+            console.log(`[V2] ${hasValue} ${field.label} (${field.type}) → "${field.value}"`);
         }
 
-        // Step 5: 执行填写（简化版：直接用 AI 给的值填写）
+        // DOM 扫描对比（只打印日志，不影响任何填写逻辑）
+        try {
+            // 使用新的 starScan（GPT 方案）
+            const starResults = PageScanner.starScan();
+
+            // 对比：找出 Gemini 可能遗漏的字段
+            const geminiLabels = new Set(analysis.fields.map(f => f.label.replace(/[*＊\s]/g, '').trim()));
+            const missedItems = starResults.filter(r => {
+                const snippet = (r.textSnippet || '').replace(/[*＊:：\s]/g, '').trim().slice(0, 30);
+                return snippet.length > 2 && !Array.from(geminiLabels).some(g => snippet.includes(g) || g.includes(snippet));
+            });
+
+            if (missedItems.length > 0) {
+                console.warn(`[V2] ⚠️ STAR_SCAN 发现 ${missedItems.length} 个 Gemini 可能遗漏`);
+                console.warn(`[V2] 遗漏详情:`, missedItems.map(r => r.textSnippet?.slice(0, 30)).join(' | '));
+            } else {
+                console.log('[V2] ✅ Gemini 未遗漏星号项');
+            }
+        } catch (e) {
+            console.log('[V2] STAR_SCAN 跳过:', e);
+        }
+
+        // Step 5: 执行填写（使用合并后的字段，DOM 控件类型 + AI 填写值）
         console.log('[V2] Step 5: 开始执行填写...');
 
         // 只跳过图片类字段
         const skipLabels = ['商品图片', '主图', '详情图', '规格图片', '商品详情', '图片'];
 
-        const requiredFields = analysis.fields.filter(f => {
-            if (!f.required) return false;
+        const fieldsToFill = mergedFields.filter(f => {
             if (skipLabels.some(skip => f.label.includes(skip))) {
                 console.log(`[V2] 跳过图片字段: ${f.label}`);
                 return false;
@@ -102,10 +140,18 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             return true;
         });
 
-        console.log('[V2] 需要填写', requiredFields.length, '个必填项');
+        console.log('[V2] 需要填写', fieldsToFill.length, '个必填项');
 
-        for (const field of requiredFields) {
-            const { label, type, value } = field;
+        for (const field of fieldsToFill) {
+            // 转换为 FormField 类型
+            const formField: FormField = {
+                label: field.label,
+                type: field.type as 'input' | 'select' | 'radio' | 'checkbox' | 'textarea',
+                value: field.value,
+                required: true,
+                confidence: 1.0
+            };
+            const { label, type, value } = formField;
 
             // 填前校验：空值跳过
             if (!value || value === 'undefined' || value === 'null') {
@@ -118,7 +164,7 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             console.log(`[V2] 填写: ${label} → "${value}" (${type})`);
 
             try {
-                const success = await executeFieldFill(field);
+                const success = await executeFieldFill(formField);
 
                 if (success) {
                     report.filledCount++;
@@ -325,6 +371,88 @@ async function analyzeWithGemini(screenshots: string | string[], productData: Pr
             success: false,
             fields: [],
             summary: '',
+            error: error.message || '网络异常'
+        };
+    }
+}
+
+/**
+ * 根据 label 列表获取字段值（无需视觉识别）
+ * 调用新的 field-values API
+ */
+interface FieldValueResult {
+    success: boolean;
+    fields: Array<{
+        label: string;
+        value: string;
+        type: 'input' | 'select' | 'radio' | 'checkbox';
+        required: boolean;
+    }>;
+    error?: string;
+}
+
+async function getFieldValues(labels: string[], productData: ProductData): Promise<FieldValueResult> {
+    try {
+        const baseUrl = 'http://localhost:3000';
+        const url = `${baseUrl}/api/autofill/field-values`;
+
+        const body = {
+            labels,
+            productInfo: {
+                title: productData.title,
+                brand: productData.brand,
+                model: productData.model,
+                price: productData.price,
+                salePrice: productData.salePrice,
+                stock: productData.stock || 999,
+                platform_link: productData.platform_link,
+            }
+        };
+
+        console.log(`[V2] 发送 ${labels.length} 个 label 到 field-values API...`);
+
+        // 通过 background 代理 API 请求
+        const response = await new Promise<any>((resolve) => {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage(
+                    {
+                        type: 'API_PROXY',
+                        url,
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body
+                    },
+                    (res) => {
+                        if (chrome.runtime.lastError) {
+                            resolve({ ok: false, error: chrome.runtime.lastError.message });
+                        } else {
+                            resolve(res);
+                        }
+                    }
+                );
+
+                setTimeout(() => {
+                    resolve({ ok: false, error: '请求超时 (60s)' });
+                }, 60000);
+            } else {
+                resolve({ ok: false, error: 'chrome.runtime 不可用' });
+            }
+        });
+
+        if (!response.ok) {
+            return {
+                success: false,
+                fields: [],
+                error: response.error || `HTTP ${response.status}`
+            };
+        }
+
+        return response.data;
+
+    } catch (error: any) {
+        return {
+            success: false,
+            fields: [],
             error: error.message || '网络异常'
         };
     }
