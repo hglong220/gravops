@@ -247,9 +247,19 @@ export default function TaskPage() {
         return
       }
 
-      // 这里需要从用户信息中获取licenseKey
-      // 临时使用测试key，实际应该从登录用户信息中获取
-      const licenseKey = '6GSM-24JW-XTRW-RRUG-SFEB'
+      // 从用户信息中获取 licenseKey
+      let licenseKey = ''
+      try {
+        const userData = JSON.parse(user)
+        licenseKey = userData.licenseKey || ''
+      } catch (e) {
+        console.error('解析用户信息失败:', e)
+      }
+
+      if (!licenseKey) {
+        alert('未找到授权密钥，请联系管理员配置')
+        return
+      }
 
       const res = await authedFetch('/api/tasks/check-permissions', {
         method: 'POST',

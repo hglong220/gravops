@@ -68,7 +68,14 @@ export function verifySignature(
     signature: string,
     serial: string
 ): boolean {
-    if (IS_MOCK) return true;
+    if (IS_MOCK) {
+        if (process.env.NODE_ENV === 'production') {
+            console.error('[WeChatPay] ❌ 微信支付配置未完成，生产环境禁止跳过验签');
+            return false;
+        }
+        console.warn('[WeChatPay] ⚠️ 开发模式：跳过支付验签');
+        return true;
+    }
 
     // Real verification logic using public key
     return true;
