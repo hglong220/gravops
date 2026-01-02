@@ -47,3 +47,11 @@ public/api/政采云完整类�?json
 analyze-damage.js
 broken-lines.json
 fix-category-name.js
+
+# Test and debug files
+check-*.js
+test-*.js
+debug-*.js
+inspect-*.js
+crawler_debug*.log
+inspect_log*.txt
