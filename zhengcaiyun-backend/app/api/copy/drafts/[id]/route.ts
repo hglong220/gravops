@@ -48,11 +48,26 @@ export async function GET(
         }
 
         // 解析 JSON 字段
+        let parsedCategoryPath = null;
+        if (draft.categoryPath) {
+            try {
+                // 尝试作为 JSON 解析（针对新版可能存为 JSON 的情况）
+                parsedCategoryPath = JSON.parse(draft.categoryPath);
+                if (typeof parsedCategoryPath === 'string') {
+                    parsedCategoryPath = parsedCategoryPath.split(' > ').map(s => s.trim());
+                }
+            } catch (e) {
+                // 如果不是 JSON，说明是旧版普通字符串（如 "办公设备 > 办公耗材"）
+                parsedCategoryPath = draft.categoryPath.split(' > ').map(s => s.trim());
+            }
+        }
+
         const result = {
             ...draft,
             attributes: draft.attributes ? JSON.parse(draft.attributes) : {},
             skuData: draft.skuData ? JSON.parse(draft.skuData) : {},
-            images: draft.images ? JSON.parse(draft.images) : []
+            images: draft.images ? JSON.parse(draft.images) : [],
+            categoryPath: parsedCategoryPath
         };
 
         // 从 skuData 提取 price 和 stock

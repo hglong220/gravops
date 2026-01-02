@@ -10,6 +10,14 @@ export interface JDProductData {
         price: string;
         stock: string;
         specs?: Record<string, string>;
+        model?: string;  // 新增：型号字段
+        skuList?: Array<{  // 新增：完整SKU列表
+            skuId: string;
+            model: string;
+            price: number;
+            stock: string;
+            specs?: Record<string, string>;
+        }>;
     };
     attributes: Record<string, string>;
     shopName?: string;
@@ -199,12 +207,70 @@ export async function scrapeJDProduct(productUrl: string): Promise<JDProductData
                 detailHtml = introEl?.innerHTML || '<p>详情加载中...</p>';
             }
 
+            // ⭐ 新增：提取SKU列表
+            const skuList: Array<{ skuId: string; model: string; price: number; stock: string; specs?: Record<string, string> }> = [];
+
+            try {
+                // 京东页面通常有 colorSize 对象存储SKU信息
+                const anyWin = window as any;
+                const colorSize = anyWin.colorSize || anyWin.skuJSON || {};
+
+                // 提取所有SKU ID
+                if (colorSize && typeof colorSize === 'object') {
+                    Object.keys(colorSize).forEach(skuId => {
+                        const skuInfo = colorSize[skuId];
+                        if (!skuInfo) return;
+
+                        // 尝试从标题或规格中提取型号
+                        let model = '';
+                        if (skuInfo.name) {
+                            // 从SKU名称中提取型号（通常是最后一个单词或数字）
+                            const modelMatch = String(skuInfo.name).match(/([A-Za-z0-9]+(?:\s*[A-Za-z0-9]+)*)\s*$/);
+                            model = modelMatch ? modelMatch[1].trim() : skuInfo.name;
+                        }
+
+                        skuList.push({
+                            skuId: skuId,
+                            model: model || '未知型号',
+                            price: parseFloat(skuInfo.price || price || '0'),
+                            stock: skuInfo.stock || '99',
+                            specs: skuInfo.specs || {}
+                        });
+                    });
+                }
+
+                // 如果没有多SKU，则创建单个默认SKU
+                if (skuList.length === 0) {
+                    // 从商品参数中提取型号
+                    const model = attributes['型号'] || attributes['商品型号'] || attributes['货号'] || '';
+                    skuList.push({
+                        skuId: 'default',
+                        model: model || '标准版',
+                        price: parseFloat(price || '0'),
+                        stock: '99',
+                        specs: attributes
+                    });
+                }
+            } catch (e) {
+                console.error('[JD SKU Extract] Error:', e);
+                // Fallback：至少创建一个默认SKU
+                const model = attributes['型号'] || attributes['商品型号'] || '';
+                skuList.push({
+                    skuId: 'default',
+                    model: model || '标准版',
+                    price: parseFloat(price || '0'),
+                    stock: '99',
+                    specs: attributes
+                });
+            }
+
             return {
                 title,
                 price,
                 images: images.slice(0, 10), // 最多10张图
                 detailHtml,
-                attributes
+                attributes,
+                skuList  // ← 新增返回
             };
         });
 
@@ -224,12 +290,23 @@ export async function scrapeJDProduct(productUrl: string): Promise<JDProductData
 
         console.log(`[JD Scraper] Successfully scraped: ${productData.title}`);
 
+        // ⭐ 核心逻辑：选择价格最低的SKU
+        const skuList = productData.skuList || [];
+        const cheapestSku = skuList.reduce((min, sku) =>
+            sku.price < min.price ? sku : min
+            , skuList[0] || { skuId: 'default', model: '', price: 0, stock: '99', specs: {} });
+
+        console.log(`[JD Scraper] Selected cheapest SKU: model=${cheapestSku.model}, price=${cheapestSku.price}`);
+
+        // 确保型号和价格来自同一个SKU
         return {
             ...productData,
             skuData: {
-                price: productData.price,
-                stock: stock || '999',
-                specs: productData.attributes
+                price: String(cheapestSku.price || productData.price),
+                stock: stock || cheapestSku.stock || '999',
+                specs: productData.attributes,
+                model: cheapestSku.model,  // ← 从选中的SKU提取型号
+                skuList: skuList  // ← 保留完整列表供后续使用
             },
             shopName: '京东自营'
         };

@@ -10,6 +10,14 @@ export interface SuningProductData {
         price: string;
         stock: string;
         specs?: Record<string, string>;
+        model?: string;
+        skuList?: Array<{
+            skuId: string;
+            model: string;
+            price: number;
+            stock: string;
+            specs?: Record<string, string>;
+        }>;
     };
     attributes: Record<string, string>;
     shopName?: string;
@@ -127,24 +135,78 @@ export async function scrapeSuningProduct(productUrl: string): Promise<SuningPro
             const shopEl = document.querySelector('.store-info .store-name, .shopName') as HTMLElement;
             const shopName = shopEl?.textContent?.trim() || '苏宁易购';
 
+            // ⭐ 提取SKU列表（苏宁通常在页面变量中）
+            const skuList: Array<{ skuId: string; model: string; price: number; stock: string; specs?: Record<string, string> }> = [];
+            try {
+                const anyWin = window as any;
+                // 苏宁可能有 itemInfo、goodsInfo 等对象存储SKU
+                const itemInfo = anyWin.itemInfo || anyWin.goodsInfo || {};
+
+                if (itemInfo.skuList && Array.isArray(itemInfo.skuList)) {
+                    itemInfo.skuList.forEach((sku: any) => {
+                        const skuModel = sku.model || sku.name || attributes['型号'] || '';
+                        skuList.push({
+                            skuId: sku.skuId || sku.id || 'default',
+                            model: skuModel,
+                            price: parseFloat(sku.price || price || '0'),
+                            stock: sku.stock || '999',
+                            specs: sku.specs || {}
+                        });
+                    });
+                }
+
+                // Fallback：单SKU
+                if (skuList.length === 0) {
+                    const model = attributes['型号'] || attributes['商品型号'] || '';
+                    skuList.push({
+                        skuId: 'default',
+                        model: model || '标准版',
+                        price: parseFloat(price || '0'),
+                        stock: '999',
+                        specs: attributes
+                    });
+                }
+            } catch (e) {
+                // Fallback
+                const model = attributes['型号'] || '';
+                skuList.push({
+                    skuId: 'default',
+                    model: model || '标准版',
+                    price: parseFloat(price || '0'),
+                    stock: '999',
+                    specs: attributes
+                });
+            }
+
             return {
                 title,
                 price,
                 images: images.slice(0, 10),
                 detailHtml,
                 attributes,
-                shopName
+                shopName,
+                skuList
             };
         });
 
         console.log(`[Suning Scraper] Successfully scraped: ${productData.title}`);
 
+        // ⭐ 选择价格最低的SKU
+        const skuList = productData.skuList || [];
+        const cheapestSku = skuList.reduce((min, sku) =>
+            sku.price < min.price ? sku : min
+            , skuList[0] || { skuId: 'default', model: '', price: 0, stock: '999', specs: {} });
+
+        console.log(`[Suning Scraper] Selected cheapest SKU: model=${cheapestSku.model}, price=${cheapestSku.price}`);
+
         return {
             ...productData,
             skuData: {
-                price: productData.price,
-                stock: '999',
-                specs: productData.attributes
+                price: String(cheapestSku.price || productData.price),
+                stock: cheapestSku.stock || '999',
+                specs: productData.attributes,
+                model: cheapestSku.model,
+                skuList: skuList
             }
         };
 

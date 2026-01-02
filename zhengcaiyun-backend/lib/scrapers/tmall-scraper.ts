@@ -10,6 +10,14 @@ export interface TmallProductData {
         price: string;
         stock: string;
         specs?: Record<string, string>;
+        model?: string;
+        skuList?: Array<{
+            skuId: string;
+            model: string;
+            price: number;
+            stock: string;
+            specs?: Record<string, string>;
+        }>;
     };
     attributes: Record<string, string>;
     shopName?: string;
@@ -157,13 +165,57 @@ export async function scrapeTmallProduct(productUrl: string): Promise<TmallProdu
             const shopEl = document.querySelector('.slogo-shopname, .shop-name a') as HTMLElement;
             const shopName = shopEl?.textContent?.trim() || '天猫店铺';
 
+            // ⭐ 提取SKU列表
+            const skuList: Array<{ skuId: string; model: string; price: number; stock: string; specs?: Record<string, string> }> = [];
+            try {
+                const anyWin = window as any;
+                // 天猫/淘宝页面通常有 Hub.config.skuList 或 g_config
+                const hub = anyWin.Hub || anyWin.g_config || {};
+                const skuConfig = hub.skuList || hub.skuData || [];
+
+                if (Array.isArray(skuConfig) && skuConfig.length > 0) {
+                    skuConfig.forEach((sku: any) => {
+                        const skuModel = sku.model || sku.title || attributes['型号'] || '';
+                        skuList.push({
+                            skuId: sku.skuId || sku.id || 'default',
+                            model: skuModel,
+                            price: parseFloat(sku.price || price || '0'),
+                            stock: sku.quantity || '999',
+                            specs: sku.props || {}
+                        });
+                    });
+                }
+
+                // Fallback
+                if (skuList.length === 0) {
+                    const model = attributes['型号'] || attributes['商品型号'] || '';
+                    skuList.push({
+                        skuId: 'default',
+                        model: model || '标准版',
+                        price: parseFloat(price || '0'),
+                        stock: '999',
+                        specs: attributes
+                    });
+                }
+            } catch (e) {
+                const model = attributes['型号'] || '';
+                skuList.push({
+                    skuId: 'default',
+                    model: model || '标准版',
+                    price: parseFloat(price || '0'),
+                    stock: '999',
+                    specs: attributes
+                });
+            }
+
             return {
                 title,
                 price,
                 images: images.slice(0, 10),
                 detailHtml,
                 attributes,
-                shopName
+                shopName,
+                skuList
             };
         });
 
@@ -176,12 +228,22 @@ export async function scrapeTmallProduct(productUrl: string): Promise<TmallProdu
             // 后续可以添加截图逻辑
         }
 
+        // ⭐ 选择价格最低的SKU
+        const skuList = productData.skuList || [];
+        const cheapestSku = skuList.reduce((min, sku) =>
+            sku.price < min.price ? sku : min
+            , skuList[0] || { skuId: 'default', model: '', price: 0, stock: '999', specs: {} });
+
+        console.log(`[Tmall Scraper] Selected cheapest SKU: model=${cheapestSku.model}, price=${cheapestSku.price}`);
+
         return {
             ...productData,
             skuData: {
-                price: productData.price,
-                stock: '999',
-                specs: productData.attributes
+                price: String(cheapestSku.price || productData.price),
+                stock: cheapestSku.stock || '999',
+                specs: productData.attributes,
+                model: cheapestSku.model,
+                skuList: skuList
             }
         };
 

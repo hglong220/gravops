@@ -163,44 +163,56 @@ async function handleCategoryPage(draftId: string) {
 
   console.log('[旗舰MAX] 使用 License:', licenseKey.substring(0, 8) + '...')
 
-  // 3. 调用 AI 分析
-  let aiResult
-  try {
-    const { baseUrl, token } = await getApiConfig()
-    console.log('%c[旗舰MAX] 🛰️ 正在请求后端分析 (mode: full)...', 'background: #2196f3; color: white; padding: 2px 4px; border-radius: 4px;')
-    const resp = await apiProxy<any>(`${baseUrl}/api/category-match`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: {
-        licenseKey,
-        productTitle: draft.title,
-        mode: "full"
+  // 3. 决定是否调用 AI 分析
+  let aiResultData: any = null;
+
+  // 检查草稿中是否已有类目路径
+  if (draft.categoryPath && Array.isArray(draft.categoryPath) && draft.categoryPath.length > 0) {
+    console.log('%c[旗舰MAX] 🚀 发现已缓存的类目路径，跳过 AI 分析', 'background: #673ab7; color: white; padding: 2px 4px; border-radius: 4px;', draft.categoryPath.join(' > '))
+    aiResultData = {
+      categoryPath: draft.categoryPath,
+      brand: draft.brand || '未知',
+      model: draft.model || '',
+      bid: draft.bid || draft.categoryPath[0]?.split('/')[0] || '办公设备',
+      usedAI: false
+    }
+  } else {
+    // 只有在没有缓存时才请求后端分析
+    try {
+      const { baseUrl, token } = await getApiConfig()
+      console.log('%c[旗舰MAX] 🛰️ 正在请求后端分析 (mode: full)...', 'background: #2196f3; color: white; padding: 2px 4px; border-radius: 4px;')
+      const resp = await apiProxy<any>(`${baseUrl}/api/category-match`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: {
+          licenseKey,
+          productTitle: draft.title,
+          mode: "full"
+        }
+      })
+
+      if (!resp.ok) {
+        showError(resp.data?.error || resp.error || `AI 匹配失败 (${resp.status})`)
+        return
       }
-    })
-
-    aiResult = resp.data
-
-    if (!resp.ok) {
-      showError((aiResult as any)?.error || resp.error || `AI 匹配失败 (${resp.status})`)
+      aiResultData = resp.data.data
+    } catch (e) {
+      showError('AI 服务连接失败')
       return
     }
-  } catch (e) {
-    showError('AI 服务连接失败')
+  }
+
+  if (!aiResultData) {
+    showError('类目分析数据获取失败')
     return
   }
 
-  if (!aiResult.success) {
-    showError(aiResult.error || 'AI 匹配失败')
-    console.error('[旗舰MAX] ❌ AI 匹配异常:', aiResult)
-    return
-  }
+  const { categoryPath, brand, model, bid, usedAI } = aiResultData
 
-  const { categoryPath, brand, model, bid, suggestedLevel1, usedAI } = aiResult.data
-
-  console.log(`%c[旗舰MAX] 📥 后端返回结果 (AI: ${usedAI ? '✅' : '❌'})`, 'background: #4caf50; color: white; padding: 2px 4px; border-radius: 4px;')
+  console.log(`%c[旗舰MAX] 📥 最终执行方案 (由${usedAI ? 'AI产生' : '缓存提取'})`, 'background: #4caf50; color: white; padding: 2px 4px; border-radius: 4px;')
   console.log('[旗舰MAX] 详情:', {
     categoryPath: categoryPath.join(' > '),
     brand,

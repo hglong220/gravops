@@ -2,6 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getActorFromRequest } from '@/lib/request-actor';
 
+// 辅助函数：在型号的字母和数字之间自动加空格
+function addSpaceToModel(model: string | null | undefined): string {
+    if (!model) return '';
+    return model.replace(/([a-zA-Z])(\d)/g, '$1 $2').trim();
+}
+
+// 辅助函数：从 skuData 中提取价格并计算销售价
+function calculatePrices(skuData: any): { marketPrice?: number; price?: number } {
+    let parsedSku = skuData;
+    if (typeof skuData === 'string') {
+        try {
+            parsedSku = JSON.parse(skuData);
+        } catch {
+            return {};
+        }
+    }
+    const originalPrice = parsedSku?.price;
+    if (!originalPrice || isNaN(parseFloat(originalPrice))) {
+        return {};
+    }
+    const marketPrice = parseFloat(originalPrice);
+    const salePrice = Math.round(marketPrice * 0.9 * 100) / 100;
+    return {
+        marketPrice: marketPrice,
+        price: salePrice
+    };
+}
+
 /**
  * POST /api/copy/zcy
  * 政采云站内复制 - 接收前端提取的数据并保存
@@ -49,6 +77,21 @@ export async function POST(request: NextRequest) {
 
         let draft;
         if (existing) {
+            let parsedAttrs = attributes;
+            if (typeof attributes === 'string') {
+                try { parsedAttrs = JSON.parse(attributes); } catch { parsedAttrs = {}; }
+            }
+            const extractedBrand = parsedAttrs?.['品牌'] || undefined;
+            const extractedModel = parsedAttrs?.['型号'] || parsedAttrs?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            let parsedSku = skuData;
+            if (typeof skuData === 'string') {
+                try { parsedSku = JSON.parse(skuData); } catch { parsedSku = {}; }
+            }
+            const marketPrice = parseFloat(parsedSku?.price || '0') || 0;
+            const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.9 * 100) / 100 : 0;
+
             draft = await prisma.productDraft.update({
                 where: { id: existing.id },
                 data: {
@@ -58,10 +101,29 @@ export async function POST(request: NextRequest) {
                     detailHtml: detailHtml || existing.detailHtml,
                     skuData: typeof skuData === 'string' ? skuData : JSON.stringify(skuData || {}),
                     shopName: shopName || existing.shopName,
-                    status: 'scraped'
+                    status: 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: marketPrice,
+                    price: salePrice
                 }
             });
         } else {
+            let parsedAttrs = attributes;
+            if (typeof attributes === 'string') {
+                try { parsedAttrs = JSON.parse(attributes); } catch { parsedAttrs = {}; }
+            }
+            const extractedBrand = parsedAttrs?.['品牌'] || undefined;
+            const extractedModel = parsedAttrs?.['型号'] || parsedAttrs?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            let parsedSku = skuData;
+            if (typeof skuData === 'string') {
+                try { parsedSku = JSON.parse(skuData); } catch { parsedSku = {}; }
+            }
+            const marketPrice = parseFloat(parsedSku?.price || '0') || 0;
+            const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.9 * 100) / 100 : 0;
+
             draft = await prisma.productDraft.create({
                 data: {
                     userId,
@@ -72,7 +134,11 @@ export async function POST(request: NextRequest) {
                     detailHtml: detailHtml || '',
                     skuData: typeof skuData === 'string' ? skuData : JSON.stringify(skuData || {}),
                     shopName: shopName || '政采云店铺',
-                    status: 'scraped'
+                    status: 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: marketPrice,
+                    price: salePrice
                 }
             });
         }

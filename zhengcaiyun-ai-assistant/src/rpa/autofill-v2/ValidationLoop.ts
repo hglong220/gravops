@@ -260,6 +260,9 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
 
         console.log('[V2] 需要填写', fieldsToFill.length, '个必填项');
 
+        // 跟踪已填写的字段，防止重复填写（如产地）
+        const filledLabels = new Set<string>();
+
         for (const field of fieldsToFill) {
             // 转换为 FormField 类型
             const formField: FormField = {
@@ -271,10 +274,17 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
             };
             const { label, type, value } = formField;
 
+            // 跳过已填写的字段（防止重复填写）
+            if (filledLabels.has(label)) {
+                console.log(`[V2] 跳过已填写字段: ${label}`);
+                continue;
+            }
+
             // 静态字段跳过（不需要交互）
             if (staticLabels.includes(label)) {
                 console.log(`[V2] 跳过静态字段: ${label}`);
                 report.filledCount++;
+                filledLabels.add(label);
                 continue;
             }
 
@@ -288,6 +298,7 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
                     const success = await fillDropdownEnum(container, value || '台');
                     if (success) {
                         report.filledCount++;
+                        filledLabels.add(label);  // 记录已填写
                         console.log(`[V2] ✅ ${label} 点击选择成功`);
                     } else {
                         report.failedCount++;
@@ -296,6 +307,7 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
                 } else {
                     console.log(`[V2] 跳过下拉枚举字段（未找到容器）: ${label}`);
                     report.filledCount++;
+                    filledLabels.add(label);  // 记录已填写
                 }
                 continue;
             }
@@ -315,6 +327,7 @@ export async function runAutoFillV2(productData: ProductData): Promise<AutoFillR
 
                 if (success) {
                     report.filledCount++;
+                    filledLabels.add(label);  // 记录已填写
                     console.log(`[V2] ✅ ${label} = "${value}"`);
                 } else {
                     report.failedCount++;
@@ -646,6 +659,11 @@ async function executeFieldFill(field: FormField): Promise<boolean> {
 
         // Step 2: 找到 cascader 并填写默认地区
         const cascaderSuccess = await fillDomesticCascader(container);
+
+        // 立即返回，避免后续滚动触发输入框重新打开
+        if (cascaderSuccess) {
+            console.log('[V2] 产地填写成功，立即返回');
+        }
         return cascaderSuccess;
     }
 
@@ -722,9 +740,24 @@ async function fillDomesticCascader(container: HTMLElement): Promise<boolean> {
         await sleep(200);
     }
 
-    // 点击空白区域关闭面板
-    document.body.click();
+    // 按 ESC 键关闭面板
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
     await sleep(100);
+
+    // 强制输入框失焦，防止下拉框二次弹出（最稳方案）
+    const cascaderInput = container.querySelector('input') as HTMLInputElement;
+    if (cascaderInput) {
+        cascaderInput.dispatchEvent(new Event('change', { bubbles: true }));
+        cascaderInput.blur();
+        // 🔒 禁用输入框，防止后续任何操作触发重新打开
+        cascaderInput.setAttribute('readonly', 'true');
+        cascaderInput.style.pointerEvents = 'none';
+        console.log('[V2] fillDomesticCascader: 已锁定输入框');
+    } else if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        // 如果没找到，就让当前聚焦的元素失焦
+        (document.activeElement as HTMLElement).blur();
+    }
+    await sleep(50);
 
     console.log('[V2] fillDomesticCascader: 完成');
     return true;
@@ -1232,9 +1265,24 @@ async function handleOriginCascader(container: HTMLElement): Promise<void> {
         }
     }
 
-    // 点击空白处关闭级联选择器
-    document.body.click();
-    await sleep(200);
+    // 🔒 强制关闭级联选择器（复用 fillDomesticCascader 的强关闭逻辑）
+    // 1. 按 ESC 键关闭面板
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    await sleep(100);
+
+    // 2. 强制输入框失焦并禁用
+    const cascaderInput = container.querySelector('input') as HTMLInputElement;
+    if (cascaderInput) {
+        cascaderInput.dispatchEvent(new Event('change', { bubbles: true }));
+        cascaderInput.blur();
+        // 禁用输入框，防止后续任何操作触发重新打开
+        cascaderInput.setAttribute('readonly', 'true');
+        cascaderInput.style.pointerEvents = 'none';
+        console.log('[V2] handleOriginCascader: 已锁定输入框');
+    } else if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        (document.activeElement as HTMLElement).blur();
+    }
+    await sleep(50);
 
     console.log('[V2] 产地级联选择完成');
 }

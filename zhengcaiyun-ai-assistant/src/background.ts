@@ -277,21 +277,26 @@ async function handlePublishRequest(productData: any) {
         // 4. 等待页面加载完成
         chrome.tabs.onUpdated.addListener(function listener(tabId, changeInfo) {
             if (tabId === tab.id && changeInfo.status === 'complete') {
-                console.log('[Background] Tab loaded, sending data to content script');
+                console.log('[Background] Tab loaded, waiting for DOM to be ready...');
 
                 // 移除监听器
                 chrome.tabs.onUpdated.removeListener(listener);
 
-                // 5. 向content script发送数据
-                chrome.tabs.sendMessage(tab.id!, {
-                    type: 'START_AUTO_PUBLISH',
-                    productData: {
-                        ...productData,
-                        config // 同时传递配置
-                    }
-                }).catch(err => {
-                    console.error('[Background] Failed to send message to content script:', err);
-                });
+                // ⏳ 额外等待，确保政采云表单完全渲染（类目选择器等）
+                setTimeout(() => {
+                    console.log('[Background] Sending data to content script with categoryPath:', productData.categoryPath);
+
+                    // 5. 向content script发送数据
+                    chrome.tabs.sendMessage(tab.id!, {
+                        type: 'START_AUTO_PUBLISH',
+                        productData: {
+                            ...productData,
+                            config // 同时传递配置
+                        }
+                    }).catch(err => {
+                        console.error('[Background] Failed to send message to content script:', err);
+                    });
+                }, 1500); // 等待1.5秒让表单初始化完成
             }
         });
 

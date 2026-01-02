@@ -3,6 +3,26 @@ import { prisma } from '@/lib/prisma';
 import { getActorFromRequest } from '@/lib/request-actor';
 import { scrapeJDProduct } from '@/lib/scrapers/jd-product-scraper';
 
+// 辅助函数：在型号的字母和数字之间自动加空格
+function addSpaceToModel(model: string | null | undefined): string {
+    if (!model) return '';
+    return model.replace(/([a-zA-Z])(\d)/g, '$1 $2').trim();
+}
+
+// 辅助函数：从 skuData 中提取价格并计算销售价
+function calculatePrices(skuData: any): { marketPrice?: number; price?: number } {
+    const originalPrice = skuData?.price;
+    if (!originalPrice || isNaN(parseFloat(originalPrice))) {
+        return {};
+    }
+    const marketPrice = parseFloat(originalPrice);
+    const salePrice = Math.round(marketPrice * 0.9 * 100) / 100;
+    return {
+        marketPrice: marketPrice,
+        price: salePrice
+    };
+}
+
 /**
  * POST /api/copy/jd
  * 复制京东商品到草稿箱  
@@ -61,6 +81,17 @@ export async function POST(request: NextRequest) {
         // 保存到数据库
         let draft;
         if (existing) {
+            // ⭐ 优先从 skuData.model 提取型号（已确保与价格一致）
+            const extractedBrand = productData.attributes?.['品牌'] || undefined;
+            const extractedModel = productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            // ⭐ 采集器已经选择了最便宜的SKU，price就是市场价
+            const marketPrice = parseFloat(productData.skuData.price) || 0;
+            const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.9 * 100) / 100 : 0;
+
+            console.log(`[JD采集] 价格计算: 市场价=${marketPrice}, 销售价=${salePrice}, SKU price=${productData.skuData.price}`);
+
             draft = await prisma.productDraft.update({
                 where: { id: existing.id },
                 data: {
@@ -70,10 +101,23 @@ export async function POST(request: NextRequest) {
                     detailHtml: productData.detailHtml,
                     skuData: JSON.stringify(productData.skuData),
                     shopName: productData.shopName || '京东',
-                    status: 'scraped'
+                    status: 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: marketPrice,
+                    price: salePrice
                 }
             });
         } else {
+            // ⭐ 优先从 skuData.model 提取型号（已确保与价格一致）
+            const extractedBrand = productData.attributes?.['品牌'] || undefined;
+            const extractedModel = productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            // ⭐ 采集器已经选择了最便宜的SKU，price就是市场价
+            const marketPrice = parseFloat(productData.skuData.price) || 0;
+            const salePrice = marketPrice > 0 ? Math.round(marketPrice * 0.9 * 100) / 100 : 0;
+
             draft = await prisma.productDraft.create({
                 data: {
                     userId,
@@ -84,7 +128,11 @@ export async function POST(request: NextRequest) {
                     detailHtml: productData.detailHtml,
                     skuData: JSON.stringify(productData.skuData),
                     shopName: productData.shopName || '京东',
-                    status: 'scraped'
+                    status: 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: marketPrice,
+                    price: salePrice
                 }
             });
         }

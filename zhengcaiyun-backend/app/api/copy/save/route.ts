@@ -3,6 +3,39 @@ import { prisma } from '@/lib/prisma';
 import { getActorFromRequest } from '@/lib/request-actor';
 import { analyzeProduct } from '@/lib/ai-service';
 
+// 辅助函数：在型号的字母和数字之间自动加空格
+function addSpaceToModel(model: string | null | undefined): string {
+    if (!model) return '';
+    // "tank531" → "tank 531"
+    // "M233dw" → "M233 dw"
+    return model.replace(/([a-zA-Z])(\d)/g, '$1 $2').trim();
+}
+
+// 辅助函数：从 skuData 中提取价格并计算销售价
+function calculatePrices(skuData: any): { marketPrice?: number; price?: number } {
+    let parsedSku = skuData;
+    if (typeof skuData === 'string') {
+        try {
+            parsedSku = JSON.parse(skuData);
+        } catch {
+            return {};
+        }
+    }
+
+    const originalPrice = parsedSku?.price;
+    if (!originalPrice || isNaN(parseFloat(originalPrice))) {
+        return {};
+    }
+
+    const marketPrice = parseFloat(originalPrice);
+    const salePrice = Math.round(marketPrice * 0.9 * 100) / 100;
+
+    return {
+        marketPrice: marketPrice,
+        price: salePrice
+    };
+}
+
 export async function POST(request: NextRequest) {
     try {
         const actor = await getActorFromRequest(request);
@@ -49,6 +82,23 @@ export async function POST(request: NextRequest) {
             // if (existing.userId !== user.userId) return 403...
             // But for now, let's allow it if it matches.
 
+            // 提取品牌和型号
+            let parsedSku = skuData;
+            let parsedAttrs = attributes;
+            if (typeof skuData === 'string') {
+                try { parsedSku = JSON.parse(skuData); } catch { parsedSku = {}; }
+            }
+            if (typeof attributes === 'string') {
+                try { parsedAttrs = JSON.parse(attributes); } catch { parsedAttrs = {}; }
+            }
+
+            const extractedBrand = parsedSku?.brand || parsedAttrs?.['品牌'] || undefined;
+            const extractedModel = parsedSku?.model || parsedAttrs?.['型号'] || parsedAttrs?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            // 计算价格：销售价 = 市场价 × 90%
+            const prices = calculatePrices(skuData);
+
             const draft = await prisma.productDraft.update({
                 where: { id },
                 data: {
@@ -59,6 +109,10 @@ export async function POST(request: NextRequest) {
                     skuData: typeof skuData === 'string' ? skuData : JSON.stringify(skuData || {}),
                     shopName,
                     status: status || 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: prices.marketPrice,
+                    price: prices.price
                 }
             });
 
@@ -153,10 +207,46 @@ export async function POST(request: NextRequest) {
                     shopName,
                     // Only update category if AI found one and it was empty
                     categoryPath: aiCategory || existingDraft.categoryPath,
-                    status: status || 'scraped'
+                    status: status || 'scraped',
+                    // 更新时也处理品牌、型号和价格
+                    ...(() => {
+                        let parsedSku = skuData;
+                        let parsedAttrs = attributes;
+                        if (typeof skuData === 'string') {
+                            try { parsedSku = JSON.parse(skuData); } catch { parsedSku = {}; }
+                        }
+                        if (typeof attributes === 'string') {
+                            try { parsedAttrs = JSON.parse(attributes); } catch { parsedAttrs = {}; }
+                        }
+                        const extractedBrand = parsedSku?.brand || parsedAttrs?.['品牌'] || undefined;
+                        const extractedModel = parsedSku?.model || parsedAttrs?.['型号'] || parsedAttrs?.['商品型号'] || undefined;
+                        const prices = calculatePrices(skuData);
+                        return {
+                            brand: extractedBrand,
+                            model: addSpaceToModel(extractedModel) || undefined,
+                            marketPrice: prices.marketPrice,
+                            price: prices.price
+                        };
+                    })()
                 }
             });
         } else {
+            // 创建新商品时也提取品牌、型号并计算价格
+            let parsedSku = skuData;
+            let parsedAttrs = attributes;
+            if (typeof skuData === 'string') {
+                try { parsedSku = JSON.parse(skuData); } catch { parsedSku = {}; }
+            }
+            if (typeof attributes === 'string') {
+                try { parsedAttrs = JSON.parse(attributes); } catch { parsedAttrs = {}; }
+            }
+            const extractedBrand = parsedSku?.brand || parsedAttrs?.['品牌'] || undefined;
+            const extractedModel = parsedSku?.model || parsedAttrs?.['型号'] || parsedAttrs?.['商品型号'] || undefined;
+            const cleanedModel = addSpaceToModel(extractedModel);
+
+            // 计算价格：销售价 = 市场价 × 90%
+            const prices = calculatePrices(skuData);
+
             draft = await prisma.productDraft.create({
                 data: {
                     userId,
@@ -168,7 +258,11 @@ export async function POST(request: NextRequest) {
                     skuData: typeof skuData === 'string' ? skuData : JSON.stringify(skuData || {}),
                     shopName: shopName || 'Unknown',
                     categoryPath: aiCategory || null,
-                    status: status || 'scraped'
+                    status: status || 'scraped',
+                    brand: extractedBrand,
+                    model: cleanedModel || undefined,
+                    marketPrice: prices.marketPrice,
+                    price: prices.price
                 }
             });
         }

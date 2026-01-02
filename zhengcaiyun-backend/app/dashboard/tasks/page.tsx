@@ -23,6 +23,8 @@ type ProductDraft = {
   price?: number | string
   marketPrice?: number | string
   stock?: number | string
+  permissionStatus?: string | null
+  permissionCheckedAt?: string | Date | null
 }
 
 type TaskGroup = {
@@ -124,6 +126,8 @@ export default function TaskPage() {
   const [catL2, setCatL2] = useState('')
   const [catL3, setCatL3] = useState('')
   const [missingNotice, setMissingNotice] = useState('')
+  const [permissionChecking, setPermissionChecking] = useState(false)
+  const [permissionStats, setPermissionStats] = useState<{ total: number; valid: number; invalid: number } | null>(null)
 
   const authedFetch = async (path: string, init: RequestInit = {}) => {
     const token = localStorage.getItem('token')
@@ -219,6 +223,96 @@ export default function TaskPage() {
     window.open(url, '_blank')
   }
 
+  const handleCheckPermissions = async () => {
+    // 验证是否选中商品
+    if (!selectedIds.size) {
+      alert('请先选择要检测的商品')
+      return
+    }
+
+    // 限制单次检测数量上限为 20 条
+    if (selectedIds.size > 20) {
+      alert(`单次检测数量不能超过 20 条，当前已选中 ${selectedIds.size} 条。`)
+      return
+    }
+
+    try {
+      setPermissionChecking(true)
+      setPermissionStats(null)
+
+      // 从localStorage获取licenseKey（需要用户登录后保存）
+      const user = localStorage.getItem('user')
+      if (!user) {
+        alert('请先登录')
+        return
+      }
+
+      // 这里需要从用户信息中获取licenseKey
+      // 临时使用测试key，实际应该从登录用户信息中获取
+      const licenseKey = '6GSM-24JW-XTRW-RRUG-SFEB'
+
+      const res = await authedFetch('/api/tasks/check-permissions', {
+        method: 'POST',
+        body: JSON.stringify({
+          licenseKey,
+          productIds: Array.from(selectedIds)  // 只检测选中的商品
+        })
+      })
+
+      const result = await res.json()
+
+      if (!res.ok) {
+        throw new Error(result.error || '检测失败')
+      }
+
+      setPermissionStats(result.stats)
+
+      // 刷新商品列表
+      await fetchProductsForTask(selectedTask)
+
+      // 不再显示弹窗，只通过标题颜色显示结果
+    } catch (error: any) {
+      console.error('权限检测失败:', error)
+      alert('权限检测失败: ' + error.message)
+    } finally {
+      setPermissionChecking(false)
+    }
+  }
+
+  // 判断是否可以发布（必须检测且全部有权限）
+  const canPublish = useMemo(() => {
+    if (selectedIds.size === 0) return false;
+
+    const selectedProducts = products.filter(p => selectedIds.has(p.id));
+
+    // 检查是否都已检测
+    const allChecked = selectedProducts.every(p => p.permissionStatus);
+    if (!allChecked) return false;
+
+    // 检查是否都有权限
+    const allValid = selectedProducts.every(p => p.permissionStatus === 'valid');
+    return allValid;
+  }, [selectedIds, products]);
+
+  // 发布提示信息
+  const publishHint = useMemo(() => {
+    if (selectedIds.size === 0) return '请先选择商品';
+
+    const selectedProducts = products.filter(p => selectedIds.has(p.id));
+    const unchecked = selectedProducts.filter(p => !p.permissionStatus);
+    const invalid = selectedProducts.filter(p => p.permissionStatus === 'invalid');
+
+    if (unchecked.length > 0) {
+      return `有 ${unchecked.length} 个商品未检测，请先点击"检测"`;
+    }
+
+    if (invalid.length > 0) {
+      return `有 ${invalid.length} 个商品无权限，无法发布`;
+    }
+
+    return `${selectedProducts.length} 个商品可发布`;
+  }, [selectedIds, products]);
+
   const handleBatchPublish = () => {
     if (!selectedIds.size) return alert('请先选择商品')
     selectedIds.forEach((id) => handlePublish(id))
@@ -237,7 +331,7 @@ export default function TaskPage() {
     setCatL2(l2 || '')
     setCatL3(l3 || '')
 
-    // 从 skuData 解析 price 和 stock
+    // 从 skuData 解析市场价和库存
     let productWithPrice = { ...product } as any
     if (product.skuData) {
       try {
@@ -246,30 +340,15 @@ export default function TaskPage() {
         const originalPrice = skuObj.price || product.price || ''
         productWithPrice.marketPrice = product.marketPrice || originalPrice
         productWithPrice.stock = skuObj.stock || 99
-
-        // 销售价自动计算逻辑：
-        // 1. 如果没有销售价，或销售价等于市场价（说明没有单独设置过），就自动计算为市场价的90%
-        const currentPrice = product.price || skuObj.price || ''
-        const marketPriceNum = parseFloat(productWithPrice.marketPrice) || 0
-        const currentPriceNum = parseFloat(String(currentPrice)) || 0
-
-        if (marketPriceNum > 0 && (!currentPriceNum || currentPriceNum === marketPriceNum)) {
-          productWithPrice.price = Math.round(marketPriceNum * 0.9 * 100) / 100
-        } else {
-          productWithPrice.price = currentPrice
-        }
+        // 如果数据库里有销售价就显示，没有就留空
+        productWithPrice.price = product.price || ''
       } catch { }
     } else {
-      // 没有 skuData 时也处理价格
+      // 没有 skuData 时也读取市场价
       const originalPrice = product.price || ''
       productWithPrice.marketPrice = product.marketPrice || originalPrice
-
-      const marketPriceNum = parseFloat(productWithPrice.marketPrice) || 0
-      const currentPriceNum = parseFloat(String(originalPrice)) || 0
-
-      if (marketPriceNum > 0 && (!currentPriceNum || currentPriceNum === marketPriceNum)) {
-        productWithPrice.price = Math.round(marketPriceNum * 0.9 * 100) / 100
-      }
+      // 如果数据库里有销售价就显示，没有就留空
+      productWithPrice.price = product.price || ''
     }
 
     setEditingProduct(productWithPrice)
@@ -379,18 +458,40 @@ export default function TaskPage() {
       {/* 批量操作按钮 */}
       <div className="flex justify-end gap-2 flex-shrink-0 mb-4">
         <button
-          onClick={handleBatchPublish}
-          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+          onClick={handleCheckPermissions}
+          disabled={permissionChecking}
+          className="px-4 py-2 bg-white text-gray-700 rounded border border-gray-300 hover:bg-gray-50 text-sm disabled:opacity-50"
         >
-          批量发布
+          {permissionChecking ? '检测中...' : '检测'}
+        </button>
+        <button
+          onClick={handleBatchPublish}
+          disabled={!canPublish}
+          title={publishHint}
+          className={`px-4 py-2 rounded text-sm transition-colors ${canPublish
+            ? 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+        >
+          发布
         </button>
         <button
           onClick={handleBatchDelete}
-          className="px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-xs"
+          className="px-4 py-2 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-sm"
         >
-          批量删除
+          删除
         </button>
       </div>
+
+      {/* 提示信息 */}
+      {selectedIds.size > 0 && (
+        <div className="flex justify-end mb-2 flex-shrink-0">
+          <p className={`text-xs ${canPublish ? 'text-green-600' : 'text-gray-500'
+            }`}>
+            {publishHint}
+          </p>
+        </div>
+      )}
 
       {/* 商品列表 - 占满全宽 */}
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
@@ -451,7 +552,12 @@ export default function TaskPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="truncate max-w-md" title={p.title}>
-                        <span className="text-gray-900 font-medium">{p.title}</span>
+                        <span className={`font-medium ${p.permissionStatus === 'invalid' ? 'text-red-600' :
+                          p.permissionStatus === 'valid' ? 'text-green-700' :
+                            'text-gray-900'
+                          }`}>
+                          {p.title}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-center whitespace-nowrap">{sourceLabel(p.originalUrl)}</td>
@@ -463,12 +569,6 @@ export default function TaskPage() {
                     </td>
                     <td className="w-48 px-4 py-3 text-right whitespace-nowrap">
                       <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => handlePublish(p.id)}
-                          className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                        >
-                          发布
-                        </button>
                         <button
                           onClick={() => openEditModal(p)}
                           className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"

@@ -163,13 +163,16 @@ model ProductDraft {
   errorMessage String?
   price        Float?
   marketPrice  Float?
-  publishedAt  DateTime?
-  stock        Int?      @default(99)
-  copyTask     CopyTask? @relation(fields: [copyTaskId], references: [id])
+  publishedAt         DateTime?
+  stock               Int?      @default(99)
+  permissionStatus    String?   @default("unchecked") // unchecked, valid, invalid
+  permissionCheckedAt DateTime?
+  copyTask            CopyTask? @relation(fields: [copyTaskId], references: [id])
 
   @@index([userId])
   @@index([status])
   @@index([originalUrl])
+  @@index([permissionStatus])
 }
 
 model CopyTask {

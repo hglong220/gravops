@@ -222,7 +222,7 @@ export async function matchCategoryWithAI(
     productTitle: string,
     allowedCategories: string[] = [],
     bid?: string,
-    liveOptions: string[] = [] // ⭐ 新增：页面实时选项
+    liveOptions: string[] = [] // ⭐ 恢复：页面实时选项
 ): Promise<CategoryMatchResult> {
 
     console.log('[AI Category] 开始AI类目匹配:', productTitle)
@@ -249,42 +249,7 @@ export async function matchCategoryWithAI(
     // 过滤类目树（只保留指定的一级类目）
     let tree = fullTree
     if (effectiveCategories.length > 0) {
-        // ⭐ [Rigid Termination] 刚性终止逻辑：先预判该商品的“物理类目”
-        // 比如：椅子 -> 家居建材。如果当前标项（比如办公用品）里没有家居建材，直接报错停止。
-        const productKeywords = extractKeywords(productTitle);
-        const lowerTitle = productTitle.toLowerCase();
-
-        // 查找该商品最可能属于的物理一级类目（全局查找）
-        let idealLevel1: string | null = null;
-        for (const node of fullTree) {
-            const nodeKeywords = node.name.split('/').flatMap(s => [s, s.substring(0, 2)]);
-            if (nodeKeywords.some(k => k.length >= 2 && lowerTitle.includes(k.toLowerCase()))) {
-                idealLevel1 = node.name;
-                break;
-            }
-        }
-
-        // 特殊补丁：椅子、桌子、沙发 -> 家居建材
-        if (/椅|桌|沙发|床|柜|架/.test(lowerTitle) && !/办公设备|耗材/.test(lowerTitle)) {
-            idealLevel1 = "家居建材";
-        }
-
-        if (idealLevel1) {
-            const isAllowed = effectiveCategories.some(cat =>
-                cat.includes(idealLevel1!) || idealLevel1!.includes(cat)
-            );
-
-            if (!isAllowed) {
-                console.log(`[AI Category] 🔴 [刚性终止] 商品 "${productTitle}" 理想类目为 "${idealLevel1}"，但当前标项 "${bid || '未指定'}" 权限仅允许: ${effectiveCategories.join(', ')}`);
-                return {
-                    path: [],
-                    confidence: 'low',
-                    reason: `【刚性终止】检测到商品属于「${idealLevel1}」，但您当前选择的标项「${bid || '默认'}」没有该类目的权限。为防止错误发布，程序已停止。请更换标项或确认账号权限。`,
-                    bid
-                };
-            }
-        }
-
+        // ⭐ 删除所有预判断逻辑，直接过滤类目树，让AI来判断
         tree = fullTree.filter(node => {
             // 检查一级类目名称是否在允许列表中
             const nodeName = node.name.toLowerCase()
@@ -297,17 +262,10 @@ export async function matchCategoryWithAI(
         })
         console.log(`[AI Category] 过滤后类目树: ${tree.length} 个一级类目 (${tree.map(n => n.name).join(', ')})`)
 
-        // 如果过滤后没有类目，报错
+        // 如果过滤后没有类目，继续使用完整类目树，让AI来判断
         if (tree.length === 0) {
-            console.log('[AI Category] ⚠️ 没有匹配的类目')
-            return {
-                path: [],
-                confidence: 'low',
-                reason: bid
-                    ? `标项 "${bid}" 下没有可用的类目，请检查标项映射配置`
-                    : '用户没有匹配的类目权限，请检查标项设置',
-                bid
-            }
+            console.log('[AI Category] ⚠️ 没有匹配的类目，使用完整类目树让AI判断')
+            tree = fullTree
         }
     }
 
@@ -338,7 +296,6 @@ export async function matchCategoryWithAI(
     const categoryList = relevantPaths.join('\n')
 
     const systemPrompt = `你是政采云电商平台的类目匹配专家。
-
 ⚠️ 极其重要：你只能从下面的【可选类目列表】中选择，不能自己编造类目名称！
 
 【可选类目列表】
@@ -348,12 +305,7 @@ ${categoryList}
 1. 分析商品标题
 2. 从上面的列表中选择最匹配的一个类目路径
 3. 必须100%使用列表中的原始名称，一个字都不能改
-4. 【重点】提取商品自己的「品牌」名（如：得力、惠普/HP）。
-5. 【重点】提取商品本身的「型号」（如：7361、CC388A、TN2325）。
-   ⚠️ 耗材模型准则：严禁提取“适用于 XXX”、“支持 XXX”等兼容性机型列表。
-   ❌ 错误示例：型号="178nw 179fnw 150a\\nw" (这是打印机列表)
-   ✅ 正确示例：型号="W1110A" (这是耗材本身型号)
-   只保留耗材自身的简洁型号。如果找不到，请返回 "未知"。
+4. 提取商品的品牌和型号（如果找不到则返回"未知"）
 
 输出 JSON 格式：
 {
@@ -362,23 +314,16 @@ ${categoryList}
   "reason": "选择理由",
   "brand": "品牌名",
   "model": "型号名"
-}`
+}`;
 
-    const userPrompt = `商品标题：${productTitle}
-
-请从可选类目列表中选择最匹配的类目路径，并提取品牌和型号。
-注意：path 中的每个类目名称必须与可选列表中的完全一致！`
+    const userPrompt = `商品标题：${productTitle}`;
 
     try {
-        let content = ''
+        const useDeepSeek = !!process.env.DEEPSEEK_API_KEY;
+        const client = useDeepSeek ? deepseek : openai;
+        const model = useDeepSeek ? 'deepseek-chat' : 'gpt-4o-mini';
 
-        // ⭐ 类目分析只使用 DeepSeek（中文理解更准确）
-        // 如果 DeepSeek 不可用，回退到 OpenAI
-        const useDeepSeek = !!process.env.DEEPSEEK_API_KEY
-        const client = useDeepSeek ? deepseek : openai
-        const model = useDeepSeek ? 'deepseek-chat' : 'gpt-4o-mini'
-
-        console.log(`[AI Category] 使用 ${useDeepSeek ? 'DeepSeek' : 'OpenAI'} (${model})`)
+        console.log(`[AI Category] 使用 ${useDeepSeek ? 'DeepSeek' : 'OpenAI'} (${model})`);
 
         const response = await client.chat.completions.create({
             model,
@@ -388,60 +333,53 @@ ${categoryList}
             ],
             temperature: 0.1,
             max_tokens: 500
-        })
-        content = response.choices[0]?.message?.content || ''
+        });
 
+        const content = response.choices[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('无法解析AI返回的JSON');
 
-        console.log('[AI Category] AI 返回:', content)
-
-        // 解析JSON
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) {
-            throw new Error('无法解析AI返回的JSON')
-        }
-
-        const result: CategoryMatchResult = JSON.parse(jsonMatch[0])
+        const result: CategoryMatchResult = JSON.parse(jsonMatch[0]);
 
         // 验证结果是否在候选列表中
-        const resultPath = result.path.join(' > ')
-        const isValid = relevantPaths.some(p => p.includes(resultPath) || resultPath.includes(p))
+        const resultPath = result.path.join(' > ');
+        const isValid = relevantPaths.some(p => p.includes(resultPath) || resultPath.includes(p));
 
-        if (!isValid) {
-            console.log('[AI Category] ⚠️ AI返回的类目不在候选列表中，尝试模糊匹配...')
+        if (!isValid && result.path.length > 0) {
             const similar = relevantPaths.find(p =>
                 result.path.some(part => p.includes(part))
-            )
+            );
             if (similar) {
-                result.path = similar.split(' > ')
-                result.confidence = 'medium'
+                result.path = similar.split(' > ');
+                result.confidence = 'medium';
             }
         }
 
         // ⭐ 设置标项
         if (bid) {
-            result.bid = bid
+            result.bid = bid;
         } else if (result.path.length > 0) {
-            const foundBid = findBidByLevel1Category(result.path[0])
-            if (foundBid) result.bid = foundBid
+            const foundBid = findBidByLevel1Category(result.path[0]);
+            if (foundBid) result.bid = foundBid;
         }
 
-        console.log('[AI Category] 最终结果:', result.path.join(' > '), result.bid ? `(标项: ${result.bid})` : '')
-        return result
+        console.log('[AI Category] 最终结果:', result.path.join(' > '));
+        return result;
 
     } catch (error) {
-        console.error('[AI Category] AI匹配失败:', error)
+        console.error('[AI Category] AI匹配失败:', error);
         if (relevantPaths.length > 0) {
-            const fallbackPath = relevantPaths[0].split(' > ')
+            const fallbackPath = relevantPaths[0].split(' > ');
             return {
                 path: fallbackPath,
                 confidence: 'low',
-                reason: 'AI匹配失败，使用关键词匹配结果'
-            }
+                reason: 'AI匹配失败，使用关键词回退'
+            };
         }
         return {
-            path: ['文化用品', '其他文化用品', '其他'],
+            path: ['其他'],
             confidence: 'low',
-            reason: 'AI匹配失败，使用默认类目'
-        }
+            reason: '系统故障'
+        };
     }
 }
