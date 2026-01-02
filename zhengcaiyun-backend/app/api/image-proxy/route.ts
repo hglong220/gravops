@@ -55,8 +55,11 @@ export async function GET(request: NextRequest) {
         const isAllowed = ALLOWED_DOMAINS.some(domain => urlObj.hostname.includes(domain));
 
         if (!isAllowed) {
-            console.log(`[Image Proxy] 域名不在白名单: ${urlObj.hostname}`);
-            // 不强制拒绝，只记录日志
+            console.log(`[Image Proxy] ❌ 域名不在白名单: ${urlObj.hostname}`);
+            return NextResponse.json(
+                { error: '域名不在允许的白名单中' },
+                { status: 403, headers: corsHeaders }
+            );
         }
 
         // HEAD 请求检查图片是否存在

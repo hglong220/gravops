@@ -73,7 +73,11 @@ export async function createAlipayOrder(params: {
  */
 export function verifyAlipayNotify(params: Record<string, any>): boolean {
     if (!ALIPAY_PUBLIC_KEY) {
-        console.warn('[Payment] Mock verify');
+        if (process.env.NODE_ENV === 'production') {
+            console.error('[Payment] ❌ 支付宝公钥未配置，生产环境禁止跳过验签');
+            return false;
+        }
+        console.warn('[Payment] ⚠️ 开发模式：跳过支付验签');
         return true;
     }
 
