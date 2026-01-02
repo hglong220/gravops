@@ -14,6 +14,25 @@ export async function POST(request: NextRequest) {
         const { url, region } = await request.json();
         if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 });
 
+        // 验证URL域名白名单（只允许政采云官方域名）
+        try {
+            const urlObj = new URL(url);
+            const allowedDomains = ['zcygov.cn', 'ccgp.gov.cn']; // 政采云和政府采购网
+            const isAllowed = allowedDomains.some(domain =>
+                urlObj.hostname === domain || urlObj.hostname.endsWith('.' + domain)
+            );
+
+            if (!isAllowed) {
+                console.log(`[Rule Crawler] ❌ 域名不在白名单: ${urlObj.hostname}`);
+                return NextResponse.json(
+                    { error: '只允许爬取政采云官方域名' },
+                    { status: 403 }
+                );
+            }
+        } catch (e) {
+            return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+        }
+
         // 1. Crawl the page
         console.log(`[Rule Crawler] Crawling: ${url}`);
         const browser = await puppeteer.launch({
