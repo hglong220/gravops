@@ -47,6 +47,10 @@ prisma/dev.db
 # 输出目录
 zcy-auto-miner/output/
 output/
+zcy-desktop-prototype/output/
+zcy-desktop-prototype/.browser-cdp-profile/
+zcy-desktop-prototype/.browser-profile/
+zcy-desktop-prototype/.edge-cdp-profile/
 
 # 大JSON类目文件（保留源数据，忽略生成的）
 zcy_categories_final.json

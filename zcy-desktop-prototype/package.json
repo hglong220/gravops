@@ -1,0 +1,14 @@
+{
+  "name": "zcy-desktop-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "collect:jd": "node src/collect-jd.mjs",
+    "collect:jd:cdp": "node src/collect-jd-cdp.mjs",
+    "collect:taobao:cdp": "node src/collect-taobao-cdp.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.57.0"
+  }
+}
