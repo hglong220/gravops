@@ -16,7 +16,7 @@ const samples = [
   {
     id: 'jd-pen-deli',
     platform: 'jd',
-    label: 'JD 得力中性笔',
+    label: 'JD deli gel pen',
     url: 'https://item.jd.com/100010050091.html',
     min: { mainImages: 3, detailImages: 5, parameterCount: 5, specGroups: 1 },
     required: ['brand', 'model']
@@ -24,7 +24,7 @@ const samples = [
   {
     id: 'jd-paper-tango',
     platform: 'jd',
-    label: 'JD 天章复印纸',
+    label: 'JD tango copy paper',
     url: 'https://item.jd.com/1195207.html',
     min: { mainImages: 3, detailImages: 8, parameterCount: 5, specGroups: 1 },
     required: ['brand']
@@ -32,7 +32,7 @@ const samples = [
   {
     id: 'jd-paper-baiwang-single',
     platform: 'jd',
-    label: 'JD 百旺复印纸单品',
+    label: 'JD baiwang copy paper single',
     url: 'https://item.jd.com/100053288192.html',
     min: { mainImages: 2, detailImages: 8, parameterCount: 5, specGroups: 0 },
     required: ['brand']
@@ -40,7 +40,7 @@ const samples = [
   {
     id: 'jd-paper-baiwang-red',
     platform: 'jd',
-    label: 'JD 红百旺复印纸',
+    label: 'JD red baiwang copy paper',
     url: 'https://item.jd.com/1657408.html',
     min: { mainImages: 3, detailImages: 8, parameterCount: 5, specGroups: 1 },
     required: ['brand']
@@ -48,7 +48,7 @@ const samples = [
   {
     id: 'jd-hp-toner-230a',
     platform: 'jd',
-    label: 'JD HP 硒鼓',
+    label: 'JD HP toner',
     url: 'https://item.jd.com/29475495099.html',
     min: { mainImages: 2, detailImages: 8, parameterCount: 8, specGroups: 1 },
     required: ['brand', 'model']
@@ -56,7 +56,7 @@ const samples = [
   {
     id: 'jd-hp-consumable',
     platform: 'jd',
-    label: 'JD HP 耗材店铺',
+    label: 'JD HP consumable store',
     url: 'https://item.jd.com/10153717614531.html',
     min: { mainImages: 2, detailImages: 8, parameterCount: 8, specGroups: 1 },
     required: ['brand']
@@ -64,7 +64,7 @@ const samples = [
   {
     id: 'jd-960-toner',
     platform: 'jd',
-    label: 'JD 玖六零硒鼓',
+    label: 'JD 960 toner',
     url: 'https://item.jd.com/100145834020.html',
     min: { mainImages: 3, detailImages: 8, parameterCount: 8, specGroups: 1 },
     required: ['brand']
@@ -72,15 +72,47 @@ const samples = [
   {
     id: 'jd-siege-toner',
     platform: 'jd',
-    label: 'JD 赛格硒鼓',
+    label: 'JD siege toner',
     url: 'https://item.jd.com/67357465267.html',
     min: { mainImages: 2, detailImages: 8, parameterCount: 8, specGroups: 1 },
     required: ['brand', 'model']
   },
   {
+    id: 'jd-deli-pen-real',
+    platform: 'jd',
+    label: 'JD deli pen real sample',
+    url: 'https://item.jd.com/100007188565.html',
+    min: { mainImages: 3, detailImages: 8, parameterCount: 5, specGroups: 2 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-office-clips-real',
+    platform: 'jd',
+    label: 'JD office clips real sample',
+    url: 'https://item.jd.com/100069291185.html',
+    min: { mainImages: 3, detailImages: 8, parameterCount: 4, specGroups: 1 },
+    required: ['brand']
+  },
+  {
+    id: 'jd-folder-real',
+    platform: 'jd',
+    label: 'JD folder real sample',
+    url: 'https://item.jd.com/24221663767.html',
+    min: { mainImages: 3, detailImages: 8, parameterCount: 8, specGroups: 1 },
+    required: ['brand']
+  },
+  {
+    id: 'jd-store-detail-short',
+    platform: 'jd',
+    label: 'JD store detail short sample',
+    url: 'https://item.jd.com/10184951211794.html',
+    min: { mainImages: 3, detailImages: 2, parameterCount: 8, specGroups: 2 },
+    required: ['brand']
+  },
+  {
     id: 'tb-shaver-superman',
     platform: 'taobao',
-    label: '淘宝 超人剃须刀',
+    label: 'Taobao superman shaver',
     url: 'https://item.taobao.com/item.htm?abbucket=14&id=591576115249&mi_id=0000tpPLQkgTYm1kadN6QCTvXyf5xSKAaWPsIHbtTUlR8Ug&ns=1&priceTId=214780e117770507293611357e11ce&skuId=4954757636116&spm=a21n57.1.item.1&utparam=%7B%22aplus_abtest%22%3A%223051ad45efabdabef5feded99d9e9c51%22%7D&xxc=taobaoSearch',
     min: { mainImages: 3, detailImages: 5, parameterCount: 8, specGroups: 1 },
     required: ['brand']
@@ -88,7 +120,7 @@ const samples = [
   {
     id: 'tb-shaver-manual',
     platform: 'taobao',
-    label: '淘宝 手动剃须刀',
+    label: 'Taobao manual shaver',
     url: 'https://item.taobao.com/item.htm?abbucket=14&id=847258646571&mi_id=0000jz07P8Qn6cVrd4T8hlRxafG9N7zt2GyKT0SiGv-DKkc&ns=1&priceTId=214780e117770507293611357e11ce&skuId=5800772523522&spm=a21n57.1.item.2&utparam=%7B%22aplus_abtest%22%3A%220dcd0e7954236ff49e33e07c68095403%22%7D&xxc=taobaoSearch',
     min: { mainImages: 3, detailImages: 5, parameterCount: 4, specGroups: 0 },
     required: ['model']
@@ -96,7 +128,7 @@ const samples = [
   {
     id: 'tmall-low-info',
     platform: 'taobao',
-    label: '天猫 低信息量样本',
+    label: 'Tmall low-info sample',
     url: 'https://detail.tmall.com/item.htm?abbucket=14&id=991054613002&mi_id=0000_AQb0BPVyYzyplXC65Z7n6mF1k2zp_vdRO0uGf7ixfs&ns=1&priceTId=214780e117770507399161672e11ce&spm=a21n57.1.item.1&utparam=%7B%22aplus_abtest%22%3A%22fe2ff69259488e732d76eb16a427c711%22%7D&xxc=taobaoSearch',
     min: { mainImages: 1, detailImages: 1, parameterCount: 1, specGroups: 0 },
     required: ['brand']
@@ -104,7 +136,7 @@ const samples = [
   {
     id: 'tb-gift-logistics',
     platform: 'taobao',
-    label: '淘宝 礼品物流',
+    label: 'Taobao gift logistics',
     url: 'https://item.taobao.com/item.htm?abbucket=14&id=810274059864&mi_id=0000m-XmiRzBKltommo1Py4Tobnm_RSik0y_iaOfAKexFW8&ns=1&priceTId=214780e117770507399161672e11ce&skuId=5670221330465&spm=a21n57.1.item.2&utparam=%7B%22aplus_abtest%22%3A%226cdb6b1d2f106863d8187a20e1fd0fb5%22%7D&xxc=taobaoSearch',
     min: { mainImages: 2, detailImages: 1, parameterCount: 1, specGroups: 1 },
     required: []
@@ -112,7 +144,7 @@ const samples = [
   {
     id: 'tb-socks-playboy',
     platform: 'taobao',
-    label: '淘宝 花花公子袜子',
+    label: 'Taobao playboy socks',
     url: 'https://item.taobao.com/item.htm?abbucket=14&id=645490095703&mi_id=0000pqAJ94VDY6aSOWZQTq9jd9o7iwpnD-jWnnd3OCd_llY&ns=1&priceTId=214780e117770507609582258e11ce&skuId=4646054785438&spm=a21n57.1.item.1&utparam=%7B%22aplus_abtest%22%3A%227141b3f0a53d7273000e128b3bcbde3e%22%7D&xxc=taobaoSearch',
     min: { mainImages: 3, detailImages: 5, parameterCount: 8, specGroups: 2 },
     required: ['brand']
@@ -120,7 +152,7 @@ const samples = [
   {
     id: 'tmall-socks-yuzhaolin',
     platform: 'taobao',
-    label: '天猫 俞兆林袜子',
+    label: 'Tmall yuzhaolin socks',
     url: 'https://detail.tmall.com/item.htm?abbucket=14&id=885829219462&mi_id=0000mN9OPFMxVloB5P6udsNk06MlRSHV9G_FtMrp5h8vc4Y&ns=1&priceTId=214780e117770507609582258e11ce&skuId=5895288018881&spm=a21n57.1.item.2&utparam=%7B%22aplus_abtest%22%3A%223d01b7f856740b7898e59c7ff931991a%22%7D&xxc=taobaoSearch',
     min: { mainImages: 3, detailImages: 5, parameterCount: 8, specGroups: 2 },
     required: ['brand']
@@ -128,9 +160,25 @@ const samples = [
   {
     id: 'tb-samsung-phone',
     platform: 'taobao',
-    label: '淘宝 三星手机多规格',
+    label: 'Taobao Samsung phone multi-spec',
     url: 'https://item.taobao.com/item.htm?id=921393353319&mi_id=0000BhbKpp6a_ihvr62sHLok7Kfw5FhfquQ7p-b60R1ov2w&pvid=8946c914-810d-4192-89e3-b118f36c74bc&scm=1007.40986.467924.0&skuId=5796564497160&spm=a21bo.tmall%2Fa.201876.d25.7216c3d5fjfSEj&xxc=home_recommend',
     min: { mainImages: 3, detailImages: 5, parameterCount: 12, specGroups: 4, selectedSpecCount: 4 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'tb-samsung-battery-real',
+    platform: 'taobao',
+    label: 'Taobao Samsung battery real sample',
+    url: 'https://item.taobao.com/item.htm?id=853914137091&mi_id=0000FEvU8O2p5eo0TVi0r9DhCh0bwWBiPh5ud9YUNdNliH8&pvid=8946c914-810d-4192-89e3-b118f36c74bc&scm=1007.40986.467924.0&skuId=5655745985219&spm=a21bo.tmall%2Fa.201876.d1.7216c3d5fjfSEj&xxc=home_recommend',
+    min: { mainImages: 3, detailImages: 8, parameterCount: 8, specGroups: 1, selectedSpecCount: 1 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'tmall-mainboard-real',
+    platform: 'taobao',
+    label: 'Tmall mainboard real sample',
+    url: 'https://detail.tmall.com/item.htm?id=832257628838&mi_id=0000JSrv4Bk_zaFZsTmfAxr-jHZo1InYni5OHd5cHdieIdQ&pvid=8946c914-810d-4192-89e3-b118f36c74bc&scm=1007.40986.467924.0&skuId=6148818450301&spm=a21bo.tmall%2Fa.201876.d14.7216c3d5fjfSEj&xxc=home_recommend',
+    min: { mainImages: 3, detailImages: 8, parameterCount: 2, specGroups: 1, selectedSpecCount: 1 },
     required: ['brand', 'model']
   }
 ]
@@ -154,6 +202,8 @@ function parseCollectorOutput(stdout) {
 
 function evaluate(sample, data) {
   const failures = []
+  const title = String(data.title || data.state?.title || '')
+  if (/登录|登陆|欢迎登录/i.test(title)) failures.push('login required')
   for (const [field, min] of Object.entries(sample.min || {})) {
     const actual = field === 'selectedSpecCount'
       ? Number(data.selectedSpecs?.length || 0)
