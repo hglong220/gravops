@@ -110,6 +110,94 @@ const samples = [
     required: ['brand']
   },
   {
+    id: 'jd-shredder-comet-sd100k',
+    platform: 'jd',
+    label: 'JD comet shredder SD100K',
+    url: 'https://item.jd.com/100106697040.html',
+    min: { mainImages: 3, detailImages: 20, parameterCount: 5, specGroups: 0 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-shredder-bonsaii-9906a',
+    platform: 'jd',
+    label: 'JD bonsaii shredder 9906A',
+    url: 'https://item.jd.com/100038318555.html',
+    min: { mainImages: 3, detailImages: 20, parameterCount: 8, specGroups: 0 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-shredder-deli-9912',
+    platform: 'jd',
+    label: 'JD deli shredder 9912',
+    url: 'https://item.jd.com/100021038306.html',
+    min: { mainImages: 3, detailImages: 20, parameterCount: 7, specGroups: 1 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-monitor-benq-ew3280u',
+    platform: 'jd',
+    label: 'JD BenQ monitor EW3280U',
+    url: 'https://item.jd.com/100240920600.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 5, specGroups: 1 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-label-printer-gprinter',
+    platform: 'jd',
+    label: 'JD Gprinter label printer',
+    url: 'https://item.jd.com/100015812646.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 10, specGroups: 1 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-scanner-epson-13000xl',
+    platform: 'jd',
+    label: 'JD Epson scanner 13000XL',
+    url: 'https://item.jd.com/100057406622.html',
+    min: { mainImages: 3, detailImages: 20, parameterCount: 8, specGroups: 1 },
+    required: ['brand']
+  },
+  {
+    id: 'jd-router-tplink-wdr5620',
+    platform: 'jd',
+    label: 'JD TP-LINK router WDR5620',
+    url: 'https://item.jd.com/4772588.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 20, specGroups: 1 },
+    required: ['brand']
+  },
+  {
+    id: 'jd-projector-epson-cow01',
+    platform: 'jd',
+    label: 'JD Epson projector CO-W01',
+    url: 'https://item.jd.com/100181102383.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 8, specGroups: 0 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-projector-benq-e585',
+    platform: 'jd',
+    label: 'JD BenQ projector E585',
+    url: 'https://item.jd.com/41247997210.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 20, specGroups: 1 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-projector-benq-tk710',
+    platform: 'jd',
+    label: 'JD BenQ projector TK710',
+    url: 'https://item.jd.com/100114807318.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 20, specGroups: 2 },
+    required: ['brand', 'model']
+  },
+  {
+    id: 'jd-air-cooler-gree',
+    platform: 'jd',
+    label: 'JD Gree air cooler',
+    url: 'https://item.jd.com/100142174268.html',
+    min: { mainImages: 5, detailImages: 20, parameterCount: 10, specGroups: 1 },
+    required: ['brand', 'model']
+  },
+  {
     id: 'tb-shaver-superman',
     platform: 'taobao',
     label: 'Taobao superman shaver',
@@ -204,6 +292,7 @@ function evaluate(sample, data) {
   const failures = []
   const title = String(data.title || data.state?.title || '')
   if (/登录|登陆|欢迎登录/i.test(title)) failures.push('login required')
+  if (/访问被拒绝|拒绝访问|Access Denied/i.test(title)) failures.push('access denied')
   for (const [field, min] of Object.entries(sample.min || {})) {
     const actual = field === 'selectedSpecCount'
       ? Number(data.selectedSpecs?.length || 0)
