@@ -130,7 +130,7 @@ const samples = [
     platform: 'taobao',
     label: '淘宝 三星手机多规格',
     url: 'https://item.taobao.com/item.htm?id=921393353319&mi_id=0000BhbKpp6a_ihvr62sHLok7Kfw5FhfquQ7p-b60R1ov2w&pvid=8946c914-810d-4192-89e3-b118f36c74bc&scm=1007.40986.467924.0&skuId=5796564497160&spm=a21bo.tmall%2Fa.201876.d25.7216c3d5fjfSEj&xxc=home_recommend',
-    min: { mainImages: 3, detailImages: 5, parameterCount: 12, specGroups: 4 },
+    min: { mainImages: 3, detailImages: 5, parameterCount: 12, specGroups: 4, selectedSpecCount: 4 },
     required: ['brand', 'model']
   }
 ]
@@ -155,7 +155,9 @@ function parseCollectorOutput(stdout) {
 function evaluate(sample, data) {
   const failures = []
   for (const [field, min] of Object.entries(sample.min || {})) {
-    const actual = Number(data[field] ?? 0)
+    const actual = field === 'selectedSpecCount'
+      ? Number(data.selectedSpecs?.length || 0)
+      : Number(data[field] ?? 0)
     if (actual < min) failures.push(`${field} ${actual} < ${min}`)
   }
   for (const field of sample.required || []) {
@@ -180,6 +182,7 @@ function compactResult(sample, data, failures, elapsedMs) {
     parameterCount: Number(data.parameterCount ?? 0),
     specGroups: Number(data.specGroups ?? 0),
     skuSpecs: Number(data.skuSpecs ?? 0),
+    selectedSpecCount: Number(data.selectedSpecs?.length || 0),
     url: data.url || sample.url
   }
 }
@@ -193,6 +196,7 @@ function printTable(results) {
     detail: item.detailImages,
     params: item.parameterCount,
     specs: item.specGroups,
+    selected: item.selectedSpecCount,
     brand: item.brand || '-',
     model: item.model || '-',
     failures: item.failures.join('; ')
@@ -237,6 +241,7 @@ for (const sample of selected) {
       parameterCount: 0,
       specGroups: 0,
       skuSpecs: 0,
+      selectedSpecCount: 0,
       url: sample.url
     })
     if (failFast) break
@@ -264,6 +269,7 @@ for (const sample of selected) {
       parameterCount: 0,
       specGroups: 0,
       skuSpecs: 0,
+      selectedSpecCount: 0,
       url: sample.url
     })
     if (failFast) break

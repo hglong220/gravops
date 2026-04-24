@@ -377,6 +377,30 @@ async function collectTaobaoProduct(page) {
       seenGroups.add(label)
     }
 
+    document.querySelectorAll('#skuOptionsArea [class*=skuItem], [id*=skuOptionsArea] [class*=skuItem]').forEach((groupNode) => {
+      const label = clean(groupNode.querySelector('[class*=ItemLabel]')?.textContent || groupNode.querySelector('[title]')?.getAttribute('title') || '')
+      if (!label) return
+      const options = []
+      const seenOptions = new Set()
+      groupNode.querySelectorAll('[class*=valueItem]').forEach((item) => {
+        const textNode = item.querySelector('[class*=valueItemText], [title]')
+        const value = clean(textNode?.getAttribute('title') || textNode?.textContent || item.textContent).replace(/\s+/g, ' ')
+        if (!value || value === label || seenOptions.has(value) || ignoredOptionText.has(value)) return
+        const className = String(item.className || '')
+        const selected = /(^|\s|-)isSelected|selected|checked|active/i.test(className)
+        let image = normalizeImage(item.querySelector('img')?.getAttribute('src') || item.querySelector('img')?.getAttribute('data-src') || '')
+        options.push({ name: value, selected, image: image || '' })
+        seenOptions.add(value)
+      })
+      if (options.length === 0) return
+      const selected = options.find((item) => item.selected)?.name || ''
+      const group = { name: label, selected, options: options.map((item) => item.name), optionDetails: options }
+      const existingIndex = specGroups.findIndex((item) => item.name === label)
+      if (existingIndex >= 0) specGroups[existingIndex] = group
+      else specGroups.push(group)
+      seenGroups.add(label)
+    })
+
     const addLineSpecGroup = (name, values) => {
       const options = []
       const seenOptions = new Set()
@@ -390,7 +414,15 @@ async function collectTaobaoProduct(page) {
       }
       if (options.length === 0) return
       const existingIndex = specGroups.findIndex((group) => group.name === name)
-      const group = { name, selected: '', options: options.map((item) => item.name), optionDetails: options }
+      const previousSelected = existingIndex >= 0 ? specGroups[existingIndex].selected : ''
+      const previousSelectedSet = new Set((existingIndex >= 0 ? specGroups[existingIndex].optionDetails || [] : [])
+        .filter((item) => item.selected)
+        .map((item) => item.name))
+      for (const item of options) {
+        if (item.name === previousSelected || previousSelectedSet.has(item.name)) item.selected = true
+      }
+      const selected = options.find((item) => item.selected)?.name || ''
+      const group = { name, selected, options: options.map((item) => item.name), optionDetails: options }
       if (existingIndex >= 0) {
         if (options.length > specGroups[existingIndex].options.length) specGroups[existingIndex] = group
       } else {
@@ -425,11 +457,15 @@ async function collectTaobaoProduct(page) {
       else {
         group.optionDetails = details
         group.options = details.map((item) => item.name)
+        group.selected = details.find((item) => item.selected)?.name || group.selected || ''
       }
     }
 
     const brand = attributes[BRAND_KEY] || ''
     const model = attributes[MODEL_KEY] || attributes[ITEM_NO_KEY] || attributes[APPLICABLE_MODEL_KEY] || attributes['\u4e09\u661f\u578b\u53f7'] || ''
+    selectedSpecs.splice(0, selectedSpecs.length, ...specGroups
+      .filter((group) => group.selected)
+      .map((group) => ({ name: group.name, value: group.selected })))
     const selectedSpecMap = Object.fromEntries(selectedSpecs.map((item) => [item.name, item.value]))
     const skuImages = {}
     for (const group of specGroups) {
