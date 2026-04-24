@@ -105,6 +105,7 @@ async function main() {
     specGroups: product.specGroups.length,
     skuSpecs: product.scrapedData.skuSpecs.length,
     selectedSpecs: product.selectedSpecs,
+    scrapedData: product.scrapedData,
     mainSamples: product.images.slice(0, 8),
     detailSamples: product.detailImages.slice(0, 8),
     outputPath,

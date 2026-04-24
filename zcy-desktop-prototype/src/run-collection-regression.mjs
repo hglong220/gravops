@@ -213,7 +213,58 @@ function evaluate(sample, data) {
   for (const field of sample.required || []) {
     if (!String(data[field] || '').trim()) failures.push(`${field} empty`)
   }
+  failures.push(...evaluateCoreShape(data))
   return failures
+}
+
+function evaluateCoreShape(data) {
+  const failures = []
+  const scrapedData = data.scrapedData || {}
+  const images = Array.isArray(scrapedData.images) ? scrapedData.images : []
+  const detailImages = Array.isArray(scrapedData.detailImages) ? scrapedData.detailImages : []
+  const specGroups = Array.isArray(scrapedData.specGroups) ? scrapedData.specGroups : []
+  const selectedSpecs = Array.isArray(data.selectedSpecs)
+    ? data.selectedSpecs
+    : Array.isArray(scrapedData.selectedSaleSpecs) ? scrapedData.selectedSaleSpecs : []
+
+  if (images.length && new Set(images).size !== images.length) failures.push('main image duplicates')
+  if (detailImages.length && new Set(detailImages).size !== detailImages.length) failures.push('detail image duplicates')
+  for (const [index, url] of images.entries()) {
+    if (!isValidImageUrl(url)) failures.push(`main image ${index + 1} invalid`)
+  }
+  for (const [index, url] of detailImages.entries()) {
+    if (!isValidImageUrl(url)) failures.push(`detail image ${index + 1} invalid`)
+  }
+
+  const groupsByName = new Map(specGroups.map((group) => [String(group.name || ''), group]))
+  for (const selected of selectedSpecs) {
+    const name = String(selected?.name || '')
+    const value = String(selected?.value || '')
+    if (!name || !value) {
+      failures.push('selected spec missing name or value')
+      continue
+    }
+    const group = groupsByName.get(name)
+    if (!group) {
+      failures.push(`selected spec group missing: ${name}`)
+      continue
+    }
+    const options = Array.isArray(group.options) ? group.options.map(String) : []
+    if (!options.includes(value)) failures.push(`selected spec not in options: ${name}`)
+  }
+
+  return failures
+}
+
+function isValidImageUrl(raw) {
+  try {
+    const url = new URL(String(raw || ''))
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    if (!/\.(jpg|jpeg|png|gif)(?:$|\?)/i.test(url.pathname)) return false
+    return !/data:|avatar|getavatar|qrcode|sprite|logo|icon/i.test(url.href)
+  } catch {
+    return false
+  }
 }
 
 function compactResult(sample, data, failures, elapsedMs) {
