@@ -261,6 +261,22 @@ async function collectTaobaoProduct(page) {
       if (!line || line === PARAM_INFO || stopWords.has(line) || isParamKey(line)) return false
       return line.length <= 500
     }
+    const paramNameHints = [
+      '\u54c1\u724c', '\u4ea7\u5730', '\u6750\u8d28', '\u578b\u53f7', '\u7535\u538b', '\u79cd\u7c7b', '\u65b9\u5f0f', '\u6a21\u5f0f',
+      '\u65f6\u95f4', '\u670d\u52a1', '\u4fdd\u4fee', '\u89c4\u683c', '\u7c7b\u578b', '\u529f\u80fd', '\u914d\u7f6e', '\u5206\u7c7b',
+      '\u56fe\u6848', '\u6027\u522b', '\u5b63\u8282', '\u6b3e\u5f0f', '\u7b52\u9ad8', '\u88c6\u4f4d', '\u5c3a\u7801', '\u98ce\u683c',
+      '\u6e20\u9053', '\u5e74\u9f84', '\u539a\u8584', '\u53cc\u6570', '\u6b3e\u53f7', '\u540a\u724c\u4ef7', '\u5bb9\u91cf', '\u7f16\u53f7',
+      '\u529f\u7387', '\u50cf\u7d20', '\u5c3a\u5bf8', '\u5237\u65b0\u7387', '\u63a5\u53e3', '\u7f51\u7edc', '\u989c\u8272', '\u9762\u6599'
+    ]
+    const isGenericParamName = (line) => {
+      if (!line || line === PARAM_INFO || stopWords.has(line)) return false
+      if (line.length > 30) return false
+      if (/^[￥¥]?\d+(?:\.\d+)?(?:元)?$/.test(line)) return false
+      if (/[,，、/]/.test(line)) return false
+      if (/^(不支持|支持|无|有)[\u4e00-\u9fa5A-Za-z0-9]*$/.test(line) && !line.startsWith('\u662f\u5426')) return false
+      if (/(已购|好评|发货|退款|客服|进店|搜索|首页|购物车|收藏|评价|问大家)/.test(line)) return false
+      return isParamKey(line) || paramNameHints.some((hint) => line.includes(hint))
+    }
     const paramStart = bodyLines.findLastIndex
       ? bodyLines.findLastIndex((line) => line.includes(PARAM_INFO))
       : bodyLines.map((line, index) => line.includes(PARAM_INFO) ? index : -1).filter((index) => index >= 0).pop() ?? -1
@@ -292,6 +308,21 @@ async function collectTaobaoProduct(page) {
           setParam(line, next)
           mode = 'keyNext'
         }
+      }
+      let keyNextScore = 0
+      let valueKeyScore = 0
+      for (let i = 0; i < Math.min(block.length - 1, 30); i += 2) {
+        if (isParamKey(block[i])) keyNextScore += 1
+        if (isParamKey(block[i + 1])) valueKeyScore += 1
+      }
+      const pairMode = valueKeyScore > keyNextScore ? 'valueKey' : keyNextScore > valueKeyScore ? 'keyNext' : mode
+      for (let i = 0; i < block.length - 1; i += 2) {
+        const leftIsName = isGenericParamName(block[i])
+        const rightIsName = isGenericParamName(block[i + 1])
+        const localMode = leftIsName && !rightIsName ? 'keyNext' : rightIsName && !leftIsName ? 'valueKey' : pairMode
+        const name = localMode === 'valueKey' ? block[i + 1] : block[i]
+        const value = localMode === 'valueKey' ? block[i] : block[i + 1]
+        if (isGenericParamName(name) && isParamValue(value)) setParam(name, value)
       }
     }
 
