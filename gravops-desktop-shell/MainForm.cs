@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -18,6 +20,21 @@ public sealed class MainForm : Form
     private readonly Label statusLabel = new();
     private Process? backendProcess;
     private readonly string desktopLogPath = Path.Combine(AppContext.BaseDirectory, "desktop-read.log");
+    private readonly object jdImageResponseLock = new();
+    private readonly List<string> jdImageResponses = new();
+    private readonly object jdNetworkCaptureLock = new();
+    private readonly List<JdNetworkCapture> jdNetworkCaptures = new();
+    private int jdNetworkCaptureSeq;
+
+    private sealed class JdNetworkCapture
+    {
+        public int Seq { get; set; }
+        public string Url { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public string Source { get; set; } = "";
+        public string ContentType { get; set; } = "";
+        public string Body { get; set; } = "";
+    }
 
     public MainForm()
     {
@@ -167,6 +184,8 @@ public sealed class MainForm : Form
             await CoreWebView2Environment.CreateAsync(null, Path.Combine(userDataRoot, "zcy"))
         );
 
+        browserView.CoreWebView2.WebResourceResponseReceived += (_, e) => _ = CaptureJdNetworkResponseAsync(e);
+
         appView.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
@@ -198,6 +217,7 @@ public sealed class MainForm : Form
         };
         browserView.CoreWebView2.NavigationStarting += (_, e) =>
         {
+            ClearJdNetworkCaptures();
             if (workTabs.SelectedIndex == 0) addressBox.Text = e.Uri;
             SetStatus(e.Uri);
         };
@@ -397,31 +417,73 @@ public sealed class MainForm : Form
 
     private async Task<JsonElement> ReadJdProductFromWorkbenchAsync()
     {
+        ClearJdImageResponses();
         const string prepareScript = """
             (async () => {
               const clean = (value) => String(value || '').trim().replace(/\s+/g, '');
-              const tab = Array.from(document.querySelectorAll('li, a, span, div, button')).find((node) => {
-                const text = clean(node.textContent);
-                return text === '\u5546\u54c1\u8be6\u60c5' || text === '\u8be6\u60c5' || text.includes('\u5546\u54c1\u8be6\u60c5');
-              });
+              const originalY = window.scrollY || 0;
+              const detailSelectors = ['#graphic-content', '#J-detail-content', '#detail', '.detail-content', '.ssd-module-detail', '.ssd-module-wrap', '.ssd-module', '.p-parameter', '.detail'];
+              const stats = () => {
+                const containers = detailSelectors.map((selector) => document.querySelector(selector)).filter(Boolean);
+                const htmlLength = containers.reduce((sum, node) => sum + String(node.innerHTML || '').length, 0);
+                const height = containers.reduce((sum, node) => sum + (node.offsetHeight || 0), 0);
+                const imageCount = containers.reduce((sum, node) => sum + node.querySelectorAll('img, source, [style*="url("]').length, 0);
+                return { htmlLength, height, imageCount };
+              };
               const thumbs = Array.from(document.querySelectorAll('#spec-list li, .spec-items li, .lh li')).slice(0, 12);
               for (const thumb of thumbs) {
                 thumb.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
                 thumb.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
                 await new Promise((resolve) => setTimeout(resolve, 160));
               }
-              if (tab instanceof HTMLElement) tab.click();
-              await new Promise((resolve) => setTimeout(resolve, 1200));
-              for (let i = 0; i < 10; i++) {
-                window.scrollBy(0, 900);
-                await new Promise((resolve) => setTimeout(resolve, 360));
+
+              const findDetailTabs = () => Array.from(document.querySelectorAll('li, a, span, div, button'))
+                .map((node) => {
+                  const rect = node.getBoundingClientRect();
+                  return { node, rect, text: clean(node.textContent) };
+                })
+                .filter(({ node, rect, text }) => {
+                  if (!(node instanceof HTMLElement)) return false;
+                  if (!(text === '\u5546\u54c1\u8be6\u60c5' || text === '\u8be6\u60c5' || (text.includes('\u5546\u54c1\u8be6\u60c5') && text.length <= 16))) return false;
+                  if (rect.width < 20 || rect.height < 10) return false;
+                  return true;
+                })
+                .sort((a, b) => Math.abs(a.rect.top - 760) - Math.abs(b.rect.top - 760))
+                .map((item) => item.node);
+
+              for (const tab of findDetailTabs().slice(0, 3)) {
+                tab.scrollIntoView({ block: 'center' });
+                await new Promise((resolve) => setTimeout(resolve, 300));
+                tab.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                tab.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                tab.click();
+                await new Promise((resolve) => setTimeout(resolve, 700));
               }
-              window.scrollTo(0, 0);
-              await new Promise((resolve) => setTimeout(resolve, 300));
+              let previous = stats();
+              let stableSince = Date.now();
+              const startedAt = Date.now();
+              for (let i = 0; i < 18 && Date.now() - startedAt < 12000; i++) {
+                window.scrollBy(0, 900);
+                await new Promise((resolve) => setTimeout(resolve, 420));
+                const current = stats();
+                const changed = current.htmlLength !== previous.htmlLength || current.imageCount !== previous.imageCount || Math.abs(current.height - previous.height) > 80;
+                if (changed) {
+                  stableSince = Date.now();
+                  previous = current;
+                }
+                const enoughDom = current.imageCount > 0 || current.height > 500 || current.htmlLength > 3000;
+                if (enoughDom && Date.now() - stableSince >= 800) break;
+              }
+              window.scrollTo(0, originalY);
+              await new Promise((resolve) => setTimeout(resolve, 200));
               return true;
             })()
             """;
         await browserView.CoreWebView2.ExecuteScriptAsync(prepareScript);
+        var detailNetworkImages = SnapshotJdImageResponses();
+        var detailNetworkCaptures = SnapshotJdNetworkCaptures();
+        LogDesktopRead($"detail-network-candidates={detailNetworkImages.Count} captures={detailNetworkCaptures.Count}");
 
         var repoRoot = FindRepoRoot();
         var scriptPath = Path.Combine(repoRoot, "gravops-desktop-shell", "Scripts", "jd-webview-reader.js");
@@ -430,6 +492,10 @@ public sealed class MainForm : Form
             throw new FileNotFoundException("JD WebView reader script not found", scriptPath);
         }
 
+        var detailNetworkJson = JsonSerializer.Serialize(detailNetworkImages);
+        var detailCaptureJson = JsonSerializer.Serialize(detailNetworkCaptures);
+        await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsDetailNetworkImages = {detailNetworkJson};");
+        await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsDetailCaptures = {detailCaptureJson};");
         var resultJson = await browserView.CoreWebView2.ExecuteScriptAsync(await File.ReadAllTextAsync(scriptPath));
         LogDesktopRead($"script-return-prefix={resultJson[..Math.Min(resultJson.Length, 500)]}");
         using var doc = JsonDocument.Parse(resultJson);
@@ -441,6 +507,11 @@ public sealed class MainForm : Form
         var detailCount = product.TryGetProperty("detailImages", out var detailImagesProp) && detailImagesProp.ValueKind == JsonValueKind.Array
             ? detailImagesProp.GetArrayLength()
             : 0;
+        LogJdDetailDebug(product);
+        if (detailCount == 0)
+        {
+            LogDesktopRead("webview-read detailImages=0; skipped external CDP fallback");
+        }
         var attributeCount = product.TryGetProperty("attributes", out var attributesProp) && attributesProp.ValueKind == JsonValueKind.Object
             ? attributesProp.EnumerateObject().Count()
             : 0;
@@ -449,6 +520,344 @@ public sealed class MainForm : Form
             throw new InvalidOperationException($"当前页没有读到完整商品信息：title={(!string.IsNullOrWhiteSpace(title))}, mainImages={imageCount}, detailImages={detailCount}, attributes={attributeCount}");
         }
         return product;
+    }
+
+    private void LogJdDetailDebug(JsonElement product)
+    {
+        if (!product.TryGetProperty("debug", out var debug) || debug.ValueKind != JsonValueKind.Object)
+        {
+            LogDesktopRead("jd-detail-debug missing");
+            return;
+        }
+
+        string GetString(string name) => debug.TryGetProperty(name, out var value) ? value.ToString() : "";
+        LogDesktopRead(
+            "jd-detail-summary "
+            + $"sku={GetString("skuId")} "
+            + $"itemNo={GetString("itemNo")} "
+            + $"model={GetString("model")} "
+            + $"main={GetString("mainImageCount")} "
+            + $"detailHtml={GetString("detailHtmlImageCount")} "
+            + $"detailDom={GetString("detailDomImageCount")} "
+            + $"network={GetString("networkImageCount")} "
+            + $"final={GetString("finalDetailImageCount")} "
+            + $"filtered={GetString("filteredImageCount")}"
+        );
+
+        if (debug.TryGetProperty("warnings", out var warnings) && warnings.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var warning in warnings.EnumerateArray())
+            {
+                LogDesktopRead($"jd-detail-warning {warning}");
+            }
+        }
+
+        if (!debug.TryGetProperty("images", out var images) || images.ValueKind != JsonValueKind.Array) return;
+        foreach (var image in images.EnumerateArray().Take(120))
+        {
+            var url = image.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+            var source = image.TryGetProperty("source", out var sourceProp) ? sourceProp.GetString() ?? "" : "";
+            var kept = image.TryGetProperty("kept", out var keptProp) && keptProp.GetBoolean();
+            var width = image.TryGetProperty("width", out var widthProp) ? widthProp.ToString() : "";
+            var height = image.TryGetProperty("height", out var heightProp) ? heightProp.ToString() : "";
+            var reasons = image.TryGetProperty("filterReason", out var reasonProp) && reasonProp.ValueKind == JsonValueKind.Array
+                ? string.Join("|", reasonProp.EnumerateArray().Select((item) => item.ToString()))
+                : "";
+            var rules = image.TryGetProperty("hitRules", out var ruleProp) && ruleProp.ValueKind == JsonValueKind.Array
+                ? string.Join("|", ruleProp.EnumerateArray().Select((item) => item.ToString()))
+                : "";
+            LogDesktopRead($"jd-detail-image kept={kept} source={source} size={width}x{height} rules={rules} reason={reasons} url={url}");
+        }
+    }
+
+    private async Task<JsonElement> TryFillJdDetailImagesWithCdpAsync(JsonElement product, string currentUrl)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(currentUrl) || !currentUrl.Contains("jd.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return product;
+            }
+
+            var repoRoot = FindRepoRoot();
+            var prototypeRoot = Path.Combine(repoRoot, "zcy-desktop-prototype");
+            var scriptPath = Path.Combine(prototypeRoot, "src", "collect-jd-cdp.mjs");
+            if (!File.Exists(scriptPath)) return product;
+
+            var node = OperatingSystem.IsWindows() ? "node.exe" : "node";
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = node,
+                WorkingDirectory = prototypeRoot,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("src/collect-jd-cdp.mjs");
+            startInfo.ArgumentList.Add("--url");
+            startInfo.ArgumentList.Add(currentUrl);
+
+            using var process = Process.Start(startInfo);
+            if (process is null) return product;
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            var waitTask = process.WaitForExitAsync();
+            var completed = await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(90)));
+            if (completed != waitTask)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                LogDesktopRead("cdp-detail-merge timeout");
+                return product;
+            }
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            if (process.ExitCode != 0)
+            {
+                LogDesktopRead($"cdp-detail-merge error={stderr[..Math.Min(stderr.Length, 500)]}");
+                return product;
+            }
+
+            var start = stdout.IndexOf('{');
+            if (start < 0) return product;
+            using var cdpDoc = JsonDocument.Parse(stdout[start..]);
+            if (!TryGetDetailImages(cdpDoc.RootElement, out var detailImages) || detailImages.Count == 0)
+            {
+                return product;
+            }
+
+            var merged = JsonNode.Parse(product.GetRawText()) as JsonObject;
+            if (merged is null) return product;
+            var detailArray = new JsonArray(detailImages.Select((item) => JsonValue.Create(item)).ToArray<JsonNode?>());
+            merged["detailImages"] = detailArray;
+            merged["detailHtml"] = string.Join("\n", detailImages.Select((src) => $"<p><img src=\"{src.Replace("\"", "&quot;")}\" style=\"max-width:100%;\" /></p>"));
+
+            using var mergedDoc = JsonDocument.Parse(merged.ToJsonString());
+            return mergedDoc.RootElement.Clone();
+        }
+        catch (Exception error)
+        {
+            LogDesktopRead($"cdp-detail-merge exception={error.Message}");
+            return product;
+        }
+    }
+
+    private static bool TryGetDetailImages(JsonElement root, out List<string> detailImages)
+    {
+        detailImages = new List<string>();
+        if (root.TryGetProperty("scrapedData", out var scrapedData)
+            && scrapedData.TryGetProperty("detailImages", out var scrapedDetailImages)
+            && scrapedDetailImages.ValueKind == JsonValueKind.Array)
+        {
+            detailImages = scrapedDetailImages.EnumerateArray()
+                .Select((item) => item.GetString() ?? "")
+                .Where((item) => !string.IsNullOrWhiteSpace(item))
+                .Distinct()
+                .ToList();
+            return detailImages.Count > 0;
+        }
+
+        if (root.TryGetProperty("product", out var product)
+            && product.TryGetProperty("detailImages", out var productDetailImages)
+            && productDetailImages.ValueKind == JsonValueKind.Array)
+        {
+            detailImages = productDetailImages.EnumerateArray()
+                .Select((item) => item.GetString() ?? "")
+                .Where((item) => !string.IsNullOrWhiteSpace(item))
+                .Distinct()
+                .ToList();
+            return detailImages.Count > 0;
+        }
+
+        return false;
+    }
+
+    private void ClearJdImageResponses()
+    {
+        lock (jdImageResponseLock)
+        {
+            jdImageResponses.Clear();
+        }
+    }
+
+    private List<string> SnapshotJdImageResponses()
+    {
+        lock (jdImageResponseLock)
+        {
+            return jdImageResponses.Distinct().ToList();
+        }
+    }
+
+    private void ClearJdNetworkCaptures()
+    {
+        ClearJdImageResponses();
+        lock (jdNetworkCaptureLock)
+        {
+            jdNetworkCaptures.Clear();
+            jdNetworkCaptureSeq = 0;
+        }
+    }
+
+    private List<JdNetworkCapture> SnapshotJdNetworkCaptures()
+    {
+        lock (jdNetworkCaptureLock)
+        {
+            return jdNetworkCaptures
+                .Select((item) => new JdNetworkCapture
+                {
+                    Seq = item.Seq,
+                    Url = item.Url,
+                    Kind = item.Kind,
+                    Source = item.Source,
+                    ContentType = item.ContentType,
+                    Body = item.Body
+                })
+                .ToList();
+        }
+    }
+
+    private async Task CaptureJdNetworkResponseAsync(CoreWebView2WebResourceResponseReceivedEventArgs e)
+    {
+        try
+        {
+            var uri = e.Request.Uri;
+            var contentType = e.Response.Headers.GetHeader("content-type") ?? "";
+            var kind = InferJdResourceKind(uri, contentType);
+            if (!IsJdCaptureScope(uri)) return;
+
+            if (IsJdImageResponseCandidate(uri))
+            {
+                AddJdNetworkCapture(new JdNetworkCapture
+                {
+                    Url = uri,
+                    Kind = kind,
+                    Source = "network_image",
+                    ContentType = "image"
+                });
+
+                lock (jdImageResponseLock)
+                {
+                    if (!jdImageResponses.Contains(uri))
+                    {
+                        jdImageResponses.Add(uri);
+                        if (jdImageResponses.Count > 500)
+                        {
+                            jdImageResponses.RemoveRange(0, jdImageResponses.Count - 500);
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (!ShouldReadJdResponseBody(uri, kind, contentType)) return;
+
+            using var stream = await e.Response.GetContentAsync();
+            if (stream is null || !stream.CanRead) return;
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: false);
+            var body = await ReadLimitedAsync(reader, 1_500_000);
+            if (!IsLikelyJdDetailBody(body)) return;
+
+            AddJdNetworkCapture(new JdNetworkCapture
+            {
+                Url = uri,
+                Kind = kind,
+                Source = "detail_html",
+                ContentType = contentType,
+                Body = body
+            });
+        }
+        catch (Exception error)
+        {
+            LogDesktopRead($"network-capture-error {error.Message}");
+        }
+    }
+
+    private void AddJdNetworkCapture(JdNetworkCapture capture)
+    {
+        lock (jdNetworkCaptureLock)
+        {
+            capture.Seq = ++jdNetworkCaptureSeq;
+            jdNetworkCaptures.Add(capture);
+            if (jdNetworkCaptures.Count > 300)
+            {
+                jdNetworkCaptures.RemoveRange(0, jdNetworkCaptures.Count - 300);
+            }
+        }
+    }
+
+    private static async Task<string> ReadLimitedAsync(StreamReader reader, int maxChars)
+    {
+        var buffer = new char[Math.Min(8192, maxChars)];
+        var builder = new StringBuilder();
+        while (builder.Length < maxChars)
+        {
+            var read = await reader.ReadAsync(buffer, 0, Math.Min(buffer.Length, maxChars - builder.Length));
+            if (read <= 0) break;
+            builder.Append(buffer, 0, read);
+        }
+        return builder.ToString();
+    }
+
+    private static bool IsJdCaptureScope(string? rawUrl)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri)) return false;
+        var host = uri.Host.ToLowerInvariant();
+        if (host.EndsWith("jd.com") || host.EndsWith("360buyimg.com") || host.EndsWith("jd.hk")) return true;
+        return rawUrl.Contains("jfs", StringComparison.OrdinalIgnoreCase)
+            || rawUrl.Contains("pcpubliccms", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldReadJdResponseBody(string url, string kind, string contentType)
+    {
+        if (kind.Equals("Image", StringComparison.OrdinalIgnoreCase)) return false;
+        if (kind.Equals("XmlHttpRequest", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("Fetch", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("Script", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("Document", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var lowerType = contentType.ToLowerInvariant();
+        if (lowerType.Contains("html") || lowerType.Contains("json") || lowerType.Contains("javascript") || lowerType.Contains("text")) return true;
+        return Regex.IsMatch(url, "detail|desc|description|graphic|content|ssd", RegexOptions.IgnoreCase);
+    }
+
+    private static string InferJdResourceKind(string url, string contentType)
+    {
+        var lowerUrl = url.ToLowerInvariant();
+        var lowerType = contentType.ToLowerInvariant();
+        if (Regex.IsMatch(lowerUrl, "\\.(jpg|jpeg|png|gif)(?:$|[?#])") || lowerType.StartsWith("image/")) return "Image";
+        if (lowerType.Contains("html")) return "Document";
+        if (lowerType.Contains("json")) return "XmlHttpRequest";
+        if (lowerType.Contains("javascript") || Regex.IsMatch(lowerUrl, "\\.js(?:$|[?#])")) return "Script";
+        if (lowerType.Contains("text")) return "Text";
+        if (Regex.IsMatch(lowerUrl, "detail|desc|description|graphic|content|ssd", RegexOptions.IgnoreCase)) return "XmlHttpRequest";
+        return "Other";
+    }
+
+    private static bool IsLikelyJdDetailBody(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return false;
+        if (!Regex.IsMatch(body, "360buyimg\\.com|jfs|pcpubliccms", RegexOptions.IgnoreCase)) return false;
+        return Regex.IsMatch(body, "ssd-module|detail|description|商品详情|graphic|content", RegexOptions.IgnoreCase);
+    }
+
+    private static bool IsJdImageResponseCandidate(string? rawUrl)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri)) return false;
+        if (!uri.Host.EndsWith("360buyimg.com", StringComparison.OrdinalIgnoreCase)) return false;
+        var path = uri.AbsolutePath.ToLowerInvariant();
+        if (!path.EndsWith(".jpg") && !path.EndsWith(".jpeg") && !path.EndsWith(".png") && !path.EndsWith(".gif")) return false;
+        return path.Contains("/sku/jfs/")
+            || path.Contains("/imgzone/jfs/")
+            || path.Contains("/img/jfs/")
+            || path.Contains("/popwatermark/")
+            || path.Contains("/pcpubliccms/")
+            || path.Contains("/jfs/")
+            || path.Contains("/s") && path.Contains("_jfs/");
     }
 
     private async Task<string> GetAppTokenAsync()

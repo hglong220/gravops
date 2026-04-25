@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
@@ -60,6 +60,20 @@ async function isCdpReady() {
   }
 }
 
+function isStartedByDesktopShell() {
+  if (process.platform !== 'win32') return false
+  try {
+    const output = execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${process.ppid}").Name`
+    ], { encoding: 'utf8', timeout: 3000 })
+    return output.toLowerCase().includes('gravops.desktop')
+  } catch {
+    return false
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true })
   fs.mkdirSync(USER_DATA_DIR, { recursive: true })
@@ -68,6 +82,9 @@ async function main() {
   if (!browserPath) throw new Error(`${browserName} not found`)
 
   if (!await isCdpReady()) {
+    if (isStartedByDesktopShell()) {
+      throw new Error('Desktop WebView reader did not find an existing CDP browser; skipping external browser launch')
+    }
     const launchedBrowser = spawn(browserPath, [
       `--remote-debugging-port=${DEBUG_PORT}`,
       `--user-data-dir=${USER_DATA_DIR}`,
