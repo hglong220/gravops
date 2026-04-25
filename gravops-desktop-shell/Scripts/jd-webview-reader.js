@@ -299,10 +299,38 @@
 
   const mainKeys = new Set(mainImages.map(canonicalImageKey));
 
+  const countMatches = (value, pattern) => (String(value || '').match(pattern) || []).length;
+  const scoreDetailHtmlCapture = (capture) => {
+    const body = String(capture?.body || '');
+    const sourceUrlLower = String(capture?.url || '').toLowerCase();
+    const lower = body.toLowerCase();
+    let score = 0;
+
+    score += Math.min(40, countMatches(lower, /<p[^>]*>\s*<img/gi) * 8);
+    score += Math.min(36, countMatches(lower, /\/imgzone\/jfs\//gi) * 6);
+    score += Math.min(30, countMatches(lower, /\/cms\/jfs\//gi) * 5);
+    score += Math.min(24, countMatches(lower, /\/sku\/jfs\//gi) * 3);
+    score += Math.min(18, countMatches(lower, /\/img\/jfs\//gi) * 3);
+
+    if (/ssd-module|graphic-content|j-detail-content|detail-content|description|商品详情/i.test(body)) score += 24;
+    if (/detail|desc|description|graphic|warebusiness|pc_desc/i.test(sourceUrlLower)) score += 18;
+    if (/售后保障|大家评|店铺|客服|购物车|推荐|shortcut|sidebar|toolbar|footer|header/i.test(body)) score -= 18;
+    score -= Math.min(30, countMatches(lower, /<script|\.js["']|stylesheet|\.css["']/gi) * 3);
+    score -= Math.min(24, countMatches(lower, /\/comment|\/shaidan\/|\/shop\/|\/popshop\/|\/babel\/|\/common\/|imagetools|retail-mall|mall-common-component/gi) * 4);
+
+    return score;
+  };
+
   const detailHtmlBodies = detailCaptures
     .filter((capture) => capture?.source === 'detail_html' && capture.body)
+    .map((capture) => ({ ...capture, detailScore: scoreDetailHtmlCapture(capture) }))
     .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
-  detailHtmlBodies.forEach((capture) => {
+  const selectedDetailHtmlBodies = detailHtmlBodies
+    .filter((capture) => capture.detailScore > 0)
+    .sort((a, b) => b.detailScore - a.detailScore || Number(a.seq || 0) - Number(b.seq || 0))
+    .slice(0, 3)
+    .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+  selectedDetailHtmlBodies.forEach((capture) => {
     collectUrlLikeEntries(capture.body).forEach((entry) => {
       addCandidate(entry.url, 'detail_html', { sourceUrl: capture.url, context: entry.context });
     });
@@ -341,12 +369,27 @@
   detailCaptures
     .filter((capture) => capture?.source === 'network_image')
     .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
-    .forEach((capture) => addCandidate(capture.url, 'network_image', { sourceUrl: capture.url }));
-  legacyNetworkImages.forEach((url) => addCandidate(url, 'network_image', { sourceUrl: url }));
+    .forEach((capture) => {
+      if (/\/imgzone\/jfs\/|\/cms\/jfs\/|\/img\/jfs\/|pcpubliccms/i.test(capture.url || '')) {
+        addCandidate(capture.url, 'network_image', { sourceUrl: capture.url });
+      }
+    });
+  legacyNetworkImages.forEach((url) => {
+    if (/\/imgzone\/jfs\/|\/cms\/jfs\/|\/img\/jfs\/|pcpubliccms/i.test(url || '')) {
+      addCandidate(url, 'network_image', { sourceUrl: url });
+    }
+  });
 
   const filterCandidate = (item) => {
     const reasons = [];
     const lower = item.url.toLowerCase();
+    const knownDetailDecorativeIds = [
+      '02761e01e01d9b2a',
+      '13b443365adb100d',
+      'f861504a/56ca6792n64e5eafc',
+      'db5ec6631fc14b73',
+      '22ad515c81c73261'
+    ];
     let host = '';
     try {
       host = new URL(item.url).hostname.toLowerCase();
@@ -357,6 +400,7 @@
     if (mainKeys.has(canonicalImageKey(item.url))) reasons.push('same-as-main-image');
     if (/logo|avatar|qrcode|sprite|icon|joy|loading|refresh_loading|plus|crown/i.test(lower)) reasons.push('decorative');
     if (/\/comment|\/shaidan\/|getavatar|\/user\/|\/shop\/|\/popshop\/|\/babel\/|\/common\/|\/uba\/|\/misc\/|retail-mall|mall-common-component|imagetools/i.test(lower)) reasons.push('comment-shop-common-or-ui');
+    if (knownDetailDecorativeIds.some((id) => lower.includes(id))) reasons.push('known-detail-decorative');
     if (host === 'storage.360buyimg.com' || host === 'misc.360buyimg.com') reasons.push('non-product-cdn');
     if (host === 'm.360buyimg.com' && !lower.includes('/sku/jfs/') && !lower.includes('/img/jfs/') && !lower.includes('/imgzone/jfs/')) reasons.push('mobile-ad-or-ui');
     if (item.width && item.height && (item.width < 120 || item.height < 120)) reasons.push('too-small-dom');
@@ -416,7 +460,7 @@
 
   const detailText = [
     ...detailContainers.map((node) => clean(node.textContent)),
-    ...detailHtmlBodies.map((capture) => clean(capture.body))
+    ...selectedDetailHtmlBodies.map((capture) => clean(capture.body))
   ].join('\n');
   const expectedCodes = new Set([itemNo, model, ...selectedSaleSpecs.map((item) => item.value)].filter(Boolean));
   const foundCodes = Array.from(new Set((detailText.match(/\b[A-Z]{1,5}\d{3,8}\b/g) || [])));
@@ -432,6 +476,13 @@
     model,
     title,
     mainImageCount: mainImages.length,
+    detailHtmlCaptureCount: detailHtmlBodies.length,
+    selectedDetailHtmlCaptureCount: selectedDetailHtmlBodies.length,
+    detailHtmlCaptureScores: detailHtmlBodies.map((capture) => ({
+      seq: capture.seq,
+      score: capture.detailScore,
+      url: capture.url
+    })),
     detailHtmlImageCount: candidates.filter((item) => item.source === 'detail_html').length,
     detailDomImageCount: candidates.filter((item) => item.source === 'detail_dom').length,
     networkImageCount: candidates.filter((item) => item.source === 'network_image').length,
