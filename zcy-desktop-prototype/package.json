@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "app": "node src/desktop-server.mjs",
     "collect:jd": "node src/collect-jd.mjs",
     "collect:jd:cdp": "node src/collect-jd-cdp.mjs",
     "collect:taobao:cdp": "node src/collect-taobao-cdp.mjs",

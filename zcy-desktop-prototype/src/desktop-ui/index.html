@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>政采云商品助手</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ZCY Desktop Prototype</p>
+          <h1>政采云商品助手</h1>
+        </div>
+        <div class="status-pill" id="serviceStatus">本地服务</div>
+      </header>
+
+      <section class="toolbar" aria-label="商品链接">
+        <input id="productUrl" type="url" spellcheck="false" autocomplete="off" placeholder="粘贴京东商品链接">
+        <button id="readButton" type="button">读取</button>
+      </section>
+
+      <section class="notice" id="notice" hidden></section>
+
+      <section class="summary" id="summary" hidden>
+        <div>
+          <p class="label">商品标题</p>
+          <h2 id="titleText"></h2>
+        </div>
+        <dl class="metrics">
+          <div><dt>品牌</dt><dd id="brandText">-</dd></div>
+          <div><dt>型号</dt><dd id="modelText">-</dd></div>
+          <div><dt>SKU</dt><dd id="skuText">-</dd></div>
+          <div><dt>主图</dt><dd id="mainCount">0</dd></div>
+          <div><dt>详情图</dt><dd id="detailCount">0</dd></div>
+          <div><dt>参数</dt><dd id="attrCount">0</dd></div>
+          <div><dt>规格组</dt><dd id="specCount">0</dd></div>
+        </dl>
+      </section>
+
+      <nav class="tabs" id="tabs" hidden>
+        <button class="tab active" type="button" data-tab="images">图片</button>
+        <button class="tab" type="button" data-tab="attrs">参数</button>
+        <button class="tab" type="button" data-tab="specs">规格</button>
+        <button class="tab" type="button" data-tab="json">JSON</button>
+      </nav>
+
+      <section class="panel active" id="panel-images">
+        <div class="section-heading">
+          <h3>主图</h3>
+          <span id="mainImageMeta"></span>
+        </div>
+        <div class="image-grid" id="mainImages"></div>
+        <div class="section-heading">
+          <h3>详情图</h3>
+          <span id="detailImageMeta"></span>
+        </div>
+        <div class="image-grid wide" id="detailImages"></div>
+      </section>
+
+      <section class="panel" id="panel-attrs">
+        <table>
+          <thead>
+            <tr><th>字段</th><th>内容</th></tr>
+          </thead>
+          <tbody id="attributeRows"></tbody>
+        </table>
+      </section>
+
+      <section class="panel" id="panel-specs">
+        <div id="selectedSpecs" class="selected-specs"></div>
+        <div id="specGroups" class="spec-groups"></div>
+      </section>
+
+      <section class="panel" id="panel-json">
+        <div class="json-actions">
+          <button id="copyJsonButton" type="button">复制 JSON</button>
+          <button id="downloadJsonButton" type="button">导出 JSON</button>
+        </div>
+        <pre id="jsonOutput">{}</pre>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

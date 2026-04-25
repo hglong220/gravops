@@ -36,6 +36,24 @@ pnpm collect:taobao:cdp -- --url "https://item.taobao.com/item.htm?id=9213933533
 
 Output files are written under `output/`.
 
+## Local App
+
+Start the lightweight local UI:
+
+```powershell
+npm run app
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5177
+```
+
+The first app version focuses on JD product pages. It reads product title,
+brand, model, main images, detail images, attributes, sale specification
+groups, and selected sale options.
+
 ## Fixed Sample Test
 
 Run the full fixed sample suite:
