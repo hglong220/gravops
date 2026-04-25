@@ -114,6 +114,26 @@
     return urls;
   };
 
+  const collectUrlLikeEntries = (value) => {
+    const textValue = String(value || '').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+    const entries = [];
+    const patterns = [
+      /https?:\/\/[^"'\\\s<>]+(?:jpg|jpeg|png|gif)(?:\?[^"'\\\s<>]*)?/gi,
+      /\/\/[^"'\\\s<>]+(?:jpg|jpeg|png|gif)(?:\?[^"'\\\s<>]*)?/gi,
+      /(?:^|["'\s(])((?:\/?jfs\/|s\d+x\d+_jfs\/)[^"'\\\s<>]+(?:jpg|jpeg|png|gif)(?:\?[^"'\\\s<>]*)?)/gi
+    ];
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(textValue))) {
+        const url = match[1] || match[0];
+        const start = Math.max(0, match.index + match[0].indexOf(url) - 160);
+        const end = Math.min(textValue.length, match.index + match[0].length + 160);
+        entries.push({ url, context: textValue.slice(start, end) });
+      }
+    }
+    return entries;
+  };
+
   const parseSrcset = (srcset) => String(srcset || '')
     .split(',')
     .map((part) => part.trim().split(/\s+/)[0])
@@ -143,6 +163,7 @@
       sourceUrl: meta.sourceUrl || '',
       width: Number(meta.width || 0),
       height: Number(meta.height || 0),
+      context: String(meta.context || ''),
       score,
       hitRules: rules,
       payloadSize
@@ -219,8 +240,6 @@
 
   const mainImages = [];
   const mainSeen = new Set();
-  const resourceImages = [];
-  const resourceSeen = new Set();
   const isDecorativeMainImage = (url) => {
     const lower = String(url || '').toLowerCase();
     return !lower
@@ -253,7 +272,7 @@
     const url = normalizeImage(raw, 'main');
     if (!url || mainSeen.has(url) || isDecorativeMainImage(url) || !isLikelyRealMainImage(url, 8000)) return;
     const lower = url.toLowerCase();
-    if (lower.includes('/sku/jfs/') || lower.includes('/n1/sku/jfs/')) return;
+    if (lower.includes('/sku/jfs/') || lower.includes('/n1/sku/jfs/') || lower.includes('/n1/n1/jfs/')) return;
     pushMainUnique(mainImages, mainSeen, url);
   };
   document.querySelectorAll([
@@ -278,56 +297,15 @@
     window.imageAndVideoJson.forEach((item) => addMain(item?.img || item?.imgUrl || item?.url));
   }
 
-  const addResourceMainImage = (raw) => {
-    const url = normalizeImage(raw, 'main');
-    const lower = url.toLowerCase();
-    if (!url || isDecorativeMainImage(url) || !isLikelyRealMainImage(url, 8000)) return;
-    if (
-      lower.includes('/n1/jfs/')
-      || lower.includes('/n0/jfs/')
-      || lower.includes('/n5/jfs/')
-      || lower.includes('/pcpubliccms/')
-    ) {
-      pushMainUnique(resourceImages, resourceSeen, url);
-    }
-  };
-
-  document.querySelectorAll('img').forEach((img) => {
-    const rect = img.getBoundingClientRect();
-    const raw = img.getAttribute('data-url')
-      || img.getAttribute('data-origin')
-      || img.getAttribute('data-src')
-      || img.getAttribute('data-lazy-img')
-      || img.getAttribute('data-lazyload')
-      || img.getAttribute('data-original')
-      || img.getAttribute('src')
-      || img.currentSrc;
-    const width = img.naturalWidth || rect.width || 0;
-    const height = img.naturalHeight || rect.height || 0;
-    if (width && height && (width < 70 || height < 70)) return;
-    addResourceMainImage(raw);
-  });
-
-  if (performance?.getEntriesByType) {
-    performance.getEntriesByType('resource').forEach((entry) => addResourceMainImage(entry.name));
-  }
-
-  if (mainImages.length === 0) {
-    const resourceMainFirst = resourceImages
-      .filter((url) => /\/(?:n0|n1|n5|s1440x1440)_?\/?jfs\//i.test(url) || url.includes('/pcpubliccms/'));
-    for (const url of [...resourceMainFirst, ...resourceImages]) {
-      if (mainImages.length >= 12) break;
-      pushMainUnique(mainImages, mainSeen, url);
-    }
-  }
-
   const mainKeys = new Set(mainImages.map(canonicalImageKey));
 
   const detailHtmlBodies = detailCaptures
     .filter((capture) => capture?.source === 'detail_html' && capture.body)
     .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
   detailHtmlBodies.forEach((capture) => {
-    collectUrlLikeValues(capture.body).forEach((url) => addCandidate(url, 'detail_html', { sourceUrl: capture.url }));
+    collectUrlLikeEntries(capture.body).forEach((entry) => {
+      addCandidate(entry.url, 'detail_html', { sourceUrl: capture.url, context: entry.context });
+    });
   });
 
   const detailContainers = detailContainerSelectors
@@ -383,6 +361,10 @@
     if (host === 'm.360buyimg.com' && !lower.includes('/sku/jfs/') && !lower.includes('/img/jfs/') && !lower.includes('/imgzone/jfs/')) reasons.push('mobile-ad-or-ui');
     if (item.width && item.height && (item.width < 120 || item.height < 120)) reasons.push('too-small-dom');
     if (item.payloadSize > 0 && item.payloadSize < 5000) reasons.push('too-small-payload');
+    if (item.source === 'detail_html'
+      && /shortcut|sidebar|toolbar|header|footer|cart|login|service|feedback|plus|joy|loading|sprite|icon|logo|coupon|recommend|imagetools|babel|mall-common-component|retail-mall|公益好物|品质生活/i.test(item.context)) {
+      reasons.push('ui-context');
+    }
     if (!item.hitRules.length && item.source === 'network_image') reasons.push('weak-network-path');
     if (item.source === 'detail_html'
       && !/detail|desc|description|graphic|content|ssd|sku|imgzone|\/img\/jfs\//i.test(`${item.sourceUrl} ${item.url}`)) {
