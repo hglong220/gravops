@@ -19,6 +19,11 @@ const TEXT = {
   reset: '\u91cd\u7f6e',
   backToEdit: '\u8fd4\u56de\u4fee\u6539',
   confirm: '\u786e\u5b9a',
+  cancel: '\u53d6\u6d88',
+  chooseMarket: '\u9009\u62e9\u5356\u573a',
+  chooseMarketTitle: '\u9009\u62e9\u4e0a\u67b6\u7684\u7535\u5b50\u5356\u573a',
+  onlineMarket: '\u7f51\u4e0a\u8d85\u5e02',
+  bidPrefix: '\u6807\u9879\u540d\u79f0',
 };
 
 const port = Number(arg('--port', process.env.ZCY_CDP_PORT || '9223'));
@@ -94,6 +99,33 @@ function getModel(data) {
   return data.model || data.attributes?.[TEXT.model] || data.attributes?.model || '';
 }
 
+function deriveBidName(path) {
+  const joined = path.join('>');
+  const level1 = path[0] || '';
+  const level2 = path[1] || '';
+  if (joined.includes('\u4e94\u91d1') || joined.includes('\u5de5\u5177')) return '\u4e94\u91d1\u5de5\u5177';
+  if (joined.includes('\u8ba1\u7b97\u673a')) return '\u8ba1\u7b97\u673a\u8bbe\u5907';
+  if (joined.includes('\u52b3\u52a8\u4fdd\u62a4')) return '\u52b3\u52a8\u4fdd\u62a4\u7528\u54c1';
+  if (joined.includes('\u706f\u5177')) return '\u706f\u5177\u5546\u54c1';
+  if (level1.includes('\u65e5\u7528\u767e\u8d27')) return '\u65e5\u7528\u767e\u8d27';
+  if (level1.includes('\u6587\u5316\u7528\u54c1')) return '\u529e\u516c\u7528\u54c1';
+
+  if (level1 === TEXT.officeConsumables) {
+    if (level2.includes('\u529e\u516c\u7528\u7eb8')
+      || level2.includes('\u58a8\u7c89')
+      || level2.includes('\u7852\u9f13')
+      || level2.includes('\u6cb9\u58a8')
+      || level2.includes('\u7ef3\u7d22')
+      || level2.includes('\u80f6\u5e26')
+      || level2.includes('\u5305\u88c5')) {
+      return '\u529e\u516c\u7528\u54c1';
+    }
+    return '\u529e\u516c\u8bbe\u5907';
+  }
+
+  return level2 || level1;
+}
+
 async function getZcyPage(browser) {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
@@ -148,8 +180,118 @@ async function resetCategorySelection(page) {
   await page.waitForTimeout(1000);
 }
 
+async function waitForMarketDialog(page, timeout = 6000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const dialog = page.locator('.doraemon-modal-wrap, .doraemon-dialog, .el-dialog, [role="dialog"]')
+      .filter({ hasText: TEXT.onlineMarket })
+      .first();
+    if (await dialog.isVisible().catch(() => false)) return dialog;
+    await page.waitForTimeout(250);
+  }
+  return null;
+}
+
+async function openMarketDialog(page) {
+  const existing = await waitForMarketDialog(page, 1000);
+  if (existing) return existing;
+
+  const clicked = await clickVisibleByText(page, TEXT.chooseMarket, 3000);
+  if (!clicked) throw new Error('Choose market button not found');
+
+  const dialog = await waitForMarketDialog(page, 8000);
+  if (!dialog) throw new Error('Choose market dialog did not open');
+  console.log('[ZCY-CDP] opened market selector');
+  return dialog;
+}
+
+async function expandOnlineMarket(page, dialog) {
+  if (await dialog.locator(`text=${TEXT.bidPrefix}`).count().catch(() => 0)) return;
+
+  const rows = dialog.locator('tr, .doraemon-table-row, [class*="table-row"], [class*="row"]')
+    .filter({ hasText: TEXT.onlineMarket });
+  const rowCount = await rows.count().catch(() => 0);
+  for (let i = 0; i < rowCount; i += 1) {
+    const row = rows.nth(i);
+    if (!(await row.isVisible().catch(() => false))) continue;
+    const expand = row.locator('button, .doraemon-btn, .el-button, [role="button"], .doraicon-plus, .doraicon-minus, [class*="plus"], [class*="expand"]').first();
+    if (await expand.count().catch(() => 0)) {
+      await expand.click({ timeout: 3000 }).catch(async () => {
+        await expand.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+      });
+    } else {
+      await row.click({ timeout: 3000 }).catch(() => {});
+    }
+    await page.waitForTimeout(800);
+    console.log('[ZCY-CDP] expanded online market row');
+    return;
+  }
+
+  const anyExpand = dialog.locator('button, [role="button"], .doraicon-plus, [class*="plus"], [class*="expand"]').first();
+  if (await anyExpand.count().catch(() => 0)) {
+    await anyExpand.click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    console.log('[ZCY-CDP] expanded first market row');
+  }
+}
+
+async function selectBidInMarketDialog(page, dialog, bidName) {
+  const rowLocator = dialog.locator('tr, .doraemon-table-row, [class*="table-row"], [class*="row"], label')
+    .filter({ hasText: bidName });
+  const count = await rowLocator.count().catch(() => 0);
+  for (let i = 0; i < count; i += 1) {
+    const row = rowLocator.nth(i);
+    if (!(await row.isVisible().catch(() => false))) continue;
+    const text = await row.innerText().catch(() => '');
+    if (!text.includes(bidName)) continue;
+
+    const radio = row.locator('input[type="radio"], .doraemon-radio, .el-radio, [role="radio"]').first();
+    if (await radio.count().catch(() => 0)) {
+      await radio.click({ timeout: 3000 }).catch(async () => {
+        await radio.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+      });
+    } else {
+      await row.click({ timeout: 3000 }).catch(async () => {
+        await row.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+      });
+    }
+    await page.waitForTimeout(500);
+    console.log(`[ZCY-CDP] selected market bid: ${bidName}`);
+    return true;
+  }
+  return false;
+}
+
+async function ensureSaleMarketForCategory(page, path) {
+  const bidName = deriveBidName(path);
+  if (!bidName) return;
+  console.log(`[ZCY-CDP] ensuring sale market bid: ${bidName}`);
+
+  const dialog = await openMarketDialog(page);
+  await expandOnlineMarket(page, dialog);
+
+  const selected = await selectBidInMarketDialog(page, dialog, bidName);
+  if (!selected) {
+    const sample = await getVisibleTexts(dialog.locator('tr, .doraemon-table-row, [class*="table-row"], label'), 30).catch(() => []);
+    throw new Error(`Market bid not found: ${bidName}. Visible: ${sample.join(' / ')}`);
+  }
+
+  if (!await clickVisibleByText(page, TEXT.confirm, 3000)) {
+    throw new Error('Market dialog confirm button not found');
+  }
+  await page.waitForTimeout(1800);
+  console.log(`[ZCY-CDP] confirmed sale market bid: ${bidName}`);
+}
+
 async function closeBlockingDialogs(page) {
   const bodyText = await page.locator('body').innerText({ timeout: 2000 }).catch(() => '');
+  if (bodyText.includes('\u672a\u9009\u62e9\u534f\u8bae') && bodyText.includes('\u662f\u5426\u7ee7\u7eed')) {
+    if (await clickVisibleByText(page, TEXT.cancel, 2000)) {
+      console.log('[ZCY-CDP] closed stale agreement warning dialog');
+      await page.waitForTimeout(800);
+    }
+    return;
+  }
   if (!bodyText.includes('\u6682\u4e0d\u80fd\u53d1\u5e03\u6b64\u6b3e\u5546\u54c1') && !bodyText.includes('SPU')) return;
   if (await clickVisibleByText(page, TEXT.backToEdit, 2000)) {
     console.log('[ZCY-CDP] closed stale ZCY blocking dialog');
@@ -360,7 +502,15 @@ async function clickNextAndVerify(page) {
   await button.scrollIntoViewIfNeeded().catch(() => {});
   await button.click({ timeout: 5000 });
   await page.waitForTimeout(1000);
-  const bodyText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  let bodyText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  if (bodyText.includes('\u672a\u9009\u62e9\u534f\u8bae') && bodyText.includes('\u662f\u5426\u7ee7\u7eed')) {
+    console.log('[ZCY-CDP] confirm publish without selected agreement');
+    if (!await clickVisibleByText(page, TEXT.confirm, 3000)) {
+      throw new Error('Agreement warning confirm button not found');
+    }
+    await page.waitForTimeout(1500);
+    bodyText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '');
+  }
   if (bodyText.includes('\u6682\u4e0d\u80fd\u53d1\u5e03\u6b64\u6b3e\u5546\u54c1') || bodyText.includes('SPU')) {
     throw new Error('\u653f\u91c7\u4e91\u5df2\u5b8c\u6210\u7c7b\u76ee\u548c\u5173\u952e\u5c5e\u6027\u9009\u62e9\uff0c\u4f46\u5f53\u524d\u7c7b\u76ee\u8981\u6c42\u5148\u7533\u8bf7\u6536\u5f55\u6b64\u6b3e SPU\uff0c\u6682\u65f6\u4e0d\u80fd\u76f4\u63a5\u8fdb\u5165\u53d1\u5e03\u9875\u3002');
   }
@@ -387,6 +537,7 @@ async function main() {
   console.log(`[ZCY-CDP] product: ${payload.title || ''}`);
 
   if (/\/goods\/category\/attr\/select/.test(page.url())) {
+    await ensureSaleMarketForCategory(page, path);
     await selectCategoryPath(page, path);
     await selectDropdownField(page, TEXT.brand, brand, true);
     await selectDropdownField(page, TEXT.model, model, false);
