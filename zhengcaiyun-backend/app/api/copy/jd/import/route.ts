@@ -34,6 +34,14 @@ function buildDetailHtml(images: string[]): string {
   return images.map((src) => `<p><img src="${String(src).replace(/"/g, '&quot;')}" style="max-width:100%;" /></p>`).join('\n');
 }
 
+function summarizeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 500);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await getActorFromRequest(request);
@@ -111,6 +119,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, draft, message: 'JD product saved from desktop browser' });
   } catch (error) {
     console.error('[API /copy/jd/import] Error:', error);
-    return NextResponse.json({ error: 'Save failed', details: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ error: 'Save failed', details: summarizeError(error) }, { status: 500 });
   }
 }

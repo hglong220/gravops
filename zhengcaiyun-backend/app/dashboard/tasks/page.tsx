@@ -593,17 +593,17 @@ export default function TaskPage() {
       {/* 商品列表 - 占满全宽 */}
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         <div className="overflow-y-auto overflow-x-hidden flex-1">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="w-12 px-4 py-3 text-left whitespace-nowrap">选择</th>
+                <th className="w-12 px-3 py-3 text-left whitespace-nowrap">选择</th>
                 <th className="px-4 py-3 text-left">标题</th>
-                <th className="w-20 px-4 py-3 text-center whitespace-nowrap">来源</th>
-                <th className="w-20 px-4 py-3 text-center whitespace-nowrap">状态</th>
-                <th className="w-32 px-4 py-3 text-center whitespace-nowrap">时间</th>
-                <th className="w-48 px-4 py-3 text-right whitespace-nowrap">
+                <th className="hidden md:table-cell w-20 px-4 py-3 text-center whitespace-nowrap">来源</th>
+                <th className="hidden lg:table-cell w-20 px-4 py-3 text-center whitespace-nowrap">状态</th>
+                <th className="hidden xl:table-cell w-32 px-4 py-3 text-center whitespace-nowrap">时间</th>
+                <th className="w-24 md:w-48 px-3 py-3 text-right whitespace-nowrap">
                   <div className="flex items-center justify-end gap-3">
-                    <div className="flex items-center gap-2">
+                    <div className="hidden md:flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={allSelected}
@@ -613,7 +613,7 @@ export default function TaskPage() {
                       />
                       <span className="text-sm text-gray-500 font-normal">全选</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="hidden md:flex items-center gap-1">
                       {taskGroups.filter(g => g.id !== 'all').map((g) => {
                         const active = selectedTask === g.id
                         return (
@@ -639,7 +639,7 @@ export default function TaskPage() {
                 const badge = statusBadge(p.status)
                 return (
                   <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <input
                         type="checkbox"
                         checked={selectedIds.has(p.id)}
@@ -647,8 +647,8 @@ export default function TaskPage() {
                         className="h-4 w-4"
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="truncate max-w-md" title={p.title}>
+                    <td className="px-3 py-3">
+                      <div className="min-w-0 truncate" title={p.title}>
                         <span className={`font-medium ${p.permissionStatus === 'invalid' ? 'text-red-600' :
                           p.permissionStatus === 'valid' ? 'text-green-700' :
                             'text-gray-900'
@@ -657,14 +657,14 @@ export default function TaskPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 text-center whitespace-nowrap">{sourceLabel(p.originalUrl)}</td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                    <td className="hidden md:table-cell px-4 py-3 text-gray-600 text-center whitespace-nowrap">{sourceLabel(p.originalUrl)}</td>
+                    <td className="hidden lg:table-cell px-4 py-3 text-center whitespace-nowrap">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>{badge.text}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-center whitespace-nowrap text-xs">
+                    <td className="hidden xl:table-cell px-4 py-3 text-gray-500 text-center whitespace-nowrap text-xs">
                       {new Date(p.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td className="w-48 px-4 py-3 text-right whitespace-nowrap">
+                    <td className="w-24 md:w-48 px-3 py-3 text-right whitespace-nowrap">
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => openEditModal(p)}
@@ -690,18 +690,18 @@ export default function TaskPage() {
       </div>
 
       {isEditModalOpen && editingProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
+          <div className="relative w-full max-w-[780px]">
             <button
               onClick={() => setIsEditModalOpen(false)}
-              className="absolute -right-10 -top-10 w-10 h-10 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow hover:bg-gray-50"
+              className="absolute right-3 top-3 z-10 w-9 h-9 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow hover:bg-gray-50"
               title="关闭"
             >
               <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <div className="bg-white rounded-lg p-6 w-[780px] max-h-[85vh] overflow-y-auto">
+            <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-h-[85vh] overflow-y-auto">
               <h3 className="text-xl font-bold text-gray-900 mb-4">编辑商品信息</h3>
 
               {/* 类目选择 - UI已隐藏，由后台自动匹配。保留 ZCY_CATEGORIES 数据和 catL1/catL2/catL3 状态供插件使用 */}
@@ -718,7 +718,7 @@ export default function TaskPage() {
               </div>
 
               {/* 品牌型号 */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">品牌</label>
                   <input
@@ -740,7 +740,7 @@ export default function TaskPage() {
               </div>
 
               {/* 原始链接 + 市场价 */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">原始链接</label>
                   <input
@@ -762,7 +762,7 @@ export default function TaskPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">销售价 (元)</label>
                   <input
@@ -794,7 +794,7 @@ export default function TaskPage() {
                     + 添加
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {editMainImages.map((url, idx) => (
                     <div key={idx} className="border rounded-lg p-2 space-y-2">
                       <div className="w-full h-28 bg-gray-50 flex items-center justify-center overflow-hidden rounded">
@@ -850,7 +850,7 @@ export default function TaskPage() {
                     + 添加
                   </button>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {editDetailImages.map((url, idx) => (
                     <div key={idx} className="border rounded-lg p-1 space-y-1">
                       <div className="w-full h-20 bg-gray-50 flex items-center justify-center overflow-hidden rounded">

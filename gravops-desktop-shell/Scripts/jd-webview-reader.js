@@ -2,6 +2,11 @@
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const text = (selector, root = document) => clean(root.querySelector(selector)?.textContent);
   const attr = (selector, name, root = document) => clean(root.querySelector(selector)?.getAttribute(name));
+  const capture = window.__gravopsCapture || {};
+  const captureId = String(capture.captureId || '');
+  const captureProductId = String(capture.productId || capture.skuId || '');
+  const capturePageUrl = String(capture.pageUrl || location.href);
+  const detailClickedAt = Number(window.__gravopsDetailClickedAt || 0);
 
   const rawDetailCaptures = Array.isArray(window.__gravopsDetailCaptures) ? window.__gravopsDetailCaptures : [];
   const detailCaptures = rawDetailCaptures.map((capture) => ({
@@ -10,9 +15,13 @@
     kind: capture.kind ?? capture.Kind ?? '',
     source: capture.source ?? capture.Source ?? '',
     contentType: capture.contentType ?? capture.ContentType ?? '',
-    body: capture.body ?? capture.Body ?? ''
-  }));
-  const legacyNetworkImages = Array.isArray(window.__gravopsDetailNetworkImages) ? window.__gravopsDetailNetworkImages : [];
+    body: capture.body ?? capture.Body ?? '',
+    captureId: capture.captureId ?? capture.CaptureId ?? '',
+    productId: capture.productId ?? capture.ProductId ?? '',
+    skuId: capture.skuId ?? capture.SkuId ?? '',
+    pageUrl: capture.pageUrl ?? capture.PageUrl ?? '',
+    timestamp: Number(capture.timestamp ?? capture.Timestamp ?? 0)
+  })).filter((item) => !captureId || item.captureId === captureId);
 
   const detailContainerSelectors = [
     '#graphic-content',
@@ -159,6 +168,11 @@
     candidates.push({
       url,
       source,
+      captureId,
+      productId: meta.productId || captureProductId,
+      skuId: meta.skuId || captureProductId,
+      pageUrl: meta.pageUrl || capturePageUrl,
+      timestamp: Number(meta.timestamp || Date.now()),
       order: candidates.length,
       sourceUrl: meta.sourceUrl || '',
       width: Number(meta.width || 0),
@@ -172,6 +186,12 @@
 
   const sourceUrl = location.href;
   const skuId = sourceUrl.match(/item\.jd\.com\/(\d+)\.html/)?.[1] || '';
+  const currentProductId = skuId;
+  const consistencyWarnings = [];
+  const consistencyOk = !captureProductId || !currentProductId || captureProductId === currentProductId;
+  if (!consistencyOk) {
+    consistencyWarnings.push(`page-product-mismatch: capture=${captureProductId} current=${currentProductId}`);
+  }
   const title = text('.sku-title-name')
     || text('.sku-title-text')
     || text('.page-right-skuname')
@@ -332,7 +352,14 @@
     .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
   selectedDetailHtmlBodies.forEach((capture) => {
     collectUrlLikeEntries(capture.body).forEach((entry) => {
-      addCandidate(entry.url, 'detail_html', { sourceUrl: capture.url, context: entry.context });
+      addCandidate(entry.url, 'detail_html', {
+        sourceUrl: capture.url,
+        context: entry.context,
+        productId: capture.productId,
+        skuId: capture.skuId,
+        pageUrl: capture.pageUrl,
+        timestamp: capture.timestamp
+      });
     });
   });
 
@@ -355,14 +382,25 @@
         img.getAttribute('data-origin')
       ].filter(Boolean).forEach((url) => addCandidate(url, 'detail_dom', {
         width: img.naturalWidth || rect.width,
-        height: img.naturalHeight || rect.height
+        height: img.naturalHeight || rect.height,
+        productId: currentProductId,
+        skuId: currentProductId,
+        pageUrl: sourceUrl
       }));
     });
     container.querySelectorAll('source').forEach((source) => {
-      parseSrcset(source.srcset || source.getAttribute('srcset')).forEach((url) => addCandidate(url, 'detail_dom'));
+      parseSrcset(source.srcset || source.getAttribute('srcset')).forEach((url) => addCandidate(url, 'detail_dom', {
+        productId: currentProductId,
+        skuId: currentProductId,
+        pageUrl: sourceUrl
+      }));
     });
     container.querySelectorAll('[style*="url("]').forEach((node) => {
-      collectUrlLikeValues(node.getAttribute('style')).forEach((url) => addCandidate(url, 'detail_dom'));
+      collectUrlLikeValues(node.getAttribute('style')).forEach((url) => addCandidate(url, 'detail_dom', {
+        productId: currentProductId,
+        skuId: currentProductId,
+        pageUrl: sourceUrl
+      }));
     });
   });
 
@@ -370,19 +408,21 @@
     .filter((capture) => capture?.source === 'network_image')
     .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
     .forEach((capture) => {
-      if (/\/imgzone\/jfs\/|\/cms\/jfs\/|\/img\/jfs\/|pcpubliccms/i.test(capture.url || '')) {
-        addCandidate(capture.url, 'network_image', { sourceUrl: capture.url });
+      if (/\/sku\/jfs\/|\/imgzone\/jfs\/|\/cms\/jfs\/|\/img\/jfs\/|\/popwatermark\/|pcpubliccms|\/jfs\//i.test(capture.url || '')) {
+        addCandidate(capture.url, 'network_image', {
+          sourceUrl: capture.url,
+          productId: capture.productId,
+          skuId: capture.skuId,
+          pageUrl: capture.pageUrl,
+          timestamp: capture.timestamp
+        });
       }
     });
-  legacyNetworkImages.forEach((url) => {
-    if (/\/imgzone\/jfs\/|\/cms\/jfs\/|\/img\/jfs\/|pcpubliccms/i.test(url || '')) {
-      addCandidate(url, 'network_image', { sourceUrl: url });
-    }
-  });
 
   const filterCandidate = (item) => {
     const reasons = [];
     const lower = item.url.toLowerCase();
+    const highTrustSource = item.source === 'detail_html' || item.source === 'detail_dom';
     const knownDetailDecorativeIds = [
       '02761e01e01d9b2a',
       '13b443365adb100d',
@@ -396,6 +436,11 @@
     } catch {
       host = '';
     }
+    if (captureId && item.captureId !== captureId) reasons.push('capture-id-mismatch');
+    if (captureProductId && item.productId && item.productId !== captureProductId) reasons.push('product-id-mismatch');
+    if (item.source === 'network_image' && detailClickedAt && item.timestamp && item.timestamp < detailClickedAt) reasons.push('captured-before-detail-tab');
+    if (item.source === 'network_image' && capturePageUrl && item.pageUrl && item.pageUrl !== capturePageUrl) reasons.push('page-url-mismatch');
+    if (!consistencyOk) reasons.push('current-page-product-mismatch');
     if (!/\.(jpg|jpeg|png|gif)(?:$|\?)/i.test(new URL(item.url).pathname)) reasons.push('not-image-extension');
     if (mainKeys.has(canonicalImageKey(item.url))) reasons.push('same-as-main-image');
     if (/logo|avatar|qrcode|sprite|icon|joy|loading|refresh_loading|plus|crown/i.test(lower)) reasons.push('decorative');
@@ -404,7 +449,7 @@
     if (host === 'storage.360buyimg.com' || host === 'misc.360buyimg.com') reasons.push('non-product-cdn');
     if (host === 'm.360buyimg.com' && !lower.includes('/sku/jfs/') && !lower.includes('/img/jfs/') && !lower.includes('/imgzone/jfs/')) reasons.push('mobile-ad-or-ui');
     if (item.width && item.height && (item.width < 120 || item.height < 120)) reasons.push('too-small-dom');
-    if (item.payloadSize > 0 && item.payloadSize < 5000) reasons.push('too-small-payload');
+    if (item.payloadSize > 0 && item.payloadSize < (highTrustSource ? 2500 : 8000)) reasons.push('too-small-payload');
     if (item.source === 'detail_html'
       && /shortcut|sidebar|toolbar|header|footer|cart|login|service|feedback|plus|joy|loading|sprite|icon|logo|coupon|recommend|imagetools|babel|mall-common-component|retail-mall|公益好物|品质生活/i.test(item.context)) {
       reasons.push('ui-context');
@@ -417,14 +462,24 @@
     return reasons;
   };
 
+  const trustedCandidateCount = candidates.filter((item) => (item.source === 'detail_html' || item.source === 'detail_dom') && filterCandidate(item).length === 0).length;
+  const allowNetworkFallback = trustedCandidateCount < 3;
   const perImageDebug = [];
   const byKey = new Map();
   for (const item of candidates) {
     const reasons = filterCandidate(item);
+    if (item.source === 'network_image' && !allowNetworkFallback) reasons.push('network-fallback-not-needed');
     const kept = reasons.length === 0;
     perImageDebug.push({
       url: item.url,
       source: item.source,
+      captureId: item.captureId,
+      productId: item.productId,
+      skuId: item.skuId,
+      pageUrl: item.pageUrl,
+      timestamp: item.timestamp,
+      isCurrentProduct: !captureProductId || !item.productId || item.productId === captureProductId,
+      isAfterDetailClick: !detailClickedAt || !item.timestamp || item.timestamp >= detailClickedAt,
       kept,
       filterReason: reasons,
       width: item.width,
@@ -446,6 +501,7 @@
     .sort((a, b) => (sourceRank[a.source] ?? 9) - (sourceRank[b.source] ?? 9) || a.order - b.order)
     .map((item) => item.url)
     .slice(0, 60);
+  const selectedDetailSources = Array.from(byKey.values()).map((item) => item.source);
 
   const selectedSaleSpecs = specGroups
     .filter((group) => group.selected)
@@ -465,12 +521,19 @@
   const expectedCodes = new Set([itemNo, model, ...selectedSaleSpecs.map((item) => item.value)].filter(Boolean));
   const foundCodes = Array.from(new Set((detailText.match(/\b[A-Z]{1,5}\d{3,8}\b/g) || [])));
   const mismatchCodes = foundCodes.filter((code) => expectedCodes.size && !expectedCodes.has(code));
-  const warnings = [];
+  const warnings = [...consistencyWarnings];
   if (mismatchCodes.length) {
     warnings.push(`detail-code-mismatch: expected=${Array.from(expectedCodes).join('|')} found=${mismatchCodes.join('|')}`);
   }
 
   const debug = {
+    captureId,
+    pageUrl: capturePageUrl,
+    currentUrl: sourceUrl,
+    productId: captureProductId,
+    currentProductId,
+    consistencyOk,
+    detailClickedAt,
     skuId,
     itemNo,
     model,
@@ -486,6 +549,8 @@
     detailHtmlImageCount: candidates.filter((item) => item.source === 'detail_html').length,
     detailDomImageCount: candidates.filter((item) => item.source === 'detail_dom').length,
     networkImageCount: candidates.filter((item) => item.source === 'network_image').length,
+    trustedDetailCandidateCount: trustedCandidateCount,
+    networkFallbackUsed: selectedDetailSources.includes('network_image'),
     finalDetailImageCount: detailImages.length,
     filteredImageCount: perImageDebug.filter((item) => !item.kept).length,
     warnings,

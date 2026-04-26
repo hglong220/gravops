@@ -25,6 +25,9 @@ public sealed class MainForm : Form
     private readonly object jdNetworkCaptureLock = new();
     private readonly List<JdNetworkCapture> jdNetworkCaptures = new();
     private int jdNetworkCaptureSeq;
+    private string? activeJdCaptureId;
+    private string? activeJdCaptureProductId;
+    private string? activeJdCapturePageUrl;
 
     private sealed class JdNetworkCapture
     {
@@ -34,6 +37,11 @@ public sealed class MainForm : Form
         public string Source { get; set; } = "";
         public string ContentType { get; set; } = "";
         public string Body { get; set; } = "";
+        public string CaptureId { get; set; } = "";
+        public string ProductId { get; set; } = "";
+        public string SkuId { get; set; } = "";
+        public string PageUrl { get; set; } = "";
+        public long Timestamp { get; set; }
     }
 
     public MainForm()
@@ -351,6 +359,29 @@ public sealed class MainForm : Form
         return Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri.ToString() : null;
     }
 
+    private static string FormatHttpError(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var error = root.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null;
+            var details = root.TryGetProperty("details", out var detailsProp) ? detailsProp.GetString() : null;
+            var message = string.IsNullOrWhiteSpace(details) ? error : $"{error} - {details}";
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message.Length > 300 ? message[..300] + "..." : message;
+            }
+        }
+        catch
+        {
+            // Fall through to plain text truncation.
+        }
+
+        var compact = Regex.Replace(body, @"\s+", " ").Trim();
+        return compact.Length > 300 ? compact[..300] + "..." : compact;
+    }
+
     private async Task ReadCurrentJdAsync()
     {
         var currentUrl = browserView.Source?.ToString() ?? "";
@@ -407,7 +438,7 @@ public sealed class MainForm : Form
         LogDesktopRead($"import-response status={(int)res.StatusCode} body={body}");
         if (!res.IsSuccessStatusCode)
         {
-            ShowError($"保存到任务中心失败：{body}");
+            ShowError($"Save failed: {FormatHttpError(body)}");
             return;
         }
 
@@ -417,9 +448,20 @@ public sealed class MainForm : Form
 
     private async Task<JsonElement> ReadJdProductFromWorkbenchAsync()
     {
-        ClearJdImageResponses();
+        var currentUrl = browserView.Source?.ToString() ?? "";
+        var productId = ExtractJdProductId(currentUrl);
+        var captureId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
+        BeginJdCapture(captureId, productId, currentUrl);
+        LogDesktopRead($"jd-capture-start captureId={captureId} productId={productId} url={currentUrl}");
         const string prepareScript = """
             (async () => {
+              const captureId = window.__gravopsCapture?.captureId || '';
+              window.__gravopsActiveCaptureId = captureId;
+              window.__gravopsDetailPrepareDone = '';
+              window.__gravopsDetailNetworkImages = [];
+              window.__gravopsDetailHtmlCandidates = [];
+              window.__gravopsDetailDomImages = [];
+              window.__gravopsMainImages = [];
               const clean = (value) => String(value || '').trim().replace(/\s+/g, '');
               const originalY = window.scrollY || 0;
               const detailSelectors = ['#graphic-content', '#J-detail-content', '#detail', '.detail-content', '.ssd-module-detail', '.ssd-module-wrap', '.ssd-module', '.p-parameter', '.detail'];
@@ -458,6 +500,7 @@ public sealed class MainForm : Form
                 tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
                 tab.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
                 tab.click();
+                window.__gravopsDetailClickedAt = Date.now();
                 await new Promise((resolve) => setTimeout(resolve, 700));
               }
               let previous = stats();
@@ -477,13 +520,42 @@ public sealed class MainForm : Form
               }
               window.scrollTo(0, originalY);
               await new Promise((resolve) => setTimeout(resolve, 200));
+              window.__gravopsDetailPrepareDone = captureId;
               return true;
             })()
             """;
+        var captureJson = JsonSerializer.Serialize(new
+        {
+            captureId,
+            productId,
+            skuId = productId,
+            pageUrl = currentUrl,
+            timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        });
+        await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsCapture = {captureJson};");
+        await browserView.CoreWebView2.ExecuteScriptAsync("""
+            window.__gravopsDetailNetworkImages = [];
+            window.__gravopsDetailHtmlCandidates = [];
+            window.__gravopsDetailDomImages = [];
+            window.__gravopsMainImages = [];
+            window.__gravopsDetailCaptures = [];
+            window.__gravopsDetailClickedAt = 0;
+            window.__gravopsDetailPrepareDone = '';
+            """);
         await browserView.CoreWebView2.ExecuteScriptAsync(prepareScript);
-        var detailNetworkImages = SnapshotJdImageResponses();
-        var detailNetworkCaptures = SnapshotJdNetworkCaptures();
-        LogDesktopRead($"detail-network-candidates={detailNetworkImages.Count} captures={detailNetworkCaptures.Count}");
+        var prepareDeadline = DateTime.UtcNow.AddSeconds(13);
+        while (DateTime.UtcNow < prepareDeadline)
+        {
+            var doneJson = await browserView.CoreWebView2.ExecuteScriptAsync("window.__gravopsDetailPrepareDone || ''");
+            var doneCaptureId = JsonSerializer.Deserialize<string>(doneJson) ?? "";
+            if (doneCaptureId == captureId) break;
+            await Task.Delay(250);
+        }
+        var detailClickedAtJson = await browserView.CoreWebView2.ExecuteScriptAsync("window.__gravopsDetailClickedAt || 0");
+        var detailClickedAt = ParseScriptInt64(detailClickedAtJson);
+        var detailNetworkImages = SnapshotJdImageResponses(captureId);
+        var detailNetworkCaptures = SnapshotJdNetworkCaptures(captureId);
+        LogDesktopRead($"detail-network-candidates captureId={captureId} detailClickedAt={detailClickedAt} images={detailNetworkImages.Count} captures={detailNetworkCaptures.Count}");
 
         var repoRoot = FindRepoRoot();
         var scriptPath = Path.Combine(repoRoot, "gravops-desktop-shell", "Scripts", "jd-webview-reader.js");
@@ -496,6 +568,7 @@ public sealed class MainForm : Form
         var detailCaptureJson = JsonSerializer.Serialize(detailNetworkCaptures);
         await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsDetailNetworkImages = {detailNetworkJson};");
         await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsDetailCaptures = {detailCaptureJson};");
+        await browserView.CoreWebView2.ExecuteScriptAsync($"window.__gravopsDetailClickedAt = {detailClickedAt};");
         var resultJson = await browserView.CoreWebView2.ExecuteScriptAsync(await File.ReadAllTextAsync(scriptPath));
         LogDesktopRead($"script-return-prefix={resultJson[..Math.Min(resultJson.Length, 500)]}");
         using var doc = JsonDocument.Parse(resultJson);
@@ -508,6 +581,12 @@ public sealed class MainForm : Form
             ? detailImagesProp.GetArrayLength()
             : 0;
         LogJdDetailDebug(product);
+        if (product.TryGetProperty("debug", out var debug)
+            && debug.TryGetProperty("consistencyOk", out var consistencyOk)
+            && consistencyOk.ValueKind == JsonValueKind.False)
+        {
+            throw new InvalidOperationException("当前页面商品状态不一致，已拒绝采集详情图，避免上传错商品图片。");
+        }
         if (detailCount == 0)
         {
             LogDesktopRead("webview-read detailImages=0; skipped external CDP fallback");
@@ -533,13 +612,19 @@ public sealed class MainForm : Form
         string GetString(string name) => debug.TryGetProperty(name, out var value) ? value.ToString() : "";
         LogDesktopRead(
             "jd-detail-summary "
+            + $"captureId={GetString("captureId")} "
+            + $"url={GetString("currentUrl")} "
+            + $"productId={GetString("productId")} "
             + $"sku={GetString("skuId")} "
             + $"itemNo={GetString("itemNo")} "
             + $"model={GetString("model")} "
+            + $"title={GetString("title")} "
             + $"main={GetString("mainImageCount")} "
             + $"detailHtml={GetString("detailHtmlImageCount")} "
             + $"detailDom={GetString("detailDomImageCount")} "
             + $"network={GetString("networkImageCount")} "
+            + $"trusted={GetString("trustedDetailCandidateCount")} "
+            + $"networkFallback={GetString("networkFallbackUsed")} "
             + $"final={GetString("finalDetailImageCount")} "
             + $"filtered={GetString("filteredImageCount")}"
         );
@@ -557,17 +642,38 @@ public sealed class MainForm : Form
         {
             var url = image.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
             var source = image.TryGetProperty("source", out var sourceProp) ? sourceProp.GetString() ?? "" : "";
+            var captureId = image.TryGetProperty("captureId", out var captureProp) ? captureProp.GetString() ?? "" : "";
             var kept = image.TryGetProperty("kept", out var keptProp) && keptProp.GetBoolean();
             var width = image.TryGetProperty("width", out var widthProp) ? widthProp.ToString() : "";
             var height = image.TryGetProperty("height", out var heightProp) ? heightProp.ToString() : "";
+            var timestamp = image.TryGetProperty("timestamp", out var timestampProp) ? timestampProp.ToString() : "";
+            var isCurrentProduct = image.TryGetProperty("isCurrentProduct", out var currentProp) ? currentProp.ToString() : "";
+            var isAfterDetailClick = image.TryGetProperty("isAfterDetailClick", out var afterProp) ? afterProp.ToString() : "";
             var reasons = image.TryGetProperty("filterReason", out var reasonProp) && reasonProp.ValueKind == JsonValueKind.Array
                 ? string.Join("|", reasonProp.EnumerateArray().Select((item) => item.ToString()))
                 : "";
             var rules = image.TryGetProperty("hitRules", out var ruleProp) && ruleProp.ValueKind == JsonValueKind.Array
                 ? string.Join("|", ruleProp.EnumerateArray().Select((item) => item.ToString()))
                 : "";
-            LogDesktopRead($"jd-detail-image kept={kept} source={source} size={width}x{height} rules={rules} reason={reasons} url={url}");
+            LogDesktopRead($"jd-detail-image captureId={captureId} kept={kept} source={source} size={width}x{height} currentProduct={isCurrentProduct} afterDetailClick={isAfterDetailClick} timestamp={timestamp} rules={rules} reason={reasons} url={url}");
         }
+    }
+
+    private static long ParseScriptInt64(string scriptJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(scriptJson);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Number && root.TryGetInt64(out var number)) return number;
+            if (root.ValueKind == JsonValueKind.String && long.TryParse(root.GetString(), out var parsed)) return parsed;
+        }
+        catch
+        {
+            // WebView script results can be "undefined", "null", or quoted strings depending on page state.
+        }
+
+        return 0;
     }
 
     private async Task<JsonElement> TryFillJdDetailImagesWithCdpAsync(JsonElement product, string currentUrl)
@@ -682,11 +788,16 @@ public sealed class MainForm : Form
         }
     }
 
-    private List<string> SnapshotJdImageResponses()
+    private List<string> SnapshotJdImageResponses(string captureId)
     {
-        lock (jdImageResponseLock)
+        lock (jdNetworkCaptureLock)
         {
-            return jdImageResponses.Distinct().ToList();
+            return jdNetworkCaptures
+                .Where((item) => item.CaptureId == captureId && item.Source == "network_image")
+                .Select((item) => item.Url)
+                .Where((item) => !string.IsNullOrWhiteSpace(item))
+                .Distinct()
+                .ToList();
         }
     }
 
@@ -695,16 +806,40 @@ public sealed class MainForm : Form
         ClearJdImageResponses();
         lock (jdNetworkCaptureLock)
         {
+            activeJdCaptureId = null;
+            activeJdCaptureProductId = null;
+            activeJdCapturePageUrl = null;
             jdNetworkCaptures.Clear();
             jdNetworkCaptureSeq = 0;
         }
     }
 
-    private List<JdNetworkCapture> SnapshotJdNetworkCaptures()
+    private void BeginJdCapture(string captureId, string productId, string pageUrl)
+    {
+        lock (jdNetworkCaptureLock)
+        {
+            activeJdCaptureId = captureId;
+            activeJdCaptureProductId = productId;
+            activeJdCapturePageUrl = pageUrl;
+            jdNetworkCaptures.Clear();
+            jdNetworkCaptureSeq = 0;
+        }
+        ClearJdImageResponses();
+    }
+
+    private static string ExtractJdProductId(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl)) return "";
+        var match = Regex.Match(rawUrl, @"item\.jd\.com/(\d+)\.html", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : "";
+    }
+
+    private List<JdNetworkCapture> SnapshotJdNetworkCaptures(string captureId)
     {
         lock (jdNetworkCaptureLock)
         {
             return jdNetworkCaptures
+                .Where((item) => item.CaptureId == captureId)
                 .Select((item) => new JdNetworkCapture
                 {
                     Seq = item.Seq,
@@ -712,7 +847,12 @@ public sealed class MainForm : Form
                     Kind = item.Kind,
                     Source = item.Source,
                     ContentType = item.ContentType,
-                    Body = item.Body
+                    Body = item.Body,
+                    CaptureId = item.CaptureId,
+                    ProductId = item.ProductId,
+                    SkuId = item.SkuId,
+                    PageUrl = item.PageUrl,
+                    Timestamp = item.Timestamp
                 })
                 .ToList();
         }
@@ -726,6 +866,16 @@ public sealed class MainForm : Form
             var contentType = e.Response.Headers.GetHeader("content-type") ?? "";
             var kind = InferJdResourceKind(uri, contentType);
             if (!IsJdCaptureScope(uri)) return;
+            string captureId;
+            string productId;
+            string pageUrl;
+            lock (jdNetworkCaptureLock)
+            {
+                captureId = activeJdCaptureId ?? "";
+                productId = activeJdCaptureProductId ?? "";
+                pageUrl = activeJdCapturePageUrl ?? "";
+            }
+            if (string.IsNullOrWhiteSpace(captureId)) return;
 
             if (IsJdImageResponseCandidate(uri))
             {
@@ -734,7 +884,12 @@ public sealed class MainForm : Form
                     Url = uri,
                     Kind = kind,
                     Source = "network_image",
-                    ContentType = "image"
+                    ContentType = "image",
+                    CaptureId = captureId,
+                    ProductId = productId,
+                    SkuId = productId,
+                    PageUrl = pageUrl,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 });
 
                 lock (jdImageResponseLock)
@@ -765,7 +920,12 @@ public sealed class MainForm : Form
                 Kind = kind,
                 Source = "detail_html",
                 ContentType = contentType,
-                Body = body
+                Body = body,
+                CaptureId = captureId,
+                ProductId = productId,
+                SkuId = productId,
+                PageUrl = pageUrl,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             });
         }
         catch (Exception error)
@@ -778,6 +938,10 @@ public sealed class MainForm : Form
     {
         lock (jdNetworkCaptureLock)
         {
+            if (string.IsNullOrWhiteSpace(capture.CaptureId) || capture.CaptureId != activeJdCaptureId)
+            {
+                return;
+            }
             capture.Seq = ++jdNetworkCaptureSeq;
             jdNetworkCaptures.Add(capture);
             if (jdNetworkCaptures.Count > 300)
