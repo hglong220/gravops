@@ -12,6 +12,7 @@ namespace Gravops.Desktop;
 public sealed class MainForm : Form
 {
     private const string BackendUrl = "http://localhost:3000";
+    private const int ZcyCdpPort = 9223;
     private readonly WebView2 appView = new();
     private readonly WebView2 browserView = new();
     private readonly WebView2 zcyView = new();
@@ -28,6 +29,7 @@ public sealed class MainForm : Form
     private string? activeJdCaptureId;
     private string? activeJdCaptureProductId;
     private string? activeJdCapturePageUrl;
+    private string? pendingZcyPublishJson;
 
     private sealed class JdNetworkCapture
     {
@@ -188,8 +190,9 @@ public sealed class MainForm : Form
         await browserView.EnsureCoreWebView2Async(
             await CoreWebView2Environment.CreateAsync(null, Path.Combine(userDataRoot, "workbench"))
         );
+        var zcyOptions = new CoreWebView2EnvironmentOptions($"--remote-debugging-port={ZcyCdpPort}");
         await zcyView.EnsureCoreWebView2Async(
-            await CoreWebView2Environment.CreateAsync(null, Path.Combine(userDataRoot, "zcy"))
+            await CoreWebView2Environment.CreateAsync(null, Path.Combine(userDataRoot, "zcy"), zcyOptions)
         );
 
         browserView.CoreWebView2.WebResourceResponseReceived += (_, e) => _ = CaptureJdNetworkResponseAsync(e);
@@ -197,19 +200,14 @@ public sealed class MainForm : Form
         appView.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
-            browserView.CoreWebView2.Navigate(e.Uri);
-            addressBox.Text = e.Uri;
-            workTabs.SelectedIndex = 0;
+            NavigateExternalWorkbenchUri(e.Uri);
         };
         browserView.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
             if (!string.IsNullOrWhiteSpace(e.Uri))
             {
-                browserView.CoreWebView2.Navigate(e.Uri);
-                addressBox.Text = e.Uri;
-                SetStatus(e.Uri);
-                workTabs.SelectedIndex = 0;
+                NavigateExternalWorkbenchUri(e.Uri);
             }
         };
         zcyView.CoreWebView2.NewWindowRequested += (_, e) =>
@@ -217,12 +215,10 @@ public sealed class MainForm : Form
             e.Handled = true;
             if (!string.IsNullOrWhiteSpace(e.Uri))
             {
-                zcyView.CoreWebView2.Navigate(e.Uri);
-                addressBox.Text = e.Uri;
-                SetStatus(e.Uri);
-                workTabs.SelectedIndex = 1;
+                NavigateExternalWorkbenchUri(e.Uri);
             }
         };
+        appView.CoreWebView2.WebMessageReceived += (_, e) => _ = HandleAppWebMessageAsync(e);
         browserView.CoreWebView2.NavigationStarting += (_, e) =>
         {
             ClearJdNetworkCaptures();
@@ -238,9 +234,10 @@ public sealed class MainForm : Form
         {
             if (workTabs.SelectedIndex == 0) addressBox.Text = browserView.Source?.ToString() ?? addressBox.Text;
         };
-        zcyView.CoreWebView2.NavigationCompleted += (_, _) =>
+        zcyView.CoreWebView2.NavigationCompleted += async (_, _) =>
         {
             if (workTabs.SelectedIndex == 1) addressBox.Text = zcyView.Source?.ToString() ?? addressBox.Text;
+            await TryStartPendingZcyPublishAsync();
         };
 
         await WaitForBackendAsync();
@@ -340,6 +337,189 @@ public sealed class MainForm : Form
         target.CoreWebView2.Navigate(url);
         addressBox.Text = url;
         await Task.CompletedTask;
+    }
+
+    private void NavigateExternalWorkbenchUri(string? rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl)) return;
+
+        var url = NormalizeUrl(rawUrl);
+        if (url is null) return;
+
+        var target = url.Contains("zcygov.cn", StringComparison.OrdinalIgnoreCase) ? zcyView : browserView;
+        workTabs.SelectedIndex = ReferenceEquals(target, zcyView) ? 1 : 0;
+        target.CoreWebView2.Navigate(url);
+        addressBox.Text = url;
+        SetStatus(url);
+    }
+
+    private async Task HandleAppWebMessageAsync(CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeProp)) return;
+            if (!string.Equals(typeProp.GetString(), "TRIGGER_ZCY_PUBLISH", StringComparison.Ordinal)) return;
+            if (!root.TryGetProperty("data", out var dataProp) || dataProp.ValueKind != JsonValueKind.Object)
+            {
+                ShowError("发布数据为空，无法启动政采云流程");
+                return;
+            }
+
+            var zcyUrl = dataProp.TryGetProperty("zcyUrl", out var zcyUrlProp)
+                ? zcyUrlProp.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(zcyUrl))
+            {
+                ShowError("发布链接为空，无法启动政采云流程");
+                return;
+            }
+
+            pendingZcyPublishJson = dataProp.GetRawText();
+            workTabs.SelectedIndex = 1;
+            zcyView.CoreWebView2.Navigate(zcyUrl);
+            addressBox.Text = zcyUrl;
+            SetStatus("正在启动政采云发布流程...");
+            await Task.CompletedTask;
+        }
+        catch (Exception error)
+        {
+            LogDesktopRead($"zcy-publish-message-error: {error}");
+            ShowError($"发布指令解析失败：{error.Message}");
+        }
+    }
+
+    private async Task TryStartPendingZcyPublishAsync()
+    {
+        if (string.IsNullOrWhiteSpace(pendingZcyPublishJson)) return;
+
+        var currentUrl = zcyView.Source?.ToString() ?? "";
+        if (!currentUrl.Contains("zcygov.cn", StringComparison.OrdinalIgnoreCase)) return;
+        if (!currentUrl.Contains("/goods/category/attr/select", StringComparison.OrdinalIgnoreCase) &&
+            !currentUrl.Contains("/goods/publish", StringComparison.OrdinalIgnoreCase) &&
+            !currentUrl.Contains("/goods/edit", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            await StartZcyPlaywrightPublisherAsync(pendingZcyPublishJson);
+            pendingZcyPublishJson = null;
+            SetStatus("政采云 Playwright 发布流程已启动");
+        }
+        catch (Exception error)
+        {
+            LogDesktopRead($"zcy-publisher-inject-error: {error}");
+            ShowError($"政采云发布执行器启动失败：{error.Message}");
+        }
+    }
+
+    private async Task StartZcyPlaywrightPublisherAsync(string payloadJson)
+    {
+        var repoRoot = FindRepoRoot();
+        var backendDir = Path.Combine(repoRoot, "zhengcaiyun-backend");
+        var scriptPath = Path.Combine(backendDir, "scripts", "zcy-publish-cdp.cjs");
+        if (!File.Exists(scriptPath))
+        {
+            ShowError("未找到政采云 Playwright 发布脚本");
+            return;
+        }
+
+        var payloadDir = Path.Combine(Path.GetTempPath(), "Gravops");
+        Directory.CreateDirectory(payloadDir);
+        var payloadPath = Path.Combine(payloadDir, $"zcy-publish-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.json");
+        await File.WriteAllTextAsync(payloadPath, payloadJson, new UTF8Encoding(false));
+
+        var node = OperatingSystem.IsWindows() ? "node.exe" : "node";
+        var outputLock = new object();
+        var outputLines = new List<string>();
+        void CapturePublisherLine(string prefix, string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return;
+            var entry = $"{prefix}: {line}";
+            lock (outputLock)
+            {
+                outputLines.Add(entry);
+                if (outputLines.Count > 12) outputLines.RemoveAt(0);
+            }
+            LogDesktopRead(entry);
+        }
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = node,
+                Arguments = $"\"{scriptPath}\" --port {ZcyCdpPort} --payload \"{payloadPath}\"",
+                WorkingDirectory = backendDir,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            },
+            EnableRaisingEvents = true
+        };
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data)) CapturePublisherLine("zcy-cdp", e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data)) CapturePublisherLine("zcy-cdp-error", e.Data);
+        };
+        process.Exited += (_, _) =>
+        {
+            var exitCode = -1;
+            try { exitCode = process.ExitCode; } catch { }
+            try { if (File.Exists(payloadPath)) File.Delete(payloadPath); } catch { }
+
+            string tail;
+            lock (outputLock)
+            {
+                tail = string.Join(Environment.NewLine, outputLines.TakeLast(6));
+            }
+
+            try
+            {
+                BeginInvoke(() =>
+                {
+                    if (exitCode == 0)
+                    {
+                        SetStatus("政采云发布流程执行完成");
+                    }
+                    else
+                    {
+                        var message = string.IsNullOrWhiteSpace(tail)
+                            ? $"政采云发布自动化失败，退出码 {exitCode}。详情见 desktop-read.log。"
+                            : $"政采云发布自动化失败：{Environment.NewLine}{tail}";
+                        ShowError(message);
+                        SetStatus("政采云发布失败");
+                    }
+                });
+            }
+            catch
+            {
+                // Form may already be closing.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        };
+
+        if (!process.Start())
+        {
+            ShowError("政采云 Playwright 发布脚本启动失败");
+            return;
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
     }
 
     private static string? NormalizeUrl(string rawUrl)

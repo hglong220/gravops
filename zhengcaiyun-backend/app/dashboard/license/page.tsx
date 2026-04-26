@@ -91,9 +91,29 @@ export default function LicensePage() {
 
         const p = (await profileRes.json()) as Profile;
         const l = (await licensesRes.json()) as { licenses: LicenseInfo[] };
+        const nextLicenses = Array.isArray(l?.licenses) ? l.licenses : [];
+        const nextLicense = nextLicenses[0] || null;
+        const storedUser = localStorage.getItem('user');
+
+        if (storedUser) {
+            try {
+                const user = JSON.parse(storedUser);
+                localStorage.setItem(
+                    'user',
+                    JSON.stringify({
+                        ...user,
+                        companyName: p.companyName || user.companyName || null,
+                        licenseKey: nextLicense?.key || null,
+                        license: nextLicense
+                    })
+                );
+            } catch {
+                // Ignore malformed local storage; login will refresh it.
+            }
+        }
 
         setProfile(p);
-        setLicenses(Array.isArray(l?.licenses) ? l.licenses : []);
+        setLicenses(nextLicenses);
     }, [authedFetch]);
 
     useEffect(() => {

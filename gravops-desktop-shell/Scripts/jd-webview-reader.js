@@ -508,7 +508,21 @@
     .map((group) => ({ name: group.name, value: group.selected }));
   const selectedSpecMap = Object.fromEntries(selectedSaleSpecs.map((item) => [item.name, item.value]));
   const brand = getParam(['品牌']);
-  const model = getParam(['型号', '商品型号', '货号']) || skuId;
+  const isLikelyJdSku = (value) => /^\d{8,}$/.test(String(value || '').trim());
+  const extractModelToken = (value) => {
+    const textValue = clean(value);
+    if (!textValue) return '';
+    const tokens = textValue.match(/[A-Za-z]{1,}[A-Za-z0-9-]{2,}\d[A-Za-z0-9-]*/g) || [];
+    return tokens.find((token) => !isLikelyJdSku(token)) || '';
+  };
+  const modelCandidates = [
+    getParam(['认证型号']),
+    getParam(['型号', '商品型号', '货号']),
+    extractModelToken(getParam(['国补备案型号'])),
+    ...selectedSaleSpecs.map((item) => extractModelToken(item.value)),
+    extractModelToken(title)
+  ].filter(Boolean);
+  const model = modelCandidates.find((value) => !isLikelyJdSku(value)) || '';
   const itemNo = getParam(['货号']);
   const categoryPath = Array.from(new Set(Array.from(document.querySelectorAll('.crumb .link, .crumb .item'))
     .map((item) => clean(item.textContent))

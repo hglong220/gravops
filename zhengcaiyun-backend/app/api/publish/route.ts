@@ -8,6 +8,39 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "Content-Type, Authorization"
 }
 
+function isLikelyJdSku(value: string | null | undefined): boolean {
+    return /^\d{8,}$/.test(String(value || '').trim())
+}
+
+function extractModelToken(text: string | null | undefined): string {
+    const value = String(text || '').trim()
+    if (!value) return ''
+    const tokens = value.match(/[A-Za-z]{1,}[A-Za-z0-9-]{2,}\d[A-Za-z0-9-]*/g) || []
+    return tokens.find(token => !isLikelyJdSku(token)) || ''
+}
+
+function resolvePublishModel(
+    title: string,
+    storedModel: string | null | undefined,
+    attributes: Record<string, any>,
+    skuData: any
+): string {
+    const candidates = [
+        attributes?.['认证型号'],
+        attributes?.['型号'],
+        attributes?.['商品型号'],
+        attributes?.['货号'],
+        extractModelToken(attributes?.['国补备案型号']),
+        extractModelToken(skuData?.selectedSaleSpecs?.[0]?.value),
+        extractModelToken(skuData?.specGroups?.[0]?.selected),
+        !isLikelyJdSku(storedModel) ? storedModel : '',
+        !isLikelyJdSku(skuData?.model) ? skuData?.model : '',
+        extractModelToken(title)
+    ]
+
+    return String(candidates.find(value => value && !isLikelyJdSku(String(value))) || '').trim()
+}
+
 export async function OPTIONS() {
     return NextResponse.json({}, { headers: corsHeaders })
 }
@@ -78,6 +111,8 @@ export async function POST(request: NextRequest) {
         const images = safeJsonParse(draft.images, [])
         const attributes = safeJsonParse(draft.attributes, {})
         const skuData = safeJsonParse(draft.skuData, {})
+        const draftCategoryPath = parseCategoryPath(draft.categoryPath)
+        const publishModel = resolvePublishModel(draft.title, draft.model, attributes, skuData)
 
         // 4. 构造发布数据
         const publishData = {
@@ -99,7 +134,7 @@ export async function POST(request: NextRequest) {
             product: {
                 title: draft.title,
                 brand: draft.brand || '',
-                model: draft.model || '',
+                model: publishModel || '',
                 price: draft.price || 0,
                 stock: draft.stock || 99,
                 images,
@@ -107,6 +142,7 @@ export async function POST(request: NextRequest) {
                 skuData,
                 detailHtml: draft.detailHtml || '',
                 detailImages: safeJsonParse(draft.detailImages, []),
+                categoryPath: draftCategoryPath,
                 originalUrl: draft.originalUrl,
                 shopName: draft.shopName
             }
@@ -143,4 +179,42 @@ function safeJsonParse(str: string | null | undefined, defaultValue: any): any {
     } catch {
         return defaultValue
     }
+}
+
+function parseCategoryPath(value: string | null | undefined): string[] {
+    if (!value) return []
+    try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+        if (typeof parsed === "string") {
+            return splitCategoryPath(parsed)
+        }
+    } catch {
+        return splitCategoryPath(value)
+    }
+    return []
+}
+
+function splitCategoryPath(value: string): string[] {
+    const normalized = value.trim()
+    if (!normalized) return []
+    if (normalized.includes(">")) {
+        return normalized.split(">").map(s => s.trim()).filter(Boolean)
+    }
+
+    const level1WithSlash = [
+        "办公设备/耗材",
+        "五金/工具"
+    ]
+    for (const level1 of level1WithSlash) {
+        if (normalized === level1) return [level1]
+        if (normalized.startsWith(`${level1}/`)) {
+            return [
+                level1,
+                ...normalized.slice(level1.length + 1).split("/").map(s => s.trim()).filter(Boolean)
+            ]
+        }
+    }
+
+    return normalized.split(",").map(s => s.trim()).filter(Boolean)
 }

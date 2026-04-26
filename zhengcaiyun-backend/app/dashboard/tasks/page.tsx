@@ -3,6 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+declare global {
+  interface Window {
+    chrome?: {
+      webview?: {
+        postMessage?: (message: unknown) => void
+      }
+    }
+  }
+}
+
 type ProductDraft = {
   id: string
   title: string
@@ -264,7 +274,7 @@ export default function TaskPage() {
         throw new Error(data?.error || data?.details || '发布准备失败')
       }
 
-      window.postMessage({
+      const publishMessage = {
         type: 'TRIGGER_ZCY_PUBLISH',
         data: {
           ...data.publishData.product,
@@ -272,13 +282,18 @@ export default function TaskPage() {
           zcyUrl: data.publishData.zcyUrl,
           template: data.publishData.template
         }
-      }, window.location.origin)
+      }
 
-      setTimeout(() => {
-        if (document.visibilityState === 'visible') {
-          window.open(data.publishData.zcyUrl, '_blank')
-        }
-      }, 800)
+      if (window.chrome?.webview?.postMessage) {
+        window.chrome.webview.postMessage(publishMessage)
+      } else {
+        window.postMessage(publishMessage, window.location.origin)
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            window.open(data.publishData.zcyUrl, '_blank')
+          }
+        }, 800)
+      }
     } catch (error: any) {
       alert(error?.message || '发布准备失败')
     }
@@ -315,6 +330,29 @@ export default function TaskPage() {
         licenseKey = userData.licenseKey || ''
       } catch (e) {
         console.error('解析用户信息失败:', e)
+      }
+
+      if (!licenseKey) {
+        const licenseRes = await authedFetch('/api/licenses/my')
+        const licenseData = await licenseRes.json().catch(() => ({}))
+        const currentLicense = Array.isArray(licenseData?.licenses) ? licenseData.licenses[0] : null
+
+        if (currentLicense?.key) {
+          licenseKey = currentLicense.key
+          try {
+            const userData = JSON.parse(user)
+            localStorage.setItem(
+              'user',
+              JSON.stringify({
+                ...userData,
+                licenseKey,
+                license: currentLicense
+              })
+            )
+          } catch {
+            // Ignore malformed local storage; the resolved license can still be used now.
+          }
+        }
       }
 
       if (!licenseKey) {

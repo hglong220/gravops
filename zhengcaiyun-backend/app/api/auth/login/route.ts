@@ -43,6 +43,22 @@ export async function POST(request: NextRequest) {
             { expiresIn: '7d' }
         )
 
+        const activeLicense = await prisma.license.findFirst({
+            where: {
+                userId: user.id,
+                status: 'active',
+                expiresAt: { gt: new Date() }
+            },
+            orderBy: { expiresAt: 'desc' },
+            select: {
+                id: true,
+                key: true,
+                companyName: true,
+                plan: true,
+                expiresAt: true
+            }
+        })
+
         return NextResponse.json({
             message: '登录成功',
             token,
@@ -52,7 +68,17 @@ export async function POST(request: NextRequest) {
                 phone: user.phone,
                 email: user.email,
                 name: user.name,
-                companyName: user.companyName
+                companyName: user.companyName,
+                licenseKey: activeLicense?.key || null,
+                license: activeLicense
+                    ? {
+                        id: activeLicense.id,
+                        key: activeLicense.key,
+                        companyName: activeLicense.companyName,
+                        plan: activeLicense.plan,
+                        expiresAt: activeLicense.expiresAt.getTime()
+                    }
+                    : null
             }
         })
     } catch (error) {
