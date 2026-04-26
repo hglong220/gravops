@@ -66,7 +66,7 @@ function extractFormFields(): any[] {
             }
         }
 
-        if (!label && input.placeholder) label = input.placeholder;
+        if (!label && 'placeholder' in input && input.placeholder) label = input.placeholder;
         if (!label && input.name) label = input.name;
 
         // 判断必填

@@ -169,6 +169,7 @@ function IndexPopup() {
             });
 
             const zcyCompanyName = result[0]?.result;
+            console.log("[Activation] ZCY company:", zcyCompanyName);
 
             if (!zcyCompanyName) {
                 setError("无法从政采云提取公司名称，请确保已登录");
@@ -192,6 +193,10 @@ function IndexPopup() {
                             // ignore
                         }
                     }
+                } else if (verifyResult.code === 'COMPANY_MISMATCH') {
+                    const bound = verifyResult.boundCompanyName || "未知";
+                    const submitted = verifyResult.submittedCompanyName || zcyCompanyName;
+                    setError(`授权公司不匹配。\n授权绑定：${bound}\n当前政采云：${submitted}\n请使用该公司对应的授权码，或在后台重新绑定授权公司。`);
                 } else if (verifyResult.code === 'DEVICE_LIMIT') {
                     const cur = verifyResult.currentDevices ?? 0;
                     const max = verifyResult.maxDevices ?? 0;

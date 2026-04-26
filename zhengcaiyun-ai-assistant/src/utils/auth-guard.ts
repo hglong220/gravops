@@ -3,7 +3,7 @@
  * 在执行采集/发布操作前验证授权状态
  */
 
-import { getStoredLicense, extractZcyCompanyInfo, verifyLicense, fullVerification, type LicenseInfo } from './license';
+import { getStoredLicense, extractZcyCompanyInfo, verifyLicense, type LicenseInfo } from './license';
 
 export interface AuthGuardResult {
     authorized: boolean;
@@ -37,7 +37,7 @@ export async function quickAuthCheck(): Promise<AuthGuardResult> {
     }
 
     // 检查状态
-    if (license.status !== 'active') {
+    if ((license.status || 'active') !== 'active') {
         return {
             authorized: false,
             error: `授权状态异常: ${license.status}`,
@@ -82,7 +82,10 @@ export async function fullAuthGuard(): Promise<AuthGuardResult> {
 
     // 联网验证
     try {
-        const result = await verifyLicense(license.licenseKey, zcyCompanyInfo || undefined);
+        const result = await verifyLicense(
+            license.licenseKey,
+            zcyCompanyInfo?.companyName || license.companyName
+        );
 
         if (!result.valid) {
             return {
@@ -153,5 +156,5 @@ export function withAuthGuard<T extends (...args: any[]) => Promise<any>>(
  */
 export async function shouldShowActivation(): Promise<boolean> {
     const license = await getStoredLicense();
-    return !license?.licenseKey || license.status !== 'active';
+    return !license?.licenseKey || (license.status || 'active') !== 'active';
 }

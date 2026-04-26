@@ -204,7 +204,7 @@ export const DomUtil = {
 
     /** 根据 label 文本在表单中找"那一行" */
     findFormRowByLabel(label: string, altLabels: string[] = []): HTMLElement | null {
-        const targetNames = [label, ...altLabels].map(this.normalizeLabel)
+        const targetNames = [label, ...altLabels].map((name) => this.normalizeLabel(name))
 
         // 更全面的标签选择器
         const labelSelectors = [

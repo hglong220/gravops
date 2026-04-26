@@ -124,8 +124,11 @@ export default function Options() {
                     licenseKey,
                     companyName: data.companyName,
                     plan: data.plan,
+                    status: "active",
                     expiresAt: data.expiresAt,
                     userId: data.userId,
+                    maxDevices: data.maxDevices,
+                    currentDevices: data.currentDevices,
                     activatedAt: Date.now()
                 }
 

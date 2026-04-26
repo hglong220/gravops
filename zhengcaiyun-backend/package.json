@@ -7,6 +7,8 @@
         "build": "next build",
         "start": "next start",
         "lint": "next lint",
+        "smoke:local": "node scripts/smoke-local.js",
+        "smoke:bind-company": "node scripts/bind-smoke-license-company.js",
         "prisma:generate": "prisma generate",
         "prisma:push": "prisma db push"
     },

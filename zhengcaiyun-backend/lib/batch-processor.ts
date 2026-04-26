@@ -1,9 +1,10 @@
 import { prisma } from './prisma';
-import { scrapeJDProduct } from './scrapers/jd-product-scraper';
+import { readJdProductViaCdp } from './scrapers/jd-cdp-product-reader';
 import { scrapeTmallProduct } from './scrapers/tmall-scraper';
 import { scrapeTaobaoProduct } from './scrapers/taobao-scraper';
 import { scrapeSuningProduct } from './scrapers/suning-scraper';
 import { detectPlatform, Platform } from './url-detector';
+import { withScrapeLock } from './scrape-lock';
 
 /**
  * 批量处理pending状态的商品草稿
@@ -94,7 +95,10 @@ export async function processSingleDraft(draftId: string, url: string): Promise<
     // 根据平台调用不同爬虫
     switch (platform) {
         case 'jd':
-            productData = await scrapeJDProduct(url);
+            productData = await withScrapeLock(
+                () => readJdProductViaCdp(url),
+                { maxConcurrency: 1, maxWaitMs: 15000 }
+            );
             break;
         case 'tmall':
             productData = await scrapeTmallProduct(url);
@@ -110,6 +114,8 @@ export async function processSingleDraft(draftId: string, url: string): Promise<
     }
 
     // 更新草稿
+    const normalizedProductData = productData as any;
+
     await prisma.productDraft.update({
         where: { id: draftId },
         data: {
@@ -117,8 +123,11 @@ export async function processSingleDraft(draftId: string, url: string): Promise<
             images: JSON.stringify(productData.images),
             attributes: JSON.stringify(productData.attributes),
             detailHtml: productData.detailHtml,
+            detailImages: JSON.stringify(normalizedProductData.detailImages || []),
             skuData: JSON.stringify(productData.skuData),
             shopName: productData.shopName || platform.toUpperCase(),
+            brand: normalizedProductData.brand || undefined,
+            model: normalizedProductData.model || normalizedProductData.skuData?.model || undefined,
             status: 'scraped'
         }
     });

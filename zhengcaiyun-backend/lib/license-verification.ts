@@ -87,7 +87,8 @@ export async function verifyLicenseOrThrow(input: VerifyLicenseInput): Promise<L
 
     if (!isMatch) {
         throw new LicenseVerificationError('授权验证失败：公司信息不匹配', 403, 'COMPANY_MISMATCH', {
-            boundCompanyName: license.companyName
+            boundCompanyName: license.companyName,
+            submittedCompanyName: companyName
         });
     }
 
@@ -131,4 +132,3 @@ export async function verifyLicenseOrThrow(input: VerifyLicenseInput): Promise<L
 
     return updatedLicense;
 }
-

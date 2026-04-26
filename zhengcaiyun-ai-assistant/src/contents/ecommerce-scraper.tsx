@@ -455,6 +455,73 @@ function parseDescriptionImages(htmlContent: string): string[] {
     return cleanImages
 }
 
+async function fetchJDDescriptionViaBackground(skuId: string): Promise<string[]> {
+    if (!skuId) return []
+
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'JD_DESCRIPTION_PROXY', skuId }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn('[JD] 详情图后台代理失败:', chrome.runtime.lastError.message)
+                resolve([])
+                return
+            }
+
+            if (!response?.ok) {
+                console.warn('[JD] 详情图后台代理返回失败:', response?.error || response?.status)
+                resolve([])
+                return
+            }
+
+            const content =
+                typeof response.data === 'string'
+                    ? response.data
+                    : typeof response.data?.content === 'string'
+                        ? response.data.content
+                        : ''
+
+            const images = parseDescriptionImages(content)
+            console.log(`[JD] 通过后台代理获取详情图: ${images.length} 张`)
+            resolve(images)
+        })
+    })
+}
+
+async function ensureJDDetailImagesLoaded(): Promise<void> {
+    const originalX = window.scrollX
+    const originalY = window.scrollY
+
+    try {
+        const detailTab = Array.from(document.querySelectorAll<HTMLElement>('li, a, span, div')).find((el) => {
+            const text = (el.textContent || '').trim()
+            if (!text || text.length > 12) return false
+            return text.includes('商品详情') || text === '详情'
+        })
+        detailTab?.click()
+
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
+        const detailRoot =
+            document.querySelector('#graphic-content') ||
+            document.querySelector('#sx-product-detail') ||
+            document.querySelector('#J-detail-content') ||
+            document.querySelector('#detail')
+
+        if (detailRoot) {
+            ; (detailRoot as HTMLElement).scrollIntoView({ block: 'start' })
+        } else {
+            window.scrollTo({ top: Math.max(document.body.scrollHeight * 0.45, window.innerHeight), left: 0 })
+        }
+
+        for (let i = 0; i < 5; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 450))
+            window.scrollBy(0, Math.round(window.innerHeight * 0.75))
+        }
+    } finally {
+        window.scrollTo(originalX, originalY)
+        await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+}
+
 /**
  * 截取京东详情区域作为详情图
  * 
@@ -626,6 +693,10 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
             let u = String(raw || "").trim()
             if (!u) return null
             if (u.startsWith("data:")) return null
+            if (u.startsWith("//")) u = `https:${u}`
+            else if (u.startsWith("/jfs/")) u = `https://img10.360buyimg.com/n1${u}`
+            else if (u.startsWith("jfs/")) u = `https://img10.360buyimg.com/n1/${u}`
+            else if (/^s\d+x\d+_jfs\//i.test(u)) u = `https://img10.360buyimg.com/n1/${u}`
 
             // 使用 new URL() 正确处理相对路径，避免 Invalid URL 错误
             try {
@@ -710,6 +781,22 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
     }
 
     // 规格参数提取 - 简单参数列表
+    if (images.length < 9) {
+        document.querySelectorAll("#spec-list li, #spec-list img, .spec-items li, .spec-items img, .lh li, .lh img").forEach((node) => {
+            const el = node as HTMLElement
+            const img = (el.tagName.toLowerCase() === 'img' ? el : el.querySelector('img')) as HTMLImageElement | null
+            if (!img) return
+            addImg(
+                img.getAttribute("data-url") ||
+                img.getAttribute("data-origin") ||
+                img.getAttribute("data-src") ||
+                img.getAttribute("data-lazy-img") ||
+                img.getAttribute("src")
+            )
+        })
+        console.log(`[JD] 缩略图补充后主图数量: ${images.length}`)
+    }
+
     const attributes: Record<string, string> = {}
     document.querySelectorAll([
         "#parameter-brand li",
@@ -769,6 +856,8 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
     const derived = deriveBrandModelFromTitle(title || "")
 
     // 详情图提取
+    await ensureJDDetailImagesLoaded()
+
     const detailImages: string[] = []
     const seenDetail = new Set<string>()
 
@@ -801,7 +890,7 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
         if (lower.includes('/s300x300')) return false
         if (lower.includes('/s400x400')) return false
         // 带 _ 的尺寸前缀
-        if (/\/s\d+x\d+_/.test(lower)) return false
+        // 不再整体过滤 /s数字x数字_ 前缀；京东部分详情图也会使用这种路径。
 
         // ========== 必须是有效的京东图片 ==========
         // 只要是 360buyimg.com 就可以（放宽条件，不再要求 /jfs/）
@@ -856,6 +945,48 @@ async function extractJdHint(url: string, mw?: any, networkData?: Record<string,
     }
 
     // SKU 规格组 - 优先使用网络拦截/main-world 数据
+    if (detailImages.length < 3 && skuId) {
+        const proxyImages = await fetchJDDescriptionViaBackground(skuId)
+        for (const imgUrl of proxyImages) {
+            addDetail(imgUrl)
+        }
+        console.log(`[JD] 合并后台代理后详情图: ${detailImages.length} 张`)
+    }
+
+    if (false && detailImages.length < 3) {
+        const mainImageSet = new Set(images.map((img) => normalizeImg(img)).filter(Boolean))
+        const loadedUrls = new Set<string>()
+
+        document.querySelectorAll('img').forEach((node) => {
+            const img = node as HTMLImageElement
+            const raw =
+                img.currentSrc ||
+                img.src ||
+                img.getAttribute('data-lazyload') ||
+                img.getAttribute('data-src') ||
+                img.getAttribute('data-lazy-img') ||
+                ''
+            if (raw && raw.includes('360buyimg.com')) loadedUrls.add(raw)
+        })
+
+        try {
+            performance.getEntriesByType('resource').forEach((entry) => {
+                const raw = (entry as PerformanceResourceTiming).name
+                if (raw && raw.includes('360buyimg.com')) loadedUrls.add(raw)
+            })
+        } catch { }
+
+        let addedFromLoaded = 0
+        for (const raw of loadedUrls) {
+            const normalized = normalizeImg(raw)
+            if (!normalized || mainImageSet.has(normalized)) continue
+            const before = detailImages.length
+            addDetail(normalized)
+            if (detailImages.length > before) addedFromLoaded++
+        }
+        console.log(`[JD] 从已加载图片/网络资源补充详情图: +${addedFromLoaded}, 当前 ${detailImages.length} 张`)
+    }
+
     const netSku = networkData?.jd_sku_extracted
     const colorSizeSource = netSku?.colorSize || netProduct?.colorSize || mw?.colorSize
     const specGroups = extractJdSpecGroups(normalizeImg, colorSizeSource)

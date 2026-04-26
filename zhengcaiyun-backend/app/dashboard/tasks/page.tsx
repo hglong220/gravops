@@ -128,6 +128,9 @@ export default function TaskPage() {
   const [missingNotice, setMissingNotice] = useState('')
   const [permissionChecking, setPermissionChecking] = useState(false)
   const [permissionStats, setPermissionStats] = useState<{ total: number; valid: number; invalid: number } | null>(null)
+  const [jdUrl, setJdUrl] = useState('')
+  const [jdSubmitting, setJdSubmitting] = useState(false)
+  const [jdMessage, setJdMessage] = useState('')
 
   const authedFetch = async (path: string, init: RequestInit = {}) => {
     const token = localStorage.getItem('token')
@@ -218,9 +221,67 @@ export default function TaskPage() {
     }
   }
 
-  const handlePublish = (id: string) => {
-    const url = `https://www.zcygov.cn/goods-center/goods/category/attr/select?draft_id=${id}`
-    window.open(url, '_blank')
+  const handleReadJdProduct = async () => {
+    const url = jdUrl.trim()
+    if (!url) {
+      setJdMessage('请先粘贴京东商品链接')
+      return
+    }
+    if (!url.includes('jd.com') && !url.includes('jd.hk')) {
+      setJdMessage('请输入有效的京东商品链接')
+      return
+    }
+
+    try {
+      setJdSubmitting(true)
+      setJdMessage('正在读取京东商品信息...')
+      const res = await authedFetch('/api/copy/jd', {
+        method: 'POST',
+        body: JSON.stringify({ url })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || data?.details || '读取失败')
+      }
+      setJdUrl('')
+      setJdMessage('已保存到任务中心')
+      await fetchData()
+    } catch (error: any) {
+      setJdMessage(error?.message || '读取失败')
+    } finally {
+      setJdSubmitting(false)
+    }
+  }
+
+  const handlePublish = async (id: string) => {
+    try {
+      const res = await authedFetch('/api/publish', {
+        method: 'POST',
+        body: JSON.stringify({ draftId: id })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success || !data?.publishData?.product) {
+        throw new Error(data?.error || data?.details || '发布准备失败')
+      }
+
+      window.postMessage({
+        type: 'TRIGGER_ZCY_PUBLISH',
+        data: {
+          ...data.publishData.product,
+          draftId: data.publishData.draftId,
+          zcyUrl: data.publishData.zcyUrl,
+          template: data.publishData.template
+        }
+      }, window.location.origin)
+
+      setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          window.open(data.publishData.zcyUrl, '_blank')
+        }
+      }, 800)
+    } catch (error: any) {
+      alert(error?.message || '发布准备失败')
+    }
   }
 
   const handleCheckPermissions = async () => {
@@ -325,7 +386,9 @@ export default function TaskPage() {
 
   const handleBatchPublish = () => {
     if (!selectedIds.size) return alert('请先选择商品')
-    selectedIds.forEach((id) => handlePublish(id))
+    selectedIds.forEach((id) => {
+      void handlePublish(id)
+    })
   }
 
   const openEditModal = (product: ProductDraft) => {
@@ -466,6 +529,30 @@ export default function TaskPage() {
       </div>
 
       {/* 批量操作按钮 */}
+      <div className="flex-shrink-0 mb-4 bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex flex-col lg:flex-row gap-3">
+          <input
+            value={jdUrl}
+            onChange={(event) => setJdUrl(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleReadJdProduct()
+            }}
+            className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+            placeholder="粘贴京东商品链接"
+          />
+          <button
+            onClick={handleReadJdProduct}
+            disabled={jdSubmitting}
+            className="px-4 py-2 bg-black text-white rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {jdSubmitting ? '读取中...' : '读取京东商品'}
+          </button>
+        </div>
+        {jdMessage && (
+          <div className="text-xs text-gray-500 mt-2">{jdMessage}</div>
+        )}
+      </div>
+
       <div className="flex justify-end gap-2 flex-shrink-0 mb-4">
         <button
           onClick={handleCheckPermissions}

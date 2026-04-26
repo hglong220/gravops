@@ -426,7 +426,7 @@ class AutoPublisher {
             const allImages = [...images, ...detailImages]
             console.log('[AutoPublisher] 📷 合并后总图片数:', allImages.length)
 
-            const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(allImages)
+            const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(images, detailImages)
             console.log(`[AutoPublisher] ✓ 图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
         } catch (e) {
             console.error('[AutoPublisher] 图片上传异常:', e)

@@ -2,7 +2,8 @@
  * 批量上传管理器
  */
 
-import { ProductData, uploadProduct } from './zcy-dom';
+import { uploadProduct } from './zcy-dom';
+import type { ProductData } from './zcy-dom';
 import { searchProductImages } from '../services/image-search';
 import { analyzeCategory, captureScreenshot } from '../services/ai-service';
 

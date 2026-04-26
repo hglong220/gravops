@@ -493,7 +493,7 @@ async function stepUploadImages(state: OrchestratorState): Promise<void> {
     if (allImages.length > 0) {
         // 不再限制数量，上传全部图片
         logRPA(`一键上传图片 ${allImages.length} 张（主图+详情图）...`)
-        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(allImages)
+        const { mainCount, detailCount } = await AutoFillAIEngine.uploadAllImages(state.images || [], state.detailImages || [])
         logRPA(`图片上传完成: 主图 ${mainCount} 张, 详情图 ${detailCount} 张`)
     }
 

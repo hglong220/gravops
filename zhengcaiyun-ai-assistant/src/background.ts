@@ -263,7 +263,7 @@ async function handlePublishRequest(productData: any) {
         console.log('[Background] Saved pending product to storage');
 
         // 3. 构造发布页面URL
-        const publishUrl = buildPublishUrl(productData, config);
+        const publishUrl = productData.zcyUrl || buildPublishUrl(productData, config);
         console.log('[Background] Publish URL:', publishUrl);
 
         // 4. 创建新Tab

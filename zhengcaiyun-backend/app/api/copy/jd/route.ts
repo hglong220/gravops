@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getActorFromRequest } from '@/lib/request-actor';
-import { scrapeJDProduct } from '@/lib/scrapers/jd-product-scraper';
+import { readJdProductViaCdp } from '@/lib/scrapers/jd-cdp-product-reader';
+import { withScrapeLock } from '@/lib/scrape-lock';
 
 // 辅助函数：在型号的字母和数字之间自动加空格
 function addSpaceToModel(model: string | null | undefined): string {
@@ -21,6 +22,34 @@ function calculatePrices(skuData: any): { marketPrice?: number; price?: number }
         marketPrice: marketPrice,
         price: salePrice
     };
+}
+
+function hasUsableJdDraft(draft: any): boolean {
+    const parse = (value: string | null | undefined, fallback: any) => {
+        if (!value) return fallback;
+        try {
+            return JSON.parse(value);
+        } catch {
+            return fallback;
+        }
+    };
+
+    const images = parse(draft.images, []);
+    const detailImages = parse(draft.detailImages, []);
+    const attributes = parse(draft.attributes, {});
+    const skuData = parse(draft.skuData, {});
+
+    return (
+        Array.isArray(images) &&
+        images.length > 0 &&
+        Array.isArray(detailImages) &&
+        detailImages.length > 0 &&
+        attributes &&
+        Object.keys(attributes).length > 0 &&
+        skuData &&
+        typeof skuData === 'object' &&
+        Object.keys(skuData).length > 0
+    );
 }
 
 /**
@@ -66,7 +95,7 @@ export async function POST(request: NextRequest) {
             }
         });
 
-        if (existing && existing.status === 'scraped') {
+        if (existing && existing.status === 'scraped' && hasUsableJdDraft(existing)) {
             return NextResponse.json({
                 success: true,
                 draft: existing,
@@ -76,14 +105,28 @@ export async function POST(request: NextRequest) {
 
         // 爬取商品数据
         console.log('[API /copy/jd] Scraping product data...');
-        const productData = await scrapeJDProduct(url);
+        let productData;
+        try {
+            productData = await withScrapeLock(
+                () => readJdProductViaCdp(url),
+                { maxConcurrency: 1, maxWaitMs: 15_000 }
+            );
+        } catch (err) {
+            if ((err as Error)?.message === 'SCRAPE_BUSY') {
+                return NextResponse.json(
+                    { error: '当前已有商品读取任务在运行，请稍后再试' },
+                    { status: 503 }
+                );
+            }
+            throw err;
+        }
 
         // 保存到数据库
         let draft;
         if (existing) {
             // ⭐ 优先从 skuData.model 提取型号（已确保与价格一致）
-            const extractedBrand = productData.attributes?.['品牌'] || undefined;
-            const extractedModel = productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || undefined;
+            const extractedBrand = productData.brand || productData.attributes?.['品牌'] || undefined;
+            const extractedModel = productData.model || productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || productData.attributes?.['货号'] || undefined;
             const cleanedModel = addSpaceToModel(extractedModel);
 
             // ⭐ 采集器已经选择了最便宜的SKU，price就是市场价
@@ -99,6 +142,7 @@ export async function POST(request: NextRequest) {
                     images: JSON.stringify(productData.images),
                     attributes: JSON.stringify(productData.attributes),
                     detailHtml: productData.detailHtml,
+                    detailImages: JSON.stringify(productData.detailImages || []),
                     skuData: JSON.stringify(productData.skuData),
                     shopName: productData.shopName || '京东',
                     status: 'scraped',
@@ -110,8 +154,8 @@ export async function POST(request: NextRequest) {
             });
         } else {
             // ⭐ 优先从 skuData.model 提取型号（已确保与价格一致）
-            const extractedBrand = productData.attributes?.['品牌'] || undefined;
-            const extractedModel = productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || undefined;
+            const extractedBrand = productData.brand || productData.attributes?.['品牌'] || undefined;
+            const extractedModel = productData.model || productData.skuData?.model || productData.attributes?.['型号'] || productData.attributes?.['商品型号'] || productData.attributes?.['货号'] || undefined;
             const cleanedModel = addSpaceToModel(extractedModel);
 
             // ⭐ 采集器已经选择了最便宜的SKU，price就是市场价
@@ -126,6 +170,7 @@ export async function POST(request: NextRequest) {
                     images: JSON.stringify(productData.images),
                     attributes: JSON.stringify(productData.attributes),
                     detailHtml: productData.detailHtml,
+                    detailImages: JSON.stringify(productData.detailImages || []),
                     skuData: JSON.stringify(productData.skuData),
                     shopName: productData.shopName || '京东',
                     status: 'scraped',

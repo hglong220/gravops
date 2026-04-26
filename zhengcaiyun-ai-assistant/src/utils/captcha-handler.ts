@@ -2,8 +2,6 @@
  * Chrome Extension 验证码处理工具
  */
 
-import { storage } from '~/storage';
-
 /**
  * 检测页面是否出现验证码
  */
@@ -87,7 +85,7 @@ export async function solveCaptcha(params: {
     sliderImage?: string;
     instruction?: string;
 }): Promise<{ success: boolean; solution?: string; error?: string }> {
-    const licenseKey = await storage.get('licenseKey');
+    const { licenseKey } = await chrome.storage.local.get('licenseKey');
 
     if (!licenseKey) {
         throw new Error('未找到License Key');

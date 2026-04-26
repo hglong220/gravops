@@ -3,7 +3,7 @@
   "displayName": "政采云智能助手",
   "version": "0.1.0",
   "description": "AI-powered automation tool for Zhengcaiyun platform",
-  "author": "Your Company",
+  "author": "GravOps",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
@@ -32,6 +32,8 @@
     "typescript": "5.3.3"
   },
   "manifest": {
+    "name": "政采云智能助手",
+    "description": "政采云商品采集与发布助手",
     "host_permissions": [
       "<all_urls>"
     ],

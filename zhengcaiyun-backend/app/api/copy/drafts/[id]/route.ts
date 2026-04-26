@@ -67,6 +67,7 @@ export async function GET(
             attributes: draft.attributes ? JSON.parse(draft.attributes) : {},
             skuData: draft.skuData ? JSON.parse(draft.skuData) : {},
             images: draft.images ? JSON.parse(draft.images) : [],
+            detailImages: draft.detailImages ? JSON.parse(draft.detailImages) : [],
             categoryPath: parsedCategoryPath
         };
 

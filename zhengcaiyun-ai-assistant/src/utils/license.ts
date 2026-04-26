@@ -11,7 +11,21 @@ export interface LicenseVerifyResult {
   userId?: string | null
   maxDevices?: number
   currentDevices?: number
+  boundCompanyName?: string
+  submittedCompanyName?: string
   token?: string
+}
+
+export interface LicenseInfo {
+  licenseKey: string
+  companyName: string
+  activatedAt?: number
+  expiresAt?: number
+  plan?: string
+  status?: string
+  userId?: string | null
+  maxDevices?: number
+  currentDevices?: number
 }
 
 async function getBackendUrl(): Promise<string> {
@@ -61,6 +75,7 @@ export async function storeLicense(
   const licenseInfo = {
     licenseKey,
     companyName,
+    status: "active",
     activatedAt: Date.now()
   }
 
@@ -72,16 +87,21 @@ export async function storeLicense(
   })
 }
 
-export async function getStoredLicense(): Promise<
-  { licenseKey: string; companyName: string } | null
-> {
+export async function getStoredLicense(): Promise<LicenseInfo | null> {
   const result = await chrome.storage.local.get(["licenseKey", "licenseInfo", "license"])
 
   // 新版：明文存储 + licenseInfo
   if (result.licenseKey && result.licenseInfo?.companyName) {
     return {
       licenseKey: result.licenseKey,
-      companyName: result.licenseInfo.companyName
+      companyName: result.licenseInfo.companyName,
+      activatedAt: result.licenseInfo.activatedAt,
+      expiresAt: result.licenseInfo.expiresAt,
+      plan: result.licenseInfo.plan,
+      status: result.licenseInfo.status || "active",
+      userId: result.licenseInfo.userId ?? null,
+      maxDevices: result.licenseInfo.maxDevices,
+      currentDevices: result.licenseInfo.currentDevices
     }
   }
 
@@ -92,11 +112,30 @@ export async function getStoredLicense(): Promise<
       // 自动迁移到新版存储结构
       await storeLicense(legacy.licenseKey, legacy.companyName)
       await chrome.storage.local.remove(["license"])
-      return legacy
+      return { ...legacy, status: "active", activatedAt: Date.now() }
     }
   }
 
   return null
+}
+
+export function extractZcyCompanyInfo(): { companyName: string } | null {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      "[class*='company'], [class*='corp'], [class*='supplier'], [class*='merchant'], .user-info, .account-info"
+    )
+  )
+
+  for (const el of candidates) {
+    const text = el.textContent?.trim()
+    if (text && /公司|集团|商贸|科技|有限|供应商/.test(text)) {
+      return { companyName: text.replace(/\s+/g, " ") }
+    }
+  }
+
+  const bodyText = document.body?.innerText || ""
+  const match = bodyText.match(/[\u4e00-\u9fa5A-Za-z0-9（）()]{2,80}(?:公司|集团|商贸|科技|有限公司|供应商)/)
+  return match ? { companyName: match[0] } : null
 }
 
 export async function verifyLicense(
@@ -128,7 +167,9 @@ export async function verifyLicense(
         plan: data?.plan,
         userId: data?.userId ?? null,
         maxDevices: data?.maxDevices,
-        currentDevices: data?.currentDevices
+        currentDevices: data?.currentDevices,
+        boundCompanyName: data?.boundCompanyName,
+        submittedCompanyName: data?.submittedCompanyName
       }
     }
 

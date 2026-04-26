@@ -72,3 +72,10 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# .NET desktop shell
+gravops-desktop-shell/bin/
+gravops-desktop-shell/obj/
+.dotnet/
+_analysis/
+_build-check/
