@@ -1,0 +1,103 @@
+[
+  {
+    "id": "jd-self-operated-normal",
+    "description": "普通京东自营商品：主图 + 详情图都正常",
+    "productUrl": "https://item.jd.com/100222835900.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "Continental", "贵州大曲"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": false
+  },
+  {
+    "id": "pcpubliccms-detail",
+    "description": "详情图走 pcpubliccms 的商品",
+    "productUrl": "https://item.jd.com/10175701975024.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "Continental", "贵州大曲"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": false
+  },
+  {
+    "id": "imgzone-jfs-detail",
+    "description": "详情图走 imgzone/jfs 的商品",
+    "productUrl": "https://item.jd.com/10212092790260.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "Continental", "贵州大曲"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": false
+  },
+  {
+    "id": "lazy-loaded-detail",
+    "description": "有懒加载详情图的商品",
+    "productUrl": "https://item.jd.com/10147792910743.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "ADIPRENE"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": true
+  },
+  {
+    "id": "detail-html-only",
+    "description": "DOM 为空但详情接口有图的商品",
+    "productUrl": "https://item.jd.com/100239025529.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Goodyear", "Continental"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": true
+  },
+  {
+    "id": "recommendation-ad-interference",
+    "description": "有推荐商品/广告图干扰的商品",
+    "productUrl": "https://item.jd.com/10214410568573.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["TANGO", "Continental"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": true
+  },
+  {
+    "id": "multi-sku",
+    "description": "多 SKU 商品",
+    "productUrl": "https://item.jd.com/100228835900.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "Goodyear"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": true
+  },
+  {
+    "id": "spu-shared-detail",
+    "description": "SPU 通用详情商品",
+    "productUrl": "https://item.jd.com/10147937056058.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 0, "max": 80 },
+    "forbiddenBrandKeywords": ["Nike", "Goodyear"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": true
+  },
+  {
+    "id": "sequential-a",
+    "description": "连续采集 A：用于验证不会串图",
+    "productUrl": "https://item.jd.com/100222835900.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 1, "max": 80 },
+    "forbiddenBrandKeywords": ["Continental", "贵州大曲"],
+    "forbiddenPreviousProductImages": [],
+    "allowModelMismatchWarning": false
+  },
+  {
+    "id": "sequential-b-empty-reason",
+    "description": "连续采集 B / 详情图为空时必须有明确错误原因",
+    "productUrl": "https://item.jd.com/10212092790260.html",
+    "expectedMainImages": { "min": 1, "max": 20 },
+    "expectedDetailImages": { "min": 0, "max": 80 },
+    "forbiddenBrandKeywords": ["Continental", "贵州大曲"],
+    "forbiddenPreviousProductImages": ["sequential-a"],
+    "allowModelMismatchWarning": true,
+    "requireEmptyDetailReason": true
+  }
+]

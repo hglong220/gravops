@@ -1,0 +1,22 @@
+{
+  "tag": "jd-image-reader-stable-v1",
+  "commit": "bfb65b6",
+  "contractVersion": 1,
+  "snapshots": [
+    {
+      "id": "contract-baseline",
+      "productId": "contract",
+      "mainImages": ["https://img10.360buyimg.com/n1/jfs/example-main.jpg"],
+      "detailImages": ["https://img10.360buyimg.com/imgzone/jfs/example-detail.jpg"],
+      "sourceDistribution": {
+        "main_dom": 1,
+        "main_script": 0,
+        "detail_html": 1,
+        "detail_dom": 0,
+        "network_fallback": 0
+      },
+      "warnings": [],
+      "errors": []
+    }
+  ]
+}

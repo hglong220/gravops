@@ -7,6 +7,7 @@
         "build": "next build",
         "start": "next start",
         "lint": "next lint",
+        "test:jd-image": "node scripts/jd-image-regression.mjs",
         "smoke:local": "node scripts/smoke-local.js",
         "smoke:bind-company": "node scripts/bind-smoke-license-company.js",
         "prisma:generate": "prisma generate",
