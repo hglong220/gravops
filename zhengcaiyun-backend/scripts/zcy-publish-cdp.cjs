@@ -21,6 +21,7 @@ const TEXT = {
   confirm: '\u786e\u5b9a',
   cancel: '\u53d6\u6d88',
   chooseMarket: '\u9009\u62e9\u5356\u573a',
+  modify: '\u4fee\u6539',
   chooseMarketTitle: '\u9009\u62e9\u4e0a\u67b6\u7684\u7535\u5b50\u5356\u573a',
   onlineMarket: '\u7f51\u4e0a\u8d85\u5e02',
   bidPrefix: '\u6807\u9879\u540d\u79f0',
@@ -196,8 +197,9 @@ async function openMarketDialog(page) {
   const existing = await waitForMarketDialog(page, 1000);
   if (existing) return existing;
 
-  const clicked = await clickVisibleByText(page, TEXT.chooseMarket, 3000);
-  if (!clicked) throw new Error('Choose market button not found');
+  const clicked = await clickVisibleByText(page, TEXT.chooseMarket, 3000)
+    || await clickVisibleByText(page, TEXT.modify, 3000);
+  if (!clicked) throw new Error('Choose market/modify button not found');
 
   const dialog = await waitForMarketDialog(page, 8000);
   if (!dialog) throw new Error('Choose market dialog did not open');
