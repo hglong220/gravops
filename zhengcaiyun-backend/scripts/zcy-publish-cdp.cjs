@@ -100,6 +100,106 @@ function getModel(data) {
   return data.model || data.attributes?.[TEXT.model] || data.attributes?.model || '';
 }
 
+function toObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {}
+  }
+  return {};
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function buildPublishFieldValues(data, path) {
+  const attributes = toObject(data.attributes);
+  const skuData = toObject(data.skuData);
+  const categoryText = path.join('>');
+  const title = String(data.title || '');
+  const brand = getBrand(data);
+  const model = getModel(data);
+  const price = positiveNumber(data.price) || positiveNumber(data.marketPrice) || positiveNumber(skuData.price);
+  const stock = data.stock || skuData.stock || skuData.skuList?.[0]?.stock || 99;
+  const unit = /打印机|复印机|扫描仪|传真|投影机|一体机|保险箱|碎纸机|装订机/.test(categoryText) ? '台' : '件';
+  const values = new Map();
+
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value !== undefined && value !== null && String(value).trim()) values.set(normalizeLabel(key), String(value).trim());
+  }
+
+  const put = (labels, value) => {
+    if (value === undefined || value === null || String(value).trim() === '') return;
+    for (const label of labels) values.set(normalizeLabel(label), String(value).trim());
+  };
+
+  put(['商品标题'], shortenTitleForZcy(title, brand, model, path[path.length - 1] || ''));
+  put(['品牌', '品牌名称'], brand);
+  put(['型号', '商品型号', '规格型号', '认证型号'], model);
+  put(['电商平台链接', '电商链接', '商品链接', '原始链接', '来源链接'], data.originalUrl);
+  put(['计量单位', '单位', '销售单位'], unit);
+  put(['产地', '制造商所在区域'], '境内');
+  put(['是否中小企业制造产品', '是否中小企业制造商品'], '否');
+  put(['是否需要安装', '需要安装'], '否');
+  put(['商品编号', '商品编码', 'SKU编码'], data.originalId || skuData.skuId || attributes['商品编号']);
+  put(['生产厂商', '生产厂家', '生产商', '制造商名称'], attributes['生产厂商'] || attributes['制造商'] || attributes['厂家'] || brand);
+  put(['产品标准分类'], path[path.length - 1]);
+  put(['质保时间', '质保时间 (个月)', '保修时间'], attributes['质保时间'] || attributes['保修时间'] || '12');
+  put(['产品详情'], buildProductDescription(data, attributes, path));
+  put(['运费模板'], '__FIRST_OPTION__');
+  put(['库存'], stock);
+  if (price) {
+    put(['市场价', '销售价', '供价'], price);
+  }
+
+  if (/A4/i.test(title) || /A4/i.test(attributes['国补备案型号'] || '')) put(['最大打印幅面'], 'A4');
+  if (/A3/i.test(title) || /A3/i.test(attributes['国补备案型号'] || '')) put(['最大打印幅面'], 'A3');
+  if (/wifi|wi-fi|无线/i.test(title)) put(['是否支持网络打印'], '是');
+  if (/非自动双面|不支持/.test(attributes['双面打印'] || '')) put(['是否支持自动双面打印'], '否');
+  if (/自动双面/.test(attributes['双面打印'] || '')) put(['是否支持自动双面打印'], '是');
+  if (/USB3\.0/i.test(title)) put(['接口类型'], 'USB3.0');
+  else if (/USB/i.test(title)) put(['接口类型'], 'USB2.0');
+
+  if (/激光打印机/.test(categoryText)) {
+    put(['耗材类型'], attributes['耗材类型'] || '硒鼓');
+    put(['供纸盒容量', '供纸盒容量 (张)'], attributes['供纸盒容量'] || '250页');
+    put(['最大分辨率', '最大分辨率 (dpi)'], attributes['最大分辨率'] || '600*600dpi');
+  }
+
+  if (/LBP621Cw/i.test(model) || /LBP621Cw/i.test(title)) {
+    put(['产品尺寸', '产品尺寸（长宽高）(mm)', '产品尺寸（长*宽*高）(mm)'], attributes['产品尺寸'] || '430*418*287mm');
+  }
+
+  return values;
+}
+
+function normalizeLabel(text) {
+  return normalize(String(text || '').replace(/[:：?？*＊]/g, ''));
+}
+
+function shortenTitleForZcy(title, brand, model, categoryName) {
+  const parts = [brand, model, categoryName].filter(Boolean).join(' ');
+  const fallback = title || parts;
+  const result = parts || fallback;
+  return result.length > 70 ? result.slice(0, 70) : result;
+}
+
+function buildProductDescription(data, attributes, path) {
+  const lines = [
+    data.title,
+    `品牌：${getBrand(data) || attributes['品牌'] || ''}`,
+    `型号：${getModel(data) || attributes['认证型号'] || ''}`,
+    `类目：${path.join(' > ')}`,
+    data.originalUrl ? `电商平台链接：${data.originalUrl}` : '',
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
 function deriveBidName(path) {
   const joined = path.join('>');
   const level1 = path[0] || '';
@@ -517,6 +617,269 @@ async function selectDropdownField(page, label, value, required = false) {
   return true;
 }
 
+async function waitForPublishForm(page, timeout = 12000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const count = await page.locator('.el-form-item, .doraemon-form-item, tr, [class*="form-item"]').count().catch(() => 0);
+    const text = await page.locator('body').innerText({ timeout: 1000 }).catch(() => '');
+    if (count > 8 && (text.includes('基本信息') || text.includes('销售信息'))) return;
+    await page.waitForTimeout(300);
+  }
+}
+
+async function discoverFormFields(page) {
+  return page.evaluate(() => {
+    const normalize = text => String(text || '').replace(/\s+/g, '').replace(/[()（）:：?？*＊]/g, '').trim().toLowerCase();
+    const rows = Array.from(document.querySelectorAll('.el-form-item, .doraemon-form-item, tr, [class*="form-item"], [class*="attr-item"]'));
+    const result = [];
+    let id = 0;
+    for (const row of rows) {
+      const htmlRow = row;
+      const labelNode = htmlRow.querySelector('.el-form-item__label, .doraemon-form-item-label, .doraemon-form-label, label, th, td:first-child, [class*="label"]');
+      const rawLabel = labelNode?.innerText?.trim() || '';
+      const label = rawLabel.replace(/[*＊]/g, '').trim();
+      if (!label || label.length > 30) continue;
+      const fieldId = htmlRow.getAttribute('data-zcy-cdp-field') || `zcy_cdp_field_${++id}_${Date.now()}`;
+      htmlRow.setAttribute('data-zcy-cdp-field', fieldId);
+      const required = rawLabel.includes('*') || rawLabel.includes('＊') || htmlRow.className.includes('required') || !!htmlRow.querySelector('[class*="required"]');
+      const input = htmlRow.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]), textarea');
+      const editable = htmlRow.querySelector('[contenteditable="true"], .ql-editor, [class*="editor"] [contenteditable]');
+      const iframeEditor = htmlRow.querySelector('iframe');
+      const hasControl = htmlRow.querySelector('input, textarea, .el-select, .doraemon-select, .el-radio, .doraemon-radio, .el-checkbox, .doraemon-checkbox');
+      if (!hasControl && !editable && !iframeEditor) continue;
+      const radios = Array.from(htmlRow.querySelectorAll('.el-radio, .doraemon-radio, label')).map(el => el.innerText?.trim()).filter(Boolean);
+      const checks = Array.from(htmlRow.querySelectorAll('.el-checkbox, .doraemon-checkbox, label')).map(el => el.innerText?.trim()).filter(Boolean);
+      result.push({
+        id: fieldId,
+        label,
+        key: normalize(label),
+        required,
+        disabled: !!(input && (input.disabled || input.readOnly)) || htmlRow.className.includes('is-disabled'),
+        current: input?.value || '',
+        hasInput: !!input,
+        hasEditable: !!editable,
+        hasIframeEditor: !!iframeEditor,
+        hasSelect: !!htmlRow.querySelector('.el-select, .doraemon-select, [class*="select"]'),
+        radios,
+        checks,
+      });
+    }
+    return result;
+  });
+}
+
+async function fillPublishPage(page, data, path) {
+  if (!/\/goods\/(publish|edit)/.test(page.url())) return;
+  await waitForPublishForm(page);
+  const values = buildPublishFieldValues(data, path);
+  const seen = new Set();
+  const totals = { filled: 0, skipped: 0 };
+
+  await fillVisiblePublishFields(page, values, seen, totals, 4);
+
+  if (await clickVisibleByText(page, '\u56fe\u6587\u4fe1\u606f', 2000)) {
+    await page.waitForTimeout(1000);
+    await fillVisiblePublishFields(page, values, seen, totals, 2);
+  }
+
+  if (await clickVisibleByText(page, '\u9500\u552e\u4fe1\u606f', 2000)) {
+    await page.waitForTimeout(1000);
+    await fillVisiblePublishFields(page, values, seen, totals, 3);
+  }
+
+  await fillSkuSalesTable(page, data);
+
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
+  console.log(`[ZCY-CDP] publish form fill complete: filled=${totals.filled}, missingRequiredCandidates=${totals.skipped}`);
+}
+
+async function fillSkuSalesTable(page, data) {
+  const skuData = toObject(data.skuData);
+  const stock = String(data.stock || skuData.stock || skuData.skuList?.[0]?.stock || 99);
+  const skuId = String(data.originalId || skuData.skuId || skuData.skuList?.[0]?.skuId || '');
+  const url = String(data.originalUrl || '');
+  const price = positiveNumber(data.price) || positiveNumber(data.marketPrice) || positiveNumber(skuData.price);
+
+  const filled = await page.evaluate(({ stock, skuId, url, price }) => {
+    const table = document.querySelector('.sku-table, [class*="sku-table"], [class*="sku"]');
+    if (!table) return [];
+    const inputs = Array.from(table.querySelectorAll('input')).filter(input => !input.disabled && !input.readOnly);
+    const setValue = (input, value) => {
+      if (!input || value === undefined || value === null || String(value) === '') return false;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, String(value));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+    const result = [];
+    if (price && setValue(inputs[0], price)) result.push('市场价');
+    if (price && setValue(inputs[1], price)) result.push('销售价');
+    if (setValue(inputs[2], stock)) result.push('库存');
+    if (setValue(inputs[3], skuId)) result.push('SKU编码');
+    if (setValue(inputs[4], url)) result.push('电商链接');
+    return result;
+  }, { stock, skuId, url, price });
+
+  if (filled.length) console.log(`[ZCY-CDP] filled SKU sales table: ${filled.join(', ')}`);
+}
+
+async function fillVisiblePublishFields(page, values, seen, totals, passes) {
+  for (let pass = 0; pass < passes; pass += 1) {
+    const fields = await discoverFormFields(page);
+    for (const field of fields) {
+      if (seen.has(field.id) || field.disabled) continue;
+      const value = values.get(field.key);
+      if (!value) {
+        totals.skipped += field.required ? 1 : 0;
+        continue;
+      }
+      const ok = await fillPublishField(page, field, value);
+      if (ok) {
+        seen.add(field.id);
+        totals.filled += 1;
+        console.log(`[ZCY-CDP] filled ${field.label}: ${value === '__FIRST_OPTION__' ? '(first option)' : value}`);
+      }
+    }
+    await page.mouse.wheel(0, Math.floor((await page.viewportSize())?.height || 900) * 0.75).catch(() => {});
+    await page.waitForTimeout(600);
+  }
+}
+
+async function fillPublishField(page, field, value) {
+  const row = page.locator(`[data-zcy-cdp-field="${field.id}"]`).first();
+  if (!(await row.count().catch(() => 0))) return false;
+  await row.scrollIntoViewIfNeeded().catch(() => {});
+
+  if (field.radios?.length) {
+    const option = row.locator('.el-radio, .doraemon-radio, label').filter({ hasText: String(value) }).first();
+    if (await option.count().catch(() => 0)) {
+      await option.click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(250);
+      return true;
+    }
+  }
+
+  if (field.checks?.length) {
+    const option = row.locator('.el-checkbox, .doraemon-checkbox, label').filter({ hasText: String(value) }).first();
+    if (await option.count().catch(() => 0)) {
+      await option.click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(250);
+      return true;
+    }
+  }
+
+  if (field.hasEditable || field.hasIframeEditor) {
+    const filledEditor = await fillEditorInRow(page, row, value);
+    if (filledEditor) return true;
+  }
+
+  if (field.hasSelect && value === '__FIRST_OPTION__') {
+    return selectOptionInRow(page, row, value);
+  }
+
+  if (field.hasSelect && !field.hasInput) {
+    return selectOptionInRow(page, row, value);
+  }
+
+  const input = row.locator('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]), textarea').first();
+  if (await input.count().catch(() => 0)) {
+    const editable = await input.evaluate(el => !el.disabled && !el.readOnly).catch(() => false);
+    if (!editable) return false;
+    await input.click({ timeout: 3000 }).catch(() => {});
+    await input.fill(String(value)).catch(async () => {
+      await input.evaluate((el, v) => {
+        const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        setter?.call(el, String(v));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, String(value));
+    });
+    await page.waitForTimeout(300);
+    if (field.hasSelect) {
+      await chooseOpenDropdownOption(page, value).catch(() => {});
+    }
+    return true;
+  }
+
+  if (field.hasSelect) return selectOptionInRow(page, row, value);
+
+  return false;
+}
+
+async function fillEditorInRow(page, row, value) {
+  const editable = row.locator('[contenteditable="true"], .ql-editor, [class*="editor"] [contenteditable]').first();
+  if (await editable.count().catch(() => 0)) {
+    await editable.click({ timeout: 3000 }).catch(() => {});
+    await editable.evaluate((el, v) => {
+      el.innerHTML = String(v).split('\n').map(line => `<p>${line.replace(/[<>&]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]))}</p>`).join('');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, String(value));
+    await page.waitForTimeout(300);
+    return true;
+  }
+
+  const iframe = row.locator('iframe').first();
+  const frameElement = await iframe.elementHandle().catch(() => null);
+  const frame = await frameElement?.contentFrame().catch(() => null);
+  if (frame) {
+    await frame.evaluate(value => {
+      const body = document.body;
+      const escape = text => String(text).replace(/[<>&]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
+      body.innerHTML = String(value).split('\n').map(line => `<p>${escape(line)}</p>`).join('');
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      body.dispatchEvent(new Event('change', { bubbles: true }));
+    }, String(value));
+    await page.waitForTimeout(300);
+    return true;
+  }
+
+  return false;
+}
+
+async function selectOptionInRow(page, row, value) {
+  const trigger = row.locator('.el-select, .doraemon-select, [role="combobox"], [class*="select"]').first();
+  if (!(await trigger.count().catch(() => 0))) return false;
+  await trigger.click({ timeout: 3000 }).catch(async () => {
+    await trigger.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+  });
+  await page.waitForTimeout(400);
+  if (value === '__FIRST_OPTION__') return chooseFirstOpenDropdownOption(page);
+  return chooseOpenDropdownOption(page, value);
+}
+
+async function chooseOpenDropdownOption(page, value) {
+  const wanted = String(value).trim();
+  const option = page.locator('.el-select-dropdown:not([style*="display: none"]) li, .el-select-dropdown li, .doraemon-select-dropdown li, [class*="dropdown"] li, [class*="option"]')
+    .filter({ hasText: wanted })
+    .first();
+  if (await option.count().catch(() => 0)) {
+    await option.click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(250);
+    return true;
+  }
+  await page.keyboard.press('Escape').catch(() => {});
+  return false;
+}
+
+async function chooseFirstOpenDropdownOption(page) {
+  const options = page.locator('.el-select-dropdown:not([style*="display: none"]) li:not(.is-disabled), .el-select-dropdown li:not(.is-disabled), .doraemon-select-dropdown li, [class*="dropdown"] li:not(.is-disabled), [class*="option"]:not(.is-disabled)');
+  const count = await options.count().catch(() => 0);
+  for (let i = 0; i < count; i += 1) {
+    const option = options.nth(i);
+    if (!(await option.isVisible().catch(() => false))) continue;
+    const text = (await option.innerText().catch(() => '')).trim();
+    if (!text || text.includes('请输入') || text.includes('搜索')) continue;
+    await option.click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(250);
+    return true;
+  }
+  await page.keyboard.press('Escape').catch(() => {});
+  return false;
+}
+
 async function clickNextAndVerify(page) {
   const button = page.locator('button, .el-button, [role="button"]').filter({ hasText: TEXT.next }).first();
   if (!(await button.count().catch(() => 0))) {
@@ -568,7 +931,9 @@ async function main() {
     await clickNextAndVerify(page);
   }
 
-  console.log('[ZCY-CDP] category phase complete');
+  await fillPublishPage(page, payload, path);
+
+  console.log('[ZCY-CDP] category and form phase complete');
 }
 
 main()
