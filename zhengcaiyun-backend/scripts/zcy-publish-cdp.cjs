@@ -436,7 +436,6 @@ async function selectCategoryPath(page, path) {
 
   console.log(`[ZCY-CDP] selecting category: ${path.join(' > ')}`);
   await closeBlockingDialogs(page);
-  await resetCategorySelection(page);
   const columns = await waitForCategoryColumns(page);
   if (!columns.selector) throw new Error('No ZCY category columns found');
 
