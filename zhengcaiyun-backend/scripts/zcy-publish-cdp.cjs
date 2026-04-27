@@ -104,6 +104,9 @@ function deriveBidName(path) {
   const joined = path.join('>');
   const level1 = path[0] || '';
   const level2 = path[1] || '';
+  if (/打印机|复印机|扫描仪|传真|投影机|一体机|保险箱|碎纸机|装订机/.test(joined)) {
+    return '\u529e\u516c\u8bbe\u5907';
+  }
   if (joined.includes('\u4e94\u91d1') || joined.includes('\u5de5\u5177')) return '\u4e94\u91d1\u5de5\u5177';
   if (joined.includes('\u8ba1\u7b97\u673a')) return '\u8ba1\u7b97\u673a\u8bbe\u5907';
   if (joined.includes('\u52b3\u52a8\u4fdd\u62a4')) return '\u52b3\u52a8\u4fdd\u62a4\u7528\u54c1';
@@ -238,30 +241,50 @@ async function expandOnlineMarket(page, dialog) {
 }
 
 async function selectBidInMarketDialog(page, dialog, bidName) {
+  const exactPattern = new RegExp(`\\u6807\\u9879\\u540d\\u79f0\\s*[:\\uff1a]\\s*${escapeRegExp(bidName)}(?:\\s|$)`);
+  const exactCell = dialog.locator('td, span, div, label').filter({ hasText: exactPattern });
+  const exactCount = await exactCell.count().catch(() => 0);
+  for (let i = 0; i < exactCount; i += 1) {
+    const cell = exactCell.nth(i);
+    if (!(await cell.isVisible().catch(() => false))) continue;
+    const text = await cell.innerText().catch(() => '');
+    if (!exactPattern.test(text)) continue;
+    const row = cell.locator('xpath=ancestor-or-self::*[self::tr or contains(@class,"row") or contains(@class,"table-row")][1]');
+    if (await clickBidRowRadio(page, row, bidName)) return true;
+  }
+
   const rowLocator = dialog.locator('tr, .doraemon-table-row, [class*="table-row"], [class*="row"], label')
-    .filter({ hasText: bidName });
+    .filter({ hasText: exactPattern });
   const count = await rowLocator.count().catch(() => 0);
   for (let i = 0; i < count; i += 1) {
     const row = rowLocator.nth(i);
     if (!(await row.isVisible().catch(() => false))) continue;
     const text = await row.innerText().catch(() => '');
-    if (!text.includes(bidName)) continue;
-
-    const radio = row.locator('input[type="radio"], .doraemon-radio, .el-radio, [role="radio"]').first();
-    if (await radio.count().catch(() => 0)) {
-      await radio.click({ timeout: 3000 }).catch(async () => {
-        await radio.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
-      });
-    } else {
-      await row.click({ timeout: 3000 }).catch(async () => {
-        await row.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
-      });
-    }
-    await page.waitForTimeout(500);
-    console.log(`[ZCY-CDP] selected market bid: ${bidName}`);
-    return true;
+    if (!exactPattern.test(text)) continue;
+    if (await clickBidRowRadio(page, row, bidName)) return true;
   }
   return false;
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function clickBidRowRadio(page, row, bidName) {
+  if (!(await row.count().catch(() => 0))) return false;
+  const radio = row.locator('input[type="radio"], .doraemon-radio, .el-radio__input, .el-radio__inner, .el-radio, [role="radio"]').first();
+  if (await radio.count().catch(() => 0)) {
+    await radio.click({ timeout: 3000 }).catch(async () => {
+      await radio.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+    });
+  } else {
+    await row.click({ timeout: 3000 }).catch(async () => {
+      await row.evaluate(el => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).catch(() => {});
+    });
+  }
+  await page.waitForTimeout(500);
+  console.log(`[ZCY-CDP] selected market bid: ${bidName}`);
+  return true;
 }
 
 async function ensureSaleMarketForCategory(page, path) {
