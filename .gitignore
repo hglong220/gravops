@@ -76,6 +76,7 @@ htmlcov/
 # .NET desktop shell
 gravops-desktop-shell/bin/
 gravops-desktop-shell/obj/
+gravops-desktop-shell/publish/
 .dotnet/
 _analysis/
 _build-check/
