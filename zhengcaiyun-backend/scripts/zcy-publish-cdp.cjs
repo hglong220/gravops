@@ -36,6 +36,7 @@ if (!payloadPath && !scanOptionsOnly) throw new Error('Missing --payload');
 const CATEGORY_ITEM_SELECTOR = 'li, [role="treeitem"], .category-item, .el-cascader-node';
 const BACKEND_URL = process.env.GRAVOPS_BACKEND_URL || 'http://localhost:3000';
 const phaseStarts = new Map();
+const imageBufferCache = new Map();
 
 function startPhase(name) {
   phaseStarts.set(name, Date.now());
@@ -822,7 +823,7 @@ async function fillPublishPage(page, data, path) {
   console.log(`[ZCY-CDP] image upload phase complete: main=${imageResult.mainCount}, detail=${imageResult.detailCount}`);
 
   if (await clickVisibleByText(page, '\u56fe\u6587\u4fe1\u606f', 2000)) {
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(300);
     startPhase('graphic-tab-fields');
     await fillVisiblePublishFields(page, values, seen, totals, 1, data, path);
     endPhase('graphic-tab-fields');
@@ -838,7 +839,7 @@ async function fillPublishPage(page, data, path) {
   }
 
   if (await clickVisibleByText(page, '\u9500\u552e\u4fe1\u606f', 2000)) {
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(300);
     startPhase('sales-tab-fields');
     await fillVisiblePublishFields(page, values, seen, totals, 1, data, path);
     endPhase('sales-tab-fields');
@@ -1148,6 +1149,12 @@ async function downloadImageToTemp(url, dir, prefix, index) {
   const normalized = normalizeImageUrl(url);
   let buffer = null;
   let contentType = 'image/jpeg';
+  const cached = imageBufferCache.get(normalized);
+  if (cached?.buffer?.length) {
+    const filePath = nodePath.join(dir, `${prefix}_${index + 1}${extensionFromContentType(cached.contentType || contentType)}`);
+    await fs.promises.writeFile(filePath, cached.buffer);
+    return filePath;
+  }
 
   if (normalized.startsWith('data:image/')) {
     const parsed = dataUrlToBuffer(normalized);
@@ -1183,6 +1190,9 @@ async function downloadImageToTemp(url, dir, prefix, index) {
       contentType = payload.contentType || parsed.contentType || contentType;
     }
   }
+  if (buffer?.length && imageBufferCache.size < 120) {
+    imageBufferCache.set(normalized, { buffer, contentType });
+  }
 
   const filePath = nodePath.join(dir, `${prefix}_${index + 1}${extensionFromContentType(contentType)}`);
   await fs.promises.writeFile(filePath, buffer);
@@ -1194,7 +1204,7 @@ async function prepareImageFiles(urls, prefix) {
   const dir = await fs.promises.mkdtemp(nodePath.join(os.tmpdir(), `gravops-zcy-${prefix}-`));
   const files = new Array(urls.length);
   let next = 0;
-  const workerCount = Math.min(4, urls.length);
+  const workerCount = Math.min(6, urls.length);
   const workers = Array.from({ length: workerCount }, async () => {
     while (next < urls.length) {
       const i = next;
@@ -1226,6 +1236,11 @@ async function uploadProductImages(page, data) {
 }
 
 async function uploadMainImages(page, urls) {
+  const existing = await countAttachedProductImages(page);
+  if (existing >= Math.min(urls.length, 8)) {
+    console.log(`[ZCY-CDP] skip main image upload: existing=${existing}, required=${Math.min(urls.length, 8)}`);
+    return existing;
+  }
   const prepared = await prepareImageFiles(urls, 'main');
   if (!prepared.files.length) {
     await cleanupPreparedFiles(prepared);
@@ -1347,6 +1362,27 @@ async function countAttachedProductImages(page) {
     if (!contain) return 0;
     return Array.from(contain.querySelectorAll('img')).filter(visible).length;
   }).catch(() => 0);
+}
+
+async function countDetailEditorImages(page) {
+  const state = await getDetailEditorState(page);
+  return state.imageCount;
+}
+
+async function getDetailEditorState(page) {
+  const editorFrames = page.frames().filter(frame => frame !== page.mainFrame());
+  const counts = await Promise.all(editorFrames.map(frame => frame.evaluate(() => {
+    const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+    const bodyHtml = document.body?.innerHTML || '';
+    if (!bodyHtml) return { text: '', imageCount: 0 };
+    if (!bodyText && !bodyHtml.includes('<img')) return { text: '', imageCount: 0 };
+    return { text: bodyText, imageCount: document.images?.length || 0 };
+  }).catch(() => ({ text: '', imageCount: 0 }))));
+  return counts.reduce((best, item) => {
+    const imageCount = Math.max(best.imageCount, item.imageCount || 0);
+    const text = (item.text || '').length > best.text.length ? item.text : best.text;
+    return { text, imageCount };
+  }, { text: '', imageCount: 0 });
 }
 
 async function selectRecentlyUploadedImages(page, modal, expectedCount) {
@@ -1488,6 +1524,11 @@ async function setFilesOnFirstPageInput(page, files, labelHints) {
 async function uploadDetailImages(page, data) {
   const urls = getDetailImageUrls(data);
   if (!urls.length) return 0;
+  const existing = await countDetailEditorImages(page);
+  if (existing >= Math.min(urls.length, 8)) {
+    console.log(`[ZCY-CDP] skip detail image upload: existing=${existing}, required=${Math.min(urls.length, 8)}`);
+    return existing;
+  }
   const prepared = await prepareImageFiles(urls, 'detail');
   if (!prepared.files.length) {
     await cleanupPreparedFiles(prepared);
@@ -1593,9 +1634,9 @@ async function fillVisiblePublishFields(page, values, seen, totals, passes, data
       if (!field.required) continue;
       const decision = await decidePublishFieldValue(page, field, values, data, path);
       if (decision.skip) {
-        if (decision.reason === 'already-filled') seen.add(field.id);
+        if (String(decision.reason || '').startsWith('already-filled')) seen.add(field.id);
         else totals.skipped += 1;
-        if (decision.reason !== 'already-filled') console.log(`[ZCY-CDP] skip ${field.label}: ${decision.reason}`);
+        if (!String(decision.reason || '').startsWith('already-filled')) console.log(`[ZCY-CDP] skip ${field.label}: ${decision.reason}`);
         continue;
       }
       const value = decision.value;
@@ -1615,15 +1656,21 @@ async function fillVisiblePublishFields(page, values, seen, totals, passes, data
       }
     }
     await page.mouse.wheel(0, Math.floor((await page.viewportSize())?.height || 900) * 0.75).catch(() => {});
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(250);
   }
 }
 
 async function decidePublishFieldValue(page, field, values, data, path) {
   const row = page.locator(`[data-zcy-cdp-field="${field.id}"]`).first();
-  const existing = await getMeaningfulFieldValue(row, field).catch(() => '');
   const type = field.controlType || (field.hasSelect ? 'select' : field.radios?.length ? 'radio' : field.checks?.length ? 'checkbox' : 'input');
   const label = String(field.label || '').trim();
+  if (type === 'richtext') {
+    const editorState = await getDetailEditorState(page);
+    if (editorState.imageCount > 0 || editorState.text.length > 20) {
+      return { skip: true, reason: `already-filled-richtext:${editorState.imageCount}images`, existing: editorState.text };
+    }
+  }
+  const existing = await getMeaningfulFieldValue(row, field).catch(() => '');
 
   if (existing && shouldKeepExistingFieldValue(label, type)) {
     return { skip: true, reason: 'already-filled', existing };
