@@ -62,31 +62,34 @@ export default function DashboardLayout({
     ];
 
     return (
-        <div className="h-screen overflow-hidden bg-gray-50 flex">
+        <div className="h-screen overflow-hidden bg-slate-50 flex">
             {/* Sidebar */}
-            <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 flex flex-col h-full ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 flex flex-col h-full ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 {/* Logo */}
-                <div className="h-16 flex items-center justify-center px-6 border-b border-gray-100">
+                <div className="h-16 flex items-center justify-center px-6 border-b border-slate-100">
                     <Link href="/" className="flex items-center gap-2">
-                        <img src="/icon48.plasmo.aced7582.png" alt="Logo" className="w-8 h-8" />
-                        <span className="text-xl font-bold text-gray-900">Gravops</span>
+                        <img src="/icon48.plasmo.aced7582.png" alt="Logo" className="w-8 h-8 rounded-lg" />
+                        <span className="text-xl font-bold text-slate-800 tracking-wide">Gravops</span>
                     </Link>
                 </div>
 
                 {/* Nav Items */}
-                <nav className="flex-1 px-4 py-6 space-y-1">
+                <nav className="flex-1 px-3 py-5 space-y-0.5">
                     {navItems.map((item) => {
                         const isActive = pathname === item.href;
                         return (
                             <Link
                                 key={item.name}
                                 href={item.href}
-                                className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-colors ${isActive
-                                    ? 'bg-black text-white shadow-md'
-                                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                    }`}
+                                className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150 ${
+                                    isActive
+                                        ? 'bg-indigo-50 text-indigo-700'
+                                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                }`}
                             >
-                                <span className={`mr-3 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                                <span className={`mr-3 ${
+                                    isActive ? 'text-indigo-600' : 'text-slate-400'
+                                }`}>
                                     {item.icon}
                                 </span>
                                 {item.name}
@@ -96,12 +99,12 @@ export default function DashboardLayout({
                 </nav>
 
                 {/* User Profile */}
-                <div className="px-4 pt-4 pb-8 border-t border-gray-100">
+                <div className="px-3 pt-3 pb-6 border-t border-slate-100">
                     <div
                         onClick={handleLogout}
-                        className="flex items-center justify-center px-6 py-3 rounded-xl bg-red-600 cursor-pointer hover:bg-red-700 transition-colors"
+                        className="flex items-center justify-center px-6 py-2.5 rounded-lg border border-rose-200 text-rose-500 cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 transition-all duration-150"
                     >
-                        <span className="text-white font-medium tracking-widest">退出登录</span>
+                        <span className="text-sm font-medium">退出登录</span>
                     </div>
                 </div>
             </aside>

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,15 +14,17 @@ public sealed class MainForm : Form
 {
     private const string BackendUrl = "http://localhost:3000";
     private const int ZcyCdpPort = 9223;
-    private static readonly Color AppBackground = Color.FromArgb(244, 244, 244);
+    private const int DwmwaCaptionColor = 35;
+    private const int DwmwaTextColor = 36;
+    private static readonly Color AppBackground = Color.FromArgb(243, 242, 241);
     private static readonly Color Surface = Color.White;
-    private static readonly Color Border = Color.FromArgb(224, 224, 224);
-    private static readonly Color TextStrong = Color.FromArgb(22, 22, 22);
-    private static readonly Color TextMuted = Color.FromArgb(82, 82, 82);
-    private static readonly Color Accent = Color.FromArgb(15, 98, 254);
-    private static readonly Color AccentHover = Color.FromArgb(0, 80, 230);
-    private static readonly Color BrowserChrome = Color.FromArgb(244, 244, 244);
-    private static readonly Color BrowserChromeBorder = Color.FromArgb(224, 224, 224);
+    private static readonly Color Border = Color.FromArgb(209, 209, 209);
+    private static readonly Color TextStrong = Color.FromArgb(36, 36, 36);
+    private static readonly Color TextMuted = Color.FromArgb(97, 97, 97);
+    private static readonly Color Accent = Color.FromArgb(15, 108, 189);
+    private static readonly Color AccentHover = Color.FromArgb(17, 94, 163);
+    private static readonly Color BrowserChrome = Color.FromArgb(243, 242, 241);
+    private static readonly Color BrowserChromeBorder = Color.FromArgb(200, 198, 196);
     private static readonly Font UiFont = new("Microsoft YaHei UI", 9.5f);
     private static readonly Font UiFontMedium = new("Microsoft YaHei UI", 9.5f, FontStyle.Regular);
     private readonly WebView2 appView = new();
@@ -54,6 +57,9 @@ public sealed class MainForm : Form
     private readonly Button nativeRefreshButton = new();
     private readonly Button nativeReadButton = new();
     private readonly List<NativeDraft> nativeDrafts = new();
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
     private sealed class NativeDraft
     {
@@ -99,6 +105,7 @@ public sealed class MainForm : Form
         Width = 1500;
         Height = 960;
         StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(1100, 720);
         BackColor = AppBackground;
         Font = UiFont;
         var appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -124,6 +131,27 @@ public sealed class MainForm : Form
         FormClosing += (_, _) => StopBackend();
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyNativeTitleBarColor();
+    }
+
+    private void ApplyNativeTitleBarColor()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return;
+
+        var captionColor = ToColorRef(AppBackground);
+        var textColor = ToColorRef(TextStrong);
+        DwmSetWindowAttribute(Handle, DwmwaCaptionColor, ref captionColor, sizeof(int));
+        DwmSetWindowAttribute(Handle, DwmwaTextColor, ref textColor, sizeof(int));
+    }
+
+    private static int ToColorRef(Color color)
+    {
+        return color.R | (color.G << 8) | (color.B << 16);
+    }
+
     private void BuildLayout()
     {
         var root = new SplitContainer
@@ -135,7 +163,7 @@ public sealed class MainForm : Form
         };
         root.HandleCreated += (_, _) =>
         {
-            root.Panel1MinSize = 320;
+            root.Panel1MinSize = 360;
             root.Panel2MinSize = 720;
             root.SplitterDistance = Math.Max(root.Panel1MinSize, root.Width / 4);
         };
@@ -150,7 +178,7 @@ public sealed class MainForm : Form
         appShell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
         appShell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         appShell.Controls.Add(BuildDesktopSidebar(), 0, 0);
-        appShell.Controls.Add(BuildAppViewHost(), 1, 0);
+        appShell.Controls.Add(BuildAppContentShell(), 1, 0);
         root.Panel1.Controls.Add(appShell);
 
         var rightPanel = new TableLayoutPanel
@@ -160,22 +188,23 @@ public sealed class MainForm : Form
             ColumnCount = 1,
             BackColor = AppBackground
         };
-        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
         rightPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         rightPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
 
         var toolbar = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 8,
-            Padding = new Padding(8, 7, 8, 5),
+            ColumnCount = 9,
+            Padding = new Padding(8, 6, 8, 6),
             BackColor = BrowserChrome
         };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 122));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
@@ -190,7 +219,7 @@ public sealed class MainForm : Form
         addressBox.Font = UiFont;
         addressBox.ForeColor = TextStrong;
         addressBox.BackColor = Surface;
-        addressBox.Margin = new Padding(4, 3, 8, 3);
+        addressBox.Margin = new Padding(4, 2, 0, 2);
         addressBox.KeyDown += async (_, e) =>
         {
             if (e.KeyCode == Keys.Enter)
@@ -201,13 +230,14 @@ public sealed class MainForm : Form
         };
         toolbar.Controls.Add(addressBox, 3, 0);
 
-        toolbar.Controls.Add(MakeButton("读取当前商品", async () => await ReadCurrentJdAsync()), 4, 0);
+        toolbar.Controls.Add(MakeButton("读取商品", async () => await ReadCurrentJdAsync()), 5, 0);
 
         browserView.Dock = DockStyle.Fill;
         zcyView.Dock = DockStyle.Fill;
         workTabs.Dock = DockStyle.Fill;
         workTabs.Font = UiFont;
         workTabs.Padding = new Point(14, 4);
+        workTabs.BackColor = BrowserChrome;
         workTabs.DrawMode = TabDrawMode.OwnerDrawFixed;
         workTabs.SizeMode = TabSizeMode.Fixed;
         workTabs.ItemSize = new Size(78, 28);
@@ -237,7 +267,7 @@ public sealed class MainForm : Form
         var workbenchFrame = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(224, 224, 224),
+            BackColor = BrowserChromeBorder,
             Padding = new Padding(1, 0, 1, 1)
         };
         workbenchFrame.Controls.Add(workTabs);
@@ -250,12 +280,33 @@ public sealed class MainForm : Form
         Controls.Add(root);
     }
 
+    private Control BuildAppContentShell()
+    {
+        var shell = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppBackground,
+            Padding = new Padding(1, 0, 0, 0)
+        };
+
+        var divider = new Panel
+        {
+            Dock = DockStyle.Left,
+            Width = 1,
+            BackColor = Color.FromArgb(225, 223, 221)
+        };
+        shell.Controls.Add(BuildAppViewHost());
+        shell.Controls.Add(divider);
+        divider.BringToFront();
+        return shell;
+    }
+
     private Control BuildDesktopSidebar()
     {
         var sidebar = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Surface,
+            BackColor = AppBackground,
             Padding = new Padding(0)
         };
 
@@ -457,8 +508,8 @@ public sealed class MainForm : Form
         var actionBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         actionBar.Margin = new Padding(0, 0, 0, 10);
         actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 78));
-        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 78));
+        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
+        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
         nativeSearchBox.Dock = DockStyle.Fill;
         nativeSearchBox.PlaceholderText = "搜索标题 / 品牌 / 型号";
         nativeSearchBox.BorderStyle = BorderStyle.FixedSingle;
@@ -533,18 +584,20 @@ public sealed class MainForm : Form
         button.BackColor = primary ? Accent : Surface;
         button.ForeColor = primary ? Color.White : TextStrong;
         button.Font = UiFontMedium;
-        button.Margin = new Padding(4);
+        button.Margin = new Padding(2, 4, 2, 4);
+        button.AutoSize = false;
+        button.TextAlign = ContentAlignment.MiddleCenter;
         button.Cursor = Cursors.Hand;
     }
 
     private Button MakeButton(string text, Func<Task> action)
     {
-        var primary = string.Equals(text, "读取当前商品", StringComparison.Ordinal);
+        var primary = string.Equals(text, "读取商品", StringComparison.Ordinal);
         var button = new Button
         {
             Text = text,
             Dock = DockStyle.Fill,
-            Margin = new Padding(3),
+            Margin = new Padding(3, 2, 3, 2),
             FlatStyle = FlatStyle.Flat,
             BackColor = primary ? Accent : Surface,
             ForeColor = primary ? Color.White : TextStrong,
@@ -556,7 +609,7 @@ public sealed class MainForm : Form
         button.MouseEnter += (_, _) =>
         {
             if (!button.Enabled) return;
-            button.BackColor = primary ? AccentHover : Color.FromArgb(248, 248, 248);
+            button.BackColor = primary ? AccentHover : Color.FromArgb(245, 245, 245);
         };
         button.MouseLeave += (_, _) =>
         {
@@ -586,7 +639,7 @@ public sealed class MainForm : Form
         bounds.Inflate(-3, -3);
 
         using var background = new SolidBrush(selected ? Surface : BrowserChrome);
-        using var border = new Pen(selected ? BrowserChromeBorder : Color.Transparent);
+        using var border = new Pen(selected ? BrowserChromeBorder : Color.FromArgb(225, 223, 221));
         e.Graphics.FillRectangle(background, bounds);
         e.Graphics.DrawRectangle(border, bounds);
 
@@ -883,19 +936,24 @@ public sealed class MainForm : Form
                 }
                 body {
                   overflow: hidden !important;
-                  background: #f4f4f4 !important;
-                  color: #161616 !important;
+                  background: #f3f2f1 !important;
+                  color: #242424 !important;
                   font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
                 }
                 main {
                   padding: 22px 24px !important;
-                  background: #f4f4f4 !important;
+                  background: #f3f2f1 !important;
+                  height: 100vh !important;
+                  box-sizing: border-box !important;
                 }
                 main > div {
-                  background: #f4f4f4 !important;
+                  background: #f3f2f1 !important;
+                  min-height: 100% !important;
+                  display: flex !important;
+                  flex-direction: column !important;
                 }
                 h1, h2, h3 {
-                  color: #161616 !important;
+                  color: #242424 !important;
                   letter-spacing: 0 !important;
                 }
                 h1 {
@@ -908,43 +966,64 @@ public sealed class MainForm : Form
                   font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif !important;
                 }
                 input, textarea, select {
-                  color: #161616 !important;
-                  border-color: #e0e0e0 !important;
+                  color: #242424 !important;
+                  border-color: #d1d1d1 !important;
                   border-radius: 8px !important;
                   background: #ffffff !important;
                   box-shadow: none !important;
                 }
                 input:focus, textarea:focus, select:focus {
-                  border-color: #0f62fe !important;
-                  box-shadow: 0 0 0 2px rgba(15, 98, 254, 0.18) !important;
+                  border-color: #0f6cbd !important;
+                  box-shadow: 0 0 0 2px rgba(15, 108, 189, 0.18) !important;
                   outline: none !important;
                 }
                 button {
                   border-radius: 8px !important;
                   font-weight: 520 !important;
                   letter-spacing: 0 !important;
+                  min-width: 58px !important;
+                  padding-left: 10px !important;
+                  padding-right: 10px !important;
+                  white-space: nowrap !important;
+                  word-break: keep-all !important;
+                  writing-mode: horizontal-tb !important;
+                  text-orientation: mixed !important;
+                  display: inline-flex !important;
+                  align-items: center !important;
+                  justify-content: center !important;
                   box-shadow: none !important;
                   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease !important;
                 }
+                @media (max-width: 360px) {
+                  main {
+                    padding-left: 18px !important;
+                    padding-right: 18px !important;
+                  }
+                  button {
+                    min-width: 56px !important;
+                    padding-left: 8px !important;
+                    padding-right: 8px !important;
+                  }
+                }
                 button[class*="bg-blue-600"],
                 button[class*="hover:bg-blue-700"] {
-                  background: #0f62fe !important;
-                  border-color: #0f62fe !important;
+                  background: #0f6cbd !important;
+                  border-color: #0f6cbd !important;
                   color: #ffffff !important;
                 }
                 button[class*="bg-gray-300"] {
-                  background: #e0e0e0 !important;
-                  color: #8d8d8d !important;
-                  border: 1px solid #c6c6c6 !important;
+                  background: #f0f0f0 !important;
+                  color: #8a8886 !important;
+                  border: 1px solid #d1d1d1 !important;
                 }
                 button[class*="bg-red-50"] {
-                  background: #fff1f1 !important;
-                  color: #da1e28 !important;
-                  border-color: #ffb3b8 !important;
+                  background: #fdf3f4 !important;
+                  color: #c50f1f !important;
+                  border-color: #f1bbbc !important;
                 }
                 button[class*="bg-gray-100"] {
-                  background: #f4f4f4 !important;
-                  color: #393939 !important;
+                  background: #f5f5f5 !important;
+                  color: #323130 !important;
                 }
                 button:hover:not(:disabled) {
                   opacity: 0.94 !important;
@@ -954,50 +1033,52 @@ public sealed class MainForm : Form
                   border-spacing: 0 !important;
                 }
                 thead, th {
-                  background: #e0e0e0 !important;
-                  color: #161616 !important;
+                  background: #f3f2f1 !important;
+                  color: #242424 !important;
                   font-weight: 650 !important;
-                  border-bottom: 1px solid #e0e0e0 !important;
+                  border-bottom: 1px solid #d1d1d1 !important;
                 }
                 tr {
                   transition: background-color 120ms ease !important;
                 }
                 tbody tr:hover {
-                  background: #f4f4f4 !important;
+                  background: #f3f2f1 !important;
                 }
                 tbody td {
-                  border-color: #e0e0e0 !important;
+                  border-color: #edebe9 !important;
                 }
                 [class*="text-gray"], [class*="text-slate"] {
-                  color: #525252 !important;
+                  color: #616161 !important;
                 }
                 a {
-                  color: #0f62fe !important;
+                  color: #0f6cbd !important;
                   text-decoration: none !important;
                 }
                 main > div > div:first-child p {
-                  color: #525252 !important;
+                  color: #616161 !important;
                   font-size: 13px !important;
                 }
                 main > div > div[class*="bg-white"][class*="border"] {
-                  border-color: #e0e0e0 !important;
+                  border-color: #d1d1d1 !important;
                   border-radius: 10px !important;
-                  background: #ffffff !important;
+                  background: #f3f2f1 !important;
                 }
                 main > div > div[class*="overflow-hidden"][class*="flex-col"] {
-                  border-color: #e0e0e0 !important;
+                  border-color: #d1d1d1 !important;
                   border-radius: 10px !important;
-                  background: #ffffff !important;
+                  background: #f3f2f1 !important;
                   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) !important;
+                  flex: 1 1 auto !important;
+                  min-height: 0 !important;
                 }
                 main > div > div[class*="overflow-hidden"][class*="flex-col"] > div {
-                  background: #ffffff !important;
+                  background: #f3f2f1 !important;
                 }
                 main tbody {
-                  background: #ffffff !important;
+                  background: #f3f2f1 !important;
                 }
                 main tbody tr {
-                  background: #ffffff !important;
+                  background: #f3f2f1 !important;
                 }
                 main table {
                   table-layout: fixed !important;
@@ -1065,7 +1146,7 @@ public sealed class MainForm : Form
                   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16) !important;
                 }
                 input[type="checkbox"] {
-                  accent-color: #0f62fe !important;
+                  accent-color: #0f6cbd !important;
                 }
               `;
               document.head.appendChild(style);
@@ -1104,11 +1185,11 @@ public sealed class MainForm : Form
         (() => {
           const css = `
             html {
-              background: #f4f4f4 !important;
+              background: #f3f2f1 !important;
             }
             body {
-              background: #f4f4f4 !important;
-              color: #161616 !important;
+              background: #f3f2f1 !important;
+              color: #242424 !important;
               font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif !important;
             }
             aside,

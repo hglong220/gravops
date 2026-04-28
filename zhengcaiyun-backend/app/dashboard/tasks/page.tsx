@@ -562,8 +562,8 @@ export default function TaskPage() {
     <div className="flex flex-col h-[calc(100vh-120px)]">
       {/* 标题 */}
       <div className="flex-shrink-0 mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">任务中心</h1>
-        <p className="text-gray-500 text-sm mt-1">统一管理采集和发布任务</p>
+        <h1 className="text-xl font-semibold text-slate-800">任务中心</h1>
+        <p className="text-slate-400 text-xs mt-0.5">统一管理采集和发布任务</p>
       </div>
 
       {/* 批量操作按钮 */}
@@ -595,7 +595,7 @@ export default function TaskPage() {
         <button
           onClick={handleCheckPermissions}
           disabled={permissionChecking}
-          className="px-4 py-2 bg-white text-gray-700 rounded border border-gray-300 hover:bg-gray-50 text-sm disabled:opacity-50"
+          className="px-4 py-1.5 bg-white text-slate-600 rounded-md border border-slate-300 hover:bg-slate-50 hover:border-slate-400 text-sm font-medium transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {permissionChecking ? '检测中...' : '检测'}
         </button>
@@ -603,16 +603,17 @@ export default function TaskPage() {
           onClick={handleBatchPublish}
           disabled={!canPublish}
           title={publishHint}
-          className={`px-4 py-2 rounded text-sm transition-colors ${canPublish
-            ? 'bg-blue-600 text-white hover:bg-blue-700'
-            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all duration-150 ${
+            canPublish
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200'
+              : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+          }`}
         >
           发布
         </button>
         <button
           onClick={handleBatchDelete}
-          className="px-4 py-2 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 text-sm"
+          className="px-4 py-1.5 text-rose-500 rounded-md border border-rose-200 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 text-sm font-medium transition-all duration-150"
         >
           删除
         </button>
