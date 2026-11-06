@@ -4,6 +4,15 @@ const nextConfig = {
         serverActions: {
             bodySizeLimit: '2mb',
         },
+        // puppeteer-extra-plugin-stealth 用了 webpack 无法静态分析的动态 require，
+        // 不加这行生产构建会在 app/api/rules/crawl/route.ts 处失败
+        serverComponentsExternalPackages: [
+            'puppeteer',
+            'puppeteer-core',
+            'puppeteer-extra',
+            'puppeteer-extra-plugin',
+            'puppeteer-extra-plugin-stealth',
+        ],
     },
     async headers() {
         return [
